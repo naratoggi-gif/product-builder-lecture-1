@@ -3,20 +3,28 @@ const generateBtn = document.getElementById('generate-btn');
 const themeToggle = document.getElementById('checkbox');
 
 function generateNumbers() {
-    numbersContainer.innerHTML = '';
-    const numbers = [];
-    while (numbers.length < 5) {
-        const randomNumber = Math.floor(Math.random() * 45) + 1;
-        if (!numbers.includes(randomNumber)) {
-            numbers.push(randomNumber);
+    numbersContainer.innerHTML = ''; // Clear previous numbers
+
+    for (let i = 0; i < 5; i++) { // Generate 5 lines of numbers
+        const numbers = [];
+        while (numbers.length < 5) {
+            const randomNumber = Math.floor(Math.random() * 45) + 1;
+            if (!numbers.includes(randomNumber)) {
+                numbers.push(randomNumber);
+            }
         }
-    }
-    numbers.sort((a, b) => a - b);
-    for (const number of numbers) {
-        const numberDiv = document.createElement('div');
-        numberDiv.classList.add('number');
-        numberDiv.textContent = number;
-        numbersContainer.appendChild(numberDiv);
+        numbers.sort((a, b) => a - b); // Sort numbers for each line
+
+        const lineDiv = document.createElement('div');
+        lineDiv.classList.add('number-line'); // Add a class for styling individual lines
+        
+        for (const number of numbers) {
+            const numberDiv = document.createElement('div');
+            numberDiv.classList.add('number');
+            numberDiv.textContent = number;
+            lineDiv.appendChild(numberDiv);
+        }
+        numbersContainer.appendChild(lineDiv);
     }
 }
 

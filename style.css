@@ -43,10 +43,18 @@ h1 {
 
 .numbers-container {
     display: flex;
-    justify-content: center;
+    flex-direction: column; /* Changed to column to stack lines */
+    align-items: center; /* Center items horizontally */
     gap: 10px;
     margin-bottom: 30px;
     color: var(--text-color);
+}
+
+.number-line {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 5px; /* Space between lines */
 }
 
 .number {
