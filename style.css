@@ -43,33 +43,44 @@ h1 {
 
 .numbers-container {
     display: flex;
-    flex-direction: column; /* Changed to column to stack lines */
-    align-items: center; /* Center items horizontally */
-    gap: 10px;
+    flex-direction: column;
+    gap: 15px; /* Increased gap for better separation */
     margin-bottom: 30px;
-    color: var(--text-color);
+    padding: 20px;
+    background-color: var(--body-bg); /* Use body background for a seamless look */
+    border-radius: 10px;
 }
 
 .number-line {
     display: flex;
     justify-content: center;
-    gap: 10px;
-    margin-bottom: 5px; /* Space between lines */
+    gap: 12px;
+    padding: 15px;
+    background-color: var(--container-bg);
+    border-radius: 10px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease-in-out;
+}
+
+.number-line:hover {
+    transform: scale(1.03); /* Add a subtle hover effect */
 }
 
 .number {
-    width: 50px;
-    height: 50px;
+    width: 45px; /* Slightly smaller for a sleeker look */
+    height: 45px;
     border-radius: 50%;
-    background-color: var(--number-bg);
+    background-image: linear-gradient(to right, #6a11cb 0%, #2575fc 100%);
     color: white;
-    font-size: 24px;
+    font-size: 22px;
     font-weight: bold;
     display: flex;
     justify-content: center;
     align-items: center;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    border: 2px solid white; /* Add a border to make numbers pop */
 }
+
 
 #generate-btn {
     background-color: var(--button-bg);
