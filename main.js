@@ -7,7 +7,7 @@ function generateNumbers() {
 
     for (let i = 0; i < 5; i++) { // Generate 5 lines of numbers
         const numbers = [];
-        while (numbers.length < 5) {
+        while (numbers.length < 6) {
             const randomNumber = Math.floor(Math.random() * 45) + 1;
             if (!numbers.includes(randomNumber)) {
                 numbers.push(randomNumber);

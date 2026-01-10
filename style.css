@@ -90,7 +90,9 @@ h1 {
 .theme-switch-wrapper {
     display: flex;
     align-items: center;
+    gap: 10px; /* Added gap */
     margin-bottom: 20px;
+    color: var(--text-color); /* Apply text color variable */
 }
 
 .theme-switch {
