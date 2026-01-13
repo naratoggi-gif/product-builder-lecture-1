@@ -1,0 +1,167 @@
+// The Hunter System - 게임 상수
+export const GAME_CONSTANTS = {
+  // 앱 정보
+  APP_NAME: 'The Hunter System',
+  STORAGE_KEY: 'hunter_system_data',
+
+  // 경험치 공식: 100 * 1.2^(level-1)
+  BASE_EXP: 100,
+  EXP_MULTIPLIER: 1.2,
+
+  // 레벨업 보상
+  STAT_POINTS_PER_LEVEL: 3,
+  BONUS_STAT_POINTS_INTERVAL: 10,
+  BONUS_STAT_POINTS: 2,
+
+  // 초기 스탯 (기획서: 모두 5)
+  INITIAL_STATS: {
+    STR: 5,   // 물리 데미지
+    INT: 5,   // 스킬 데미지 & 보상 배율
+    WIL: 5,   // 방어력 & 스태미나 효율
+    FOCUS: 5, // 퀘스트 대기시간, 자동전투 크리티컬
+    LUK: 5    // 드롭률, 랜덤 보너스
+  },
+
+  // 일일 스태미나
+  DAILY_STAMINA: 100,
+
+  // 퀘스트 등급별 스태미나 소모
+  QUEST_STAMINA_COST: {
+    E: 5,
+    D: 10,
+    C: 15,
+    B: 20,
+    A: 30,
+    S: 40
+  },
+
+  // 퀘스트 등급별 기본 보상
+  QUEST_BASE_REWARDS: {
+    E: { exp: 20, gold: 50 },
+    D: { exp: 40, gold: 100 },
+    C: { exp: 70, gold: 180 },
+    B: { exp: 120, gold: 300 },
+    A: { exp: 200, gold: 500 },
+    S: { exp: 350, gold: 850 }
+  },
+
+  // 퀘스트 카테고리 -> 스탯 연결
+  QUEST_CATEGORIES: {
+    exercise: { label: '운동/청소', stat: 'STR', icon: '💪' },
+    study: { label: '공부/일', stat: 'INT', icon: '📚' },
+    meditation: { label: '명상/루틴', stat: 'WIL', icon: '🧘' },
+    rest: { label: '휴식/회복', stat: 'STAMINA', icon: '😴' }
+  },
+
+  // FOCUS 효과 - 퀘스트 대기시간 (분)
+  FOCUS_WAIT_TIME: [
+    { min: 0, max: 9, minutes: 10 },
+    { min: 10, max: 19, minutes: 8 },
+    { min: 20, max: 29, minutes: 6 },
+    { min: 30, max: Infinity, minutes: 4 }
+  ],
+
+  // FOCUS 효과 - 자동전투 크리티컬
+  AUTO_BATTLE_CRIT_BASE: 5,
+  AUTO_BATTLE_CRIT_PER_FOCUS: 0.3,
+
+  // 보상 배율
+  REWARD_MULTIPLIER: {
+    REAL_HUNTER: 1.0,      // 실제 퀘스트 완료 시
+    SIMULATION: 0.35       // 시뮬레이션 모드
+  },
+
+  // 아이들 골드 계산
+  IDLE_BASE_GOLD: 1,
+  IDLE_STR_MULTIPLIER: 0.05,
+  IDLE_QUEST_BONUS: 0.2,      // 오늘 퀘스트 3개+ 완료 시 +20%
+  IDLE_NO_QUEST_PENALTY: 0.3, // 오늘 퀘스트 0개 시 -30%
+
+  // 게이트 종류
+  GATE_TYPES: {
+    WEEKDAY: { id: 'weekday', name: '평일 게이트', available: 'always' },
+    WEEKEND: { id: 'weekend', name: '주말 레이드', available: 'weekend' },
+    RANDOM: { id: 'random', name: '랜덤 게이트', available: 'daily' },
+    SIMULATION: { id: 'simulation', name: '시뮬레이션 게이트', available: 'always' }
+  },
+
+  // 코스튬 레어리티
+  COSTUME_RARITY: {
+    NORMAL: { id: 'normal', name: '일반', color: '#9ca3af', obtain: 'gold' },
+    RARE: { id: 'rare', name: '레어', color: '#3b82f6', obtain: 'ads' },
+    EPIC: { id: 'epic', name: '에픽', color: '#a855f7', obtain: 'events' },
+    LEGENDARY: { id: 'legendary', name: '전설', color: '#f59e0b', obtain: 'achievement' }
+  },
+
+  // 광고 보상 (외부 에너지 계약)
+  AD_REWARDS: {
+    AUTO_BATTLE_BOOST: { duration: 30, multiplier: 2 }, // 30분간 x2
+    STAMINA_RECOVERY: 20,
+    RANDOM_GATE_RETRY: true
+  }
+};
+
+// 필요 경험치 계산
+export function getRequiredExp(level) {
+  return Math.floor(GAME_CONSTANTS.BASE_EXP * Math.pow(GAME_CONSTANTS.EXP_MULTIPLIER, level - 1));
+}
+
+// FOCUS에 따른 퀘스트 대기시간 계산
+export function getQuestWaitTime(focus) {
+  const tier = GAME_CONSTANTS.FOCUS_WAIT_TIME.find(t => focus >= t.min && focus <= t.max);
+  return tier ? tier.minutes : 10;
+}
+
+// 자동전투 크리티컬 확률 계산
+export function getAutoBattleCritRate(focus) {
+  return GAME_CONSTANTS.AUTO_BATTLE_CRIT_BASE + (focus * GAME_CONSTANTS.AUTO_BATTLE_CRIT_PER_FOCUS);
+}
+
+// 아이들 초당 골드 계산
+export function calculateIdleGold(str, questsCompletedToday) {
+  let gold = GAME_CONSTANTS.IDLE_BASE_GOLD * (1 + str * GAME_CONSTANTS.IDLE_STR_MULTIPLIER);
+
+  if (questsCompletedToday >= 3) {
+    gold *= (1 + GAME_CONSTANTS.IDLE_QUEST_BONUS);
+  } else if (questsCompletedToday === 0) {
+    gold *= (1 - GAME_CONSTANTS.IDLE_NO_QUEST_PENALTY);
+  }
+
+  return gold;
+}
+
+// 보상 계산 (리얼 헌터 vs 시뮬레이션)
+export function calculateReward(baseReward, isRealHunter) {
+  const multiplier = isRealHunter
+    ? GAME_CONSTANTS.REWARD_MULTIPLIER.REAL_HUNTER
+    : GAME_CONSTANTS.REWARD_MULTIPLIER.SIMULATION;
+
+  return {
+    exp: Math.floor(baseReward.exp * multiplier),
+    gold: Math.floor(baseReward.gold * multiplier)
+  };
+}
+
+// INT에 따른 보상 배율 계산
+export function getIntRewardBonus(int) {
+  return 1 + (int * 0.02); // INT 1당 2% 보상 증가
+}
+
+// 스탯 -> 전투 스탯 변환
+export function calculateCombatStats(stats) {
+  return {
+    maxHp: 100 + (stats.WIL * 10),
+    attack: Math.floor(10 + (stats.STR * 2)),
+    skillDamage: Math.floor(10 + (stats.INT * 2.5)),
+    defense: Math.floor(5 + (stats.WIL * 1.5)),
+    critRate: getAutoBattleCritRate(stats.FOCUS),
+    critDamage: 150 + (stats.STR * 1),
+    dropRate: 5 + (stats.LUK * 0.5),
+    bonusChance: stats.LUK * 0.3
+  };
+}
+
+// 스태미나 효율 계산 (WIL 기반)
+export function getStaminaEfficiency(wil) {
+  return 1 + (wil * 0.02); // WIL 1당 2% 스태미나 효율 증가
+}

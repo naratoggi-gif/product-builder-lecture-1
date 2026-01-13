@@ -1,38 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="google-adsense-account" content="ca-pub-7866588888738828">
-    <title>Lotto Number Generator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>The Hunter System - 목표관리 RPG</title>
     <link rel="stylesheet" href="style.css">
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7866588888738828"
-     crossorigin="anonymous"></script>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="description" content="실생활 목표를 달성하고 진정한 헌터가 되세요">
 </head>
-<body>
-    <div class="theme-switch-wrapper">
-        <span>Light Mode</span>
-        <label class="theme-switch" for="checkbox">
-            <input type="checkbox" id="checkbox" />
-            <div class="slider round"></div>
-        </label>
-        <span>Dark Mode</span>
-    </div>
-    <div class="container">
-        <h1>Lotto Number Generator</h1>
-        <ins class="adsbygoogle"
-             style="display:block"
-             data-ad-client="ca-pub-7866588888738828"
-             data-ad-slot="1234567890"
-             data-ad-format="auto"
-             data-full-width-responsive="true"></ins>
-        <script>
-             (adsbygoogle = window.adsbygoogle || []).push({});
-        </script>
-        <div id="numbers" class="numbers-container"></div>
-        <button id="generate-btn">Generate Numbers</button>
-        
-    </div>
-    <script src="main.js"></script>
+<body class="dark-theme">
+    <!-- 헤더 -->
+    <header class="app-header">
+        <div class="header-left">
+            <h1 class="app-title">The Hunter System</h1>
+        </div>
+        <div class="header-right">
+            <div class="hunter-status" id="hunterStatus"></div>
+            <button class="theme-toggle" onclick="toggleTheme()">
+                <span class="theme-icon">&#127769;</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- 메인 콘텐츠 -->
+    <main id="app">
+        <!-- 화면이 여기에 렌더링됨 -->
+    </main>
+
+    <!-- 하단 네비게이션 -->
+    <nav id="navbar" class="bottom-nav">
+        <!-- 네비게이션 아이템이 여기에 렌더링됨 -->
+    </nav>
+
+    <!-- 알림 컨테이너 -->
+    <div id="notification-container"></div>
+
+    <!-- 스크립트 -->
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>
