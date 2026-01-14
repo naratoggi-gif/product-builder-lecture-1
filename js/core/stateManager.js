@@ -90,7 +90,11 @@ export class StateManager {
       const yesterdayStr = this.getLocalDayKey(yesterday);
 
       // Real Hunter로 퀘스트를 완료했는지 확인 (휴식 퀘스트 1개만 인정)
-      const wasRealHunter = this.isRealHunterToday();
+      const { questsCompleted, restQuestsCompleted } = this.state.daily;
+      const nonRestQuests = questsCompleted - restQuestsCompleted;
+      const eligibleQuests = nonRestQuests + Math.min(restQuestsCompleted, 1);
+      const wasRealHunter = eligibleQuests >= 1;
+
       if (this.state.daily.date === yesterdayStr && wasRealHunter) {
         this.state.statistics.currentStreak++;
         if (this.state.statistics.currentStreak > this.state.statistics.longestStreak) {
