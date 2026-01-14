@@ -282,7 +282,11 @@ function setupEventListeners() {
       const result = stateManager.startQuest(questId);
 
       if (result.success) {
-        window.showNotification(`퀘스트 시작! ${result.waitMinutes}분 후 완료 가능`, 'info');
+        // Design v3.0 fix: result.waitMinutes might not be returned, calculate manually or fix startQuest return
+        // startQuest returns completeAvailableAt.
+        const waitTime = new Date(result.completeAvailableAt) - new Date();
+        const waitMinutes = Math.ceil(waitTime / 60000);
+        window.showNotification(`퀘스트 시작! ${waitMinutes}분 후 완료 가능`, 'info');
         renderQuests();
       } else {
         window.showNotification(result.error, 'error');
@@ -303,13 +307,25 @@ function setupEventListeners() {
         const narrative = getQuestCompletionNarrative(quest?.category || 'exercise');
         showNarrativeToast(narrative, quest?.category);
 
-        // 보상 알림
-        let msg = `퀘스트 완료! +${result.rewards.exp} EXP, +${result.rewards.gold} G`;
-        if (result.rewards.statGain) {
-          msg += ` (${result.rewards.statGain} +1!)`;
+        // 보상 알림 (Narrative Growth Update)
+        let msg = `완료! +${result.rewards.exp} EXP, +${result.rewards.gold} G`;
+        
+        if (result.rewards.statExpGained > 0) {
+           const category = GAME_CONSTANTS.QUEST_CATEGORIES[quest.category];
+           if (category) {
+             msg += ` / ${category.stat} 숙련도 +${result.rewards.statExpGained}`;
+           }
         }
+
         setTimeout(() => {
           window.showNotification(msg, 'success');
+          
+          if (result.rewards.statLevelUp) {
+             const slu = result.rewards.statLevelUp;
+             setTimeout(() => {
+                window.showNotification(`축하합니다! ${slu.stat} 스탯이 상승했습니다! (${slu.oldVal} -> ${slu.newVal})`, 'success');
+             }, 1000);
+          }
         }, 1500);
         renderQuests();
       } else {

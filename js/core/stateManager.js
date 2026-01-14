@@ -132,6 +132,11 @@ export class StateManager {
       if (saved) {
         const data = JSON.parse(saved);
         this.state = { ...this.getDefaultState(), ...data };
+        
+        // 마이그레이션: statExp가 없으면 초기화
+        if (this.state.hunter && !this.state.hunter.statExp) {
+          this.state.hunter.statExp = { STR: 0, INT: 0, WIL: 0, FOCUS: 0, LUK: 0 };
+        }
       }
       this.checkDailyReset();
     } catch (e) {
@@ -183,7 +188,8 @@ export class StateManager {
       exp: 0,
       gold: 0,
       stats: { ...GAME_CONSTANTS.INITIAL_STATS },
-      statPoints: 0,
+      statExp: { STR: 0, INT: 0, WIL: 0, FOCUS: 0, LUK: 0 }, // 스탯 경험치
+      statPoints: 0, // 레거시 유지 (사용 안함)
       rank: 'E', // 헌터 랭크
       title: '각성한 자',
       createdAt: new Date().toISOString()
@@ -204,13 +210,7 @@ export class StateManager {
     while (hunter.exp >= getRequiredExp(hunter.level)) {
       hunter.exp -= getRequiredExp(hunter.level);
       hunter.level++;
-      hunter.statPoints += GAME_CONSTANTS.STAT_POINTS_PER_LEVEL;
-
-      // 10레벨마다 보너스 스탯 포인트
-      if (hunter.level % GAME_CONSTANTS.BONUS_STAT_POINTS_INTERVAL === 0) {
-        hunter.statPoints += GAME_CONSTANTS.BONUS_STAT_POINTS;
-      }
-
+      // Narrative Growth: 레벨업 시 스탯 포인트 지급 제거
       leveledUp = true;
     }
 
@@ -292,7 +292,7 @@ export class StateManager {
     return tier ? tier.minutes : 10;
   }
 
-  // 퀘스트 완료 - 퀘스트 보상은 항상 100% 지급 (Real Hunter가 되는 행위)
+  // 퀘스트 완료 - Narrative Growth: 스탯 경험치 시스템
   completeQuest(questId) {
     const questIndex = this.state.quests.findIndex(q => q.id === questId);
     if (questIndex === -1) return { success: false, error: '퀘스트를 찾을 수 없습니다' };
@@ -304,7 +304,6 @@ export class StateManager {
       return { success: false, error: '아직 완료할 수 없습니다' };
     }
 
-    // 보상 계산 (퀘스트 보상은 항상 100% - 실생활 퀘스트이므로)
     const hunter = this.state.hunter;
     const effectiveStats = this.getEffectiveStats() || hunter.stats;
     const intBonus = hunter ? 1 + (effectiveStats.INT * 0.02) : 1;
@@ -312,16 +311,32 @@ export class StateManager {
     const expReward = Math.floor(quest.reward.exp * intBonus * costumeBonus.expMult);
     const goldReward = Math.floor(quest.reward.gold * intBonus * costumeBonus.goldMult);
 
-    // 카테고리에 따른 스탯 보너스
+    // 카테고리에 따른 스탯 성장 (Narrative Growth)
     const category = GAME_CONSTANTS.QUEST_CATEGORIES[quest.category];
     const isRestQuest = category && category.stat === 'STAMINA';
-    let statGain = null;
+    
+    let statExpGained = 0;
+    let statLevelUp = null; // { stat: 'STR', oldVal: 5, newVal: 6 }
 
     if (category && !isRestQuest && hunter) {
-      // 10% 확률로 해당 스탯 +1
-      if (Math.random() < 0.1) {
-        hunter.stats[category.stat]++;
-        statGain = category.stat;
+      const targetStat = category.stat;
+      const baseStatExp = GAME_CONSTANTS.STAT_EXP_GAIN[quest.grade] || 10;
+      
+      // 지능 보너스: 학습 효율 증가 (INT가 높으면 스탯 경험치도 더 빨리 얻음)
+      const learnEfficiency = 1 + (hunter.stats.INT * 0.01); 
+      
+      statExpGained = Math.floor(baseStatExp * learnEfficiency);
+      
+      if (!hunter.statExp) hunter.statExp = { STR: 0, INT: 0, WIL: 0, FOCUS: 0, LUK: 0 };
+      
+      hunter.statExp[targetStat] = (hunter.statExp[targetStat] || 0) + statExpGained;
+
+      // 스탯 레벨업 체크
+      while (hunter.statExp[targetStat] >= GAME_CONSTANTS.STAT_EXP_REQUIRED) {
+        hunter.statExp[targetStat] -= GAME_CONSTANTS.STAT_EXP_REQUIRED;
+        const oldVal = hunter.stats[targetStat];
+        hunter.stats[targetStat]++;
+        statLevelUp = { stat: targetStat, oldVal, newVal: hunter.stats[targetStat] };
       }
     } else if (isRestQuest) {
       // 휴식 카테고리: 스태미나 회복
@@ -350,7 +365,7 @@ export class StateManager {
 
     return {
       success: true,
-      rewards: { exp: expReward, gold: goldReward, statGain }
+      rewards: { exp: expReward, gold: goldReward, statExpGained, statLevelUp }
     };
   }
 

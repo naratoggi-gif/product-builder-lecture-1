@@ -8,10 +8,21 @@ export const GAME_CONSTANTS = {
   BASE_EXP: 100,
   EXP_MULTIPLIER: 1.2,
 
-  // 레벨업 보상
-  STAT_POINTS_PER_LEVEL: 3,
+  // 레벨업 보상 (Narrative Growth: 스탯 포인트 제거)
+  STAT_POINTS_PER_LEVEL: 0,
   BONUS_STAT_POINTS_INTERVAL: 10,
-  BONUS_STAT_POINTS: 2,
+  BONUS_STAT_POINTS: 0,
+
+  // 스탯 성장 시스템 (Narrative Growth)
+  STAT_EXP_REQUIRED: 100, // 스탯 1 상승을 위한 경험치
+  STAT_EXP_GAIN: {        // 퀘스트 등급별 스탯 경험치 획득량
+    E: 10,
+    D: 15,
+    C: 25,
+    B: 40,
+    A: 60,
+    S: 100
+  },
 
   // 초기 스탯 (기획서: 모두 5)
   INITIAL_STATS: {

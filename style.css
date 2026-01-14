@@ -2710,3 +2710,45 @@ body {
     margin: 0 auto;
   }
 }
+
+/* Narrative Growth Stats UI */
+.stat-level-badge {
+  background: var(--primary);
+  color: white;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.stat-progress-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  max-width: 150px;
+}
+
+.stat-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stat-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--secondary), var(--primary));
+  transition: width 0.5s ease;
+}
+
+.stat-exp-text {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 60px;
+  text-align: right;
+}
+

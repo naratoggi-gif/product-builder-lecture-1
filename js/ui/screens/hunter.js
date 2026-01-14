@@ -15,6 +15,8 @@ export function renderHunter() {
   const expPercent = Math.floor((hunter.exp / expRequired) * 100);
   const combatStats = calculateCombatStats(hunter.stats);
   const waitTime = getQuestWaitTime(hunter.stats.FOCUS);
+  const statExp = hunter.statExp || { STR: 0, INT: 0, WIL: 0, FOCUS: 0, LUK: 0 };
+  const statReqExp = GAME_CONSTANTS.STAT_EXP_REQUIRED || 100;
 
   const statDescriptions = {
     STR: '물리 데미지, 아이들 골드',
@@ -54,39 +56,33 @@ export function renderHunter() {
         <div class="total-exp">총 골드: ${hunter.gold.toLocaleString()} G</div>
       </div>
 
-      <!-- 스탯 포인트 -->
-      ${hunter.statPoints > 0 ? `
-        <div class="card stat-points-card">
-          <div class="points-available">
-            <span class="points-icon">&#11088;</span>
-            <span>사용 가능한 스탯 포인트: <strong>${hunter.statPoints}</strong></span>
-          </div>
-        </div>
-      ` : ''}
-
-      <!-- 기본 스탯 -->
+      <!-- 기본 스탯 (Narrative Growth) -->
       <div class="card stats-panel">
         <div class="card-header">
-          <h3>기본 스탯</h3>
+          <h3>신체/정신 능력 (훈련도)</h3>
         </div>
         <div class="stats-list">
-          ${Object.entries(hunter.stats).map(([stat, value]) => `
+          ${Object.entries(hunter.stats).map(([stat, value]) => {
+            const currentExp = statExp[stat] || 0;
+            const percent = Math.min(100, Math.floor((currentExp / statReqExp) * 100));
+            
+            return `
             <div class="stat-row">
               <div class="stat-info">
                 <span class="stat-icon">${statIcons[stat]}</span>
                 <div class="stat-details">
-                  <span class="stat-name">${stat}</span>
+                  <span class="stat-name">${stat} <span class="stat-level-badge">Lv.${value}</span></span>
                   <span class="stat-desc">${statDescriptions[stat]}</span>
                 </div>
               </div>
-              <div class="stat-value-container">
-                <span class="stat-value">${value}</span>
-                ${hunter.statPoints > 0 ? `
-                  <button class="stat-add-btn" data-stat="${stat}">+</button>
-                ` : ''}
+              <div class="stat-progress-section">
+                <div class="stat-progress-bar">
+                  <div class="stat-progress-fill" style="width: ${percent}%"></div>
+                </div>
+                <div class="stat-exp-text">${currentExp} / ${statReqExp}</div>
               </div>
             </div>
-          `).join('')}
+          `}).join('')}
         </div>
       </div>
 
@@ -162,16 +158,4 @@ export function renderHunter() {
       </div>
     </div>
   `;
-
-  // 스탯 증가 이벤트
-  document.querySelectorAll('.stat-add-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const stat = btn.dataset.stat;
-      const success = stateManager.increaseStat(stat);
-      if (success) {
-        window.showNotification(`${stat} +1!`, 'success');
-        renderHunter();
-      }
-    });
-  });
 }
