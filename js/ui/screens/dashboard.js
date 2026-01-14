@@ -1,8 +1,10 @@
 // The Hunter System - 대시보드 화면
 import { stateManager } from '../../core/stateManager.js';
 import { GAME_CONSTANTS, getRequiredExp, calculateIdleGold } from '../../config/constants.js';
+import { getDailyQuote, generateDailyEvaluation, WARNING_MESSAGES } from '../../config/narrative.js';
 
 let idleUpdateInterval = null;
+let criticalUnsubscribe = null;
 
 export function renderDashboard() {
   const app = document.getElementById('app');
@@ -18,9 +20,27 @@ export function renderDashboard() {
   const rewardMultiplier = stateManager.getCurrentRewardMultiplier();
   const expRequired = getRequiredExp(hunter.level);
   const expPercent = Math.floor((hunter.exp / expRequired) * 100);
+  const statistics = stateManager.get('statistics');
+  const currentStreak = statistics.currentStreak || 0;
+
+  // 일일 명언 및 평가
+  const dailyQuote = getDailyQuote();
+  const evaluationInsights = generateDailyEvaluation(hunter.stats, [], currentStreak);
+
+  // 경고 체크 (3일 이상 연속 기록 없음)
+  const showStreakWarning = currentStreak === 0 && !isRealHunter;
 
   app.innerHTML = `
     <div class="dashboard-screen">
+      <!-- 오늘의 명언 위젯 -->
+      <div class="quote-widget">
+        <div class="quote-icon">&#128172;</div>
+        <div class="quote-content">
+          <p class="quote-text">"${dailyQuote.text}"</p>
+          <span class="quote-author">- ${dailyQuote.author}</span>
+        </div>
+      </div>
+
       <!-- 헌터 모드 배너 -->
       <div class="hunter-mode-banner ${isRealHunter ? 'real' : 'simulation'}">
         <div class="mode-icon">${isRealHunter ? '&#128293;' : '&#128308;'}</div>
@@ -32,6 +52,18 @@ export function renderDashboard() {
           <a href="#quests" class="mode-action">퀘스트 시작</a>
         ` : ''}
       </div>
+      ${!isRealHunter ? `
+      <div class="simulation-guide">
+        <p>현실 퀘스트를 완료하여 실전 보상(100%)을 획득하세요!</p>
+      </div>
+      ` : ''}
+
+      ${showStreakWarning ? `
+      <div class="streak-warning">
+        <span class="warning-icon">&#9888;</span>
+        <p>${WARNING_MESSAGES.simulation_only}</p>
+      </div>
+      ` : ''}
 
       <!-- 헌터 정보 카드 -->
       <div class="card hunter-card">
@@ -84,8 +116,7 @@ export function renderDashboard() {
         </div>
         <div class="idle-info">
           <p>STR 스탯이 높을수록 초당 골드가 증가합니다.</p>
-          ${daily.questsCompleted >= 3 ? '<span class="idle-bonus">+20% 퀘스트 보너스 적용 중!</span>' : ''}
-          ${daily.questsCompleted === 0 ? '<span class="idle-penalty">-30% 시뮬레이션 패널티</span>' : ''}
+          <p class="idle-crit-info">FOCUS가 높을수록 크리티컬 확률이 증가합니다.</p>
         </div>
       </div>
 
@@ -104,8 +135,24 @@ export function renderDashboard() {
           <div class="progress-item">
             <span class="progress-icon">&#128293;</span>
             <span class="progress-label">연속 기록</span>
-            <span class="progress-value">${stateManager.get('statistics').currentStreak}일</span>
+            <span class="progress-value">${currentStreak}일</span>
           </div>
+        </div>
+      </div>
+
+      <!-- 일일 평가 패널 -->
+      <div class="card evaluation-card">
+        <div class="card-header">
+          <h3>시스템 분석</h3>
+          <span class="evaluation-icon">&#128202;</span>
+        </div>
+        <div class="evaluation-insights">
+          ${evaluationInsights.map(insight => `
+            <div class="insight-item">
+              <span class="insight-bullet">&#8226;</span>
+              <p>${insight}</p>
+            </div>
+          `).join('')}
         </div>
       </div>
 
@@ -135,8 +182,57 @@ export function renderDashboard() {
   updateIdleRate();
   if (idleUpdateInterval) clearInterval(idleUpdateInterval);
   idleUpdateInterval = setInterval(updateIdleRate, 1000);
+
+  // 크리티컬 컨테이너 생성
+  ensureCriticalContainer();
+
+  // 크리티컬 이벤트 구독
+  if (criticalUnsubscribe) criticalUnsubscribe();
+  criticalUnsubscribe = stateManager.subscribe('critical', showCriticalAnimation);
 }
 
+// 크리티컬 컨테이너가 없으면 생성
+function ensureCriticalContainer() {
+  if (!document.getElementById('critical-container')) {
+    const container = document.createElement('div');
+    container.id = 'critical-container';
+    document.body.appendChild(container);
+  }
+}
+
+// 크리티컬 애니메이션 표시
+function showCriticalAnimation(data) {
+  const container = document.getElementById('critical-container');
+  if (!container) return;
+
+  // 기존 애니메이션 제거
+  container.innerHTML = '';
+
+  // 크리티컬 텍스트 생성
+  const wrapper = document.createElement('div');
+  wrapper.style.textAlign = 'center';
+
+  const critText = document.createElement('div');
+  critText.className = 'critical-text';
+  critText.textContent = 'CRITICAL!';
+
+  const goldText = document.createElement('div');
+  goldText.className = 'critical-gold';
+  goldText.textContent = `+${data.gold} G`;
+
+  wrapper.appendChild(critText);
+  wrapper.appendChild(goldText);
+  container.appendChild(wrapper);
+
+  // 애니메이션 종료 후 제거
+  setTimeout(() => {
+    if (container.contains(wrapper)) {
+      container.removeChild(wrapper);
+    }
+  }, 800);
+}
+
+// Design v3.0: goldPerSecond = baseGold * (1 + STR * 0.05)
 function updateIdleRate() {
   const rateEl = document.getElementById('idleRate');
   if (!rateEl) {
@@ -145,10 +241,9 @@ function updateIdleRate() {
   }
 
   const hunter = stateManager.get('hunter');
-  const daily = stateManager.get('daily');
   if (!hunter) return;
 
-  let goldPerSecond = calculateIdleGold(hunter.stats.STR, daily.questsCompleted);
+  let goldPerSecond = calculateIdleGold(hunter.stats.STR);
 
   // 시뮬레이션 패널티
   if (!stateManager.isRealHunterToday()) {

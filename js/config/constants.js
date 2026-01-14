@@ -71,11 +71,12 @@ export const GAME_CONSTANTS = {
     SIMULATION: 0.35       // 시뮬레이션 모드
   },
 
-  // 아이들 골드 계산
+  // 아이들 골드 계산 (Design v3.0: goldPerSecond = baseGold * (1 + STR * 0.05))
   IDLE_BASE_GOLD: 1,
-  IDLE_STR_MULTIPLIER: 0.05,
-  IDLE_QUEST_BONUS: 0.2,      // 오늘 퀘스트 3개+ 완료 시 +20%
-  IDLE_NO_QUEST_PENALTY: 0.3, // 오늘 퀘스트 0개 시 -30%
+  IDLE_STR_MULTIPLIER: 0.05,  // STR 1당 5% 증가
+
+  // 크리티컬 히트 (Design v3.0)
+  CRITICAL_ANIMATION_COOLDOWN: 1500, // 1.5초 쿨다운 (애니메이션 스팸 방지)
 
   // 게이트 종류
   GATE_TYPES: {
@@ -90,7 +91,7 @@ export const GAME_CONSTANTS = {
     NORMAL: { id: 'normal', name: '일반', color: '#9ca3af', obtain: 'gold' },
     RARE: { id: 'rare', name: '레어', color: '#3b82f6', obtain: 'ads' },
     EPIC: { id: 'epic', name: '에픽', color: '#a855f7', obtain: 'events' },
-    LEGENDARY: { id: 'legendary', name: '전설', color: '#f59e0b', obtain: 'achievement' }
+    LEGENDARY: { id: 'legendary', name: '전설', color: '#fbbf24', obtain: 'achievement' }
   },
 
   // 광고 보상 (외부 에너지 계약)
@@ -117,17 +118,9 @@ export function getAutoBattleCritRate(focus) {
   return GAME_CONSTANTS.AUTO_BATTLE_CRIT_BASE + (focus * GAME_CONSTANTS.AUTO_BATTLE_CRIT_PER_FOCUS);
 }
 
-// 아이들 초당 골드 계산
-export function calculateIdleGold(str, questsCompletedToday) {
-  let gold = GAME_CONSTANTS.IDLE_BASE_GOLD * (1 + str * GAME_CONSTANTS.IDLE_STR_MULTIPLIER);
-
-  if (questsCompletedToday >= 3) {
-    gold *= (1 + GAME_CONSTANTS.IDLE_QUEST_BONUS);
-  } else if (questsCompletedToday === 0) {
-    gold *= (1 - GAME_CONSTANTS.IDLE_NO_QUEST_PENALTY);
-  }
-
-  return gold;
+// 아이들 초당 골드 계산 (Design v3.0: goldPerSecond = baseGold * (1 + STR * 0.05))
+export function calculateIdleGold(str) {
+  return GAME_CONSTANTS.IDLE_BASE_GOLD * (1 + str * GAME_CONSTANTS.IDLE_STR_MULTIPLIER);
 }
 
 // 보상 계산 (리얼 헌터 vs 시뮬레이션)

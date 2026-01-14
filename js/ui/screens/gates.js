@@ -1,6 +1,8 @@
 // The Hunter System - 게이트 화면
 import { stateManager } from '../../core/stateManager.js';
-import { GAME_CONSTANTS, calculateCombatStats, calculateReward } from '../../config/constants.js';
+import { gateSystem } from '../../core/gateSystem.js';
+import { GAME_CONSTANTS, calculateCombatStats } from '../../config/constants.js';
+import { GATE_ENTRY_WARNINGS } from '../../config/narrative.js';
 
 // 게이트 데이터
 const GATES = [
@@ -39,11 +41,12 @@ const GATES = [
     type: 'WEEKEND',
     rank: 'B',
     name: 'B급 레이드',
-    description: '주말 한정 고급 레이드',
+    description: '주말 한정 고급 레이드 (보스 출현)',
     minLevel: 15,
     monsters: 15,
     baseReward: { exp: 400, gold: 1000 },
-    weekendOnly: true
+    weekendOnly: true,
+    hasBoss: true
   },
   {
     id: 'simulation',
@@ -57,6 +60,22 @@ const GATES = [
     isSimulation: true
   }
 ];
+
+/**
+ * 통합 보상 공식: finalReward = base * hunterMultiplier * gateMultiplier * costumeMultiplier
+ */
+function calculateFinalReward(baseReward, isRealHunter, gateMultiplier) {
+  const hunterMultiplier = isRealHunter
+    ? GAME_CONSTANTS.REWARD_MULTIPLIER.REAL_HUNTER
+    : GAME_CONSTANTS.REWARD_MULTIPLIER.SIMULATION;
+
+  const costumeMultiplier = stateManager.getCostumeExpBonus();
+
+  return {
+    exp: Math.floor(baseReward.exp * hunterMultiplier * gateMultiplier * costumeMultiplier),
+    gold: Math.floor(baseReward.gold * hunterMultiplier * gateMultiplier)
+  };
+}
 
 let battleState = null;
 
@@ -72,6 +91,14 @@ export function renderGates() {
 
   const isRealHunter = stateManager.isRealHunterToday();
   const isWeekend = [0, 6].includes(new Date().getDay());
+  const currentGate = gateSystem.getCurrentGate();
+  const gateMultiplier = gateSystem.getGateRewardMultiplier();
+
+  // 돌발 게이트 상태
+  const isSuddenActive = gateSystem.isSuddenGateActive();
+  const isSuddenCleared = gateSystem.isSuddenGateCleared();
+  const suddenRemaining = gateSystem.getSuddenGateRemainingTime();
+  const suddenReward = gateSystem.calculateSuddenGateReward();
 
   app.innerHTML = `
     <div class="gates-screen">
@@ -80,11 +107,44 @@ export function renderGates() {
         <p class="screen-subtitle">던전을 클리어하고 보상을 획득하세요</p>
       </div>
 
+      <!-- 현재 게이트 상태 -->
+      <div class="current-gate-banner gate-${currentGate.id}">
+        <span class="gate-name">${currentGate.name}</span>
+        ${gateMultiplier > 1 ? `<span class="gate-bonus">보상 x${gateMultiplier}</span>` : ''}
+        ${isWeekend && currentGate.id === 'weekend' ? '<span class="boss-indicator">&#128128; BOSS</span>' : ''}
+      </div>
+
       <!-- 헌터 모드 상태 -->
       <div class="hunter-mode-indicator ${isRealHunter ? 'real' : 'simulation'}">
         <span class="mode-label">${isRealHunter ? 'Real Hunter' : 'Simulation Mode'}</span>
-        <span class="mode-multiplier">보상 x${isRealHunter ? '1.0' : '0.35'}</span>
+        <span class="mode-multiplier">헌터 배율 x${isRealHunter ? '1.0' : '0.35'}</span>
       </div>
+
+      <!-- 게이트 입장 경고 배너 -->
+      <div class="gate-warning-banner ${isRealHunter ? 'real' : 'simulation'}">
+        <span class="warning-icon">${isRealHunter ? '&#9889;' : '&#9888;'}</span>
+        <p>${isRealHunter ? GATE_ENTRY_WARNINGS.real : GATE_ENTRY_WARNINGS.simulation}</p>
+      </div>
+
+      <!-- 돌발 게이트 (활성화 시) -->
+      ${isSuddenActive ? `
+        <div class="card sudden-gate-card ${isSuddenCleared ? 'cleared' : 'active'}">
+          <div class="sudden-gate-header">
+            <span class="sudden-icon">&#9888;</span>
+            <h3>돌발 게이트</h3>
+            <span class="sudden-timer">${suddenRemaining ? Math.ceil(suddenRemaining / 60000) + '분 남음' : ''}</span>
+          </div>
+          <p class="sudden-desc">긴급 출현! 클리어 시 10분치 골드 보상</p>
+          <div class="sudden-reward">
+            <span>보상: +${suddenReward.exp} EXP / +${suddenReward.gold} G</span>
+          </div>
+          ${!isSuddenCleared ? `
+            <button class="btn-clear-sudden" id="clearSuddenBtn">돌발 게이트 클리어!</button>
+          ` : `
+            <div class="sudden-cleared-badge">클리어 완료!</div>
+          `}
+        </div>
+      ` : ''}
 
       <!-- 게이트 목록 -->
       <div class="gates-list">
@@ -92,14 +152,20 @@ export function renderGates() {
           const isLocked = hunter.level < gate.minLevel;
           const isWeekendGate = gate.weekendOnly;
           const isAvailable = !isLocked && (!isWeekendGate || isWeekend);
-          const reward = calculateReward(gate.baseReward, isRealHunter && !gate.isSimulation);
+          // 통합 보상 공식 적용
+          const reward = calculateFinalReward(
+            gate.baseReward,
+            isRealHunter && !gate.isSimulation,
+            gateMultiplier
+          );
 
           return `
-            <div class="gate-card ${isLocked ? 'locked' : ''} ${!isAvailable ? 'unavailable' : ''}"
+            <div class="gate-card ${isLocked ? 'locked' : ''} ${!isAvailable ? 'unavailable' : ''} ${gate.hasBoss && isWeekend ? 'has-boss' : ''}"
                  data-gate-id="${gate.id}">
               <div class="gate-header">
                 <span class="gate-rank rank-${gate.rank.toLowerCase()}">${gate.rank}</span>
                 <span class="gate-type">${GAME_CONSTANTS.GATE_TYPES[gate.type]?.name || gate.type}</span>
+                ${gate.hasBoss && isWeekend ? '<span class="boss-badge">BOSS</span>' : ''}
               </div>
               <h3 class="gate-name">${gate.name}</h3>
               <p class="gate-desc">${gate.description}</p>
@@ -173,6 +239,24 @@ function setupGateEvents() {
         const randomGate = availableGates[Math.floor(Math.random() * availableGates.length)];
         stateManager.update('daily', { randomGateUsed: true });
         startBattle(randomGate, true);
+      }
+    });
+  }
+
+  // 돌발 게이트 클리어
+  const clearSuddenBtn = document.getElementById('clearSuddenBtn');
+  if (clearSuddenBtn) {
+    clearSuddenBtn.addEventListener('click', () => {
+      const result = gateSystem.clearSuddenGate();
+      if (result.success) {
+        if (window.showNotification) {
+          window.showNotification(`돌발 게이트 클리어! +${result.reward.exp} EXP, +${result.reward.gold} G`, 'success');
+        }
+        renderGates(); // UI 갱신
+      } else {
+        if (window.showNotification) {
+          window.showNotification(result.error, 'error');
+        }
       }
     });
   }
@@ -289,7 +373,10 @@ function runBattleTurn() {
 function endBattle(victory) {
   const { gate, isRealHunter } = battleState;
   const battleArea = document.getElementById('battleArea');
-  const reward = calculateReward(gate.baseReward, isRealHunter);
+  const gateMultiplier = gateSystem.getGateRewardMultiplier();
+
+  // 통합 보상 공식: base * hunterMultiplier * gateMultiplier * costumeMultiplier
+  const reward = calculateFinalReward(gate.baseReward, isRealHunter, gateMultiplier);
 
   if (victory) {
     stateManager.gainExp(reward.exp);
@@ -302,6 +389,7 @@ function endBattle(victory) {
           <p>+${reward.exp} EXP</p>
           <p>+${reward.gold} G</p>
           ${!isRealHunter ? '<p class="penalty-note">(시뮬레이션 모드: 35% 보상)</p>' : ''}
+          ${gateMultiplier > 1 ? `<p class="bonus-note">(게이트 보너스: x${gateMultiplier})</p>` : ''}
         </div>
         <button class="btn-primary" id="closeBattle">확인</button>
       </div>

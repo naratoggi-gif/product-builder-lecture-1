@@ -1,5 +1,6 @@
 // The Hunter System - 상태 관리자
-import { GAME_CONSTANTS, getRequiredExp, calculateIdleGold } from '../config/constants.js';
+import { GAME_CONSTANTS, getRequiredExp, calculateIdleGold, getAutoBattleCritRate } from '../config/constants.js';
+import { getCostumeById, getCostumeStatBonus } from '../config/costumes.js';
 
 const STORAGE_KEY = GAME_CONSTANTS.STORAGE_KEY;
 
@@ -10,6 +11,14 @@ export class StateManager {
     this.idleTimer = null;
     this.load();
     this.startIdleSystem();
+  }
+
+  // 로컬 타임존 기준 오늘 날짜 키 (YYYY-MM-DD)
+  getLocalDayKey(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   getDefaultState() {
@@ -28,16 +37,21 @@ export class StateManager {
       costumes: [],
       equippedCostume: null,
 
-      // 일일 데이터 (매일 리셋)
+      // 일일 데이터 (매일 리셋) - 로컬 타임존 YYYY-MM-DD
       daily: {
-        date: new Date().toISOString().split('T')[0],
+        date: this.getLocalDayKey(),
         stamina: GAME_CONSTANTS.DAILY_STAMINA,
         questsCompleted: 0,
+        restQuestsCompleted: 0, // 휴식 퀘스트 카운트 (Real Hunter 판정 시 1개만 인정)
         randomGateUsed: false,
         adWatched: {
           autoBattle: false,
           stamina: 0,
           gateRetry: false
+        },
+        suddenGate: {
+          triggered: false,
+          endTime: null
         }
       },
 
@@ -66,16 +80,18 @@ export class StateManager {
     };
   }
 
-  // 오늘 날짜 체크 및 일일 리셋
+  // 오늘 날짜 체크 및 일일 리셋 (로컬 타임존 기준)
   checkDailyReset() {
-    const today = new Date().toISOString().split('T')[0];
+    const today = this.getLocalDayKey();
     if (this.state.daily.date !== today) {
       // 연속 기록 업데이트
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const yesterdayStr = this.getLocalDayKey(yesterday);
 
-      if (this.state.daily.date === yesterdayStr && this.state.daily.questsCompleted > 0) {
+      // Real Hunter로 퀘스트를 완료했는지 확인 (휴식 퀘스트 1개만 인정)
+      const wasRealHunter = this.isRealHunterToday();
+      if (this.state.daily.date === yesterdayStr && wasRealHunter) {
         this.state.statistics.currentStreak++;
         if (this.state.statistics.currentStreak > this.state.statistics.longestStreak) {
           this.state.statistics.longestStreak = this.state.statistics.currentStreak;
@@ -89,11 +105,16 @@ export class StateManager {
         date: today,
         stamina: GAME_CONSTANTS.DAILY_STAMINA,
         questsCompleted: 0,
+        restQuestsCompleted: 0,
         randomGateUsed: false,
         adWatched: {
           autoBattle: false,
           stamina: 0,
           gateRetry: false
+        },
+        suddenGate: {
+          triggered: false,
+          endTime: null
         }
       };
       this.save();
@@ -215,8 +236,14 @@ export class StateManager {
 
   // ========== 퀘스트 관련 ==========
 
-  // 퀘스트 생성
+  // 퀘스트 생성 (Design v3.0: completeAvailableAt = createdAt + waitMinutes(FOCUS))
   createQuest(questData) {
+    const hunter = this.state.hunter;
+    const focus = hunter ? hunter.stats.FOCUS : 5;
+    const waitMinutes = this.getQuestWaitTime(focus);
+    const createdAt = new Date();
+    const completeAvailableAt = new Date(createdAt.getTime() + waitMinutes * 60 * 1000);
+
     const quest = {
       id: Date.now(),
       title: questData.title,
@@ -224,8 +251,8 @@ export class StateManager {
       grade: questData.grade || 'D',
       staminaCost: GAME_CONSTANTS.QUEST_STAMINA_COST[questData.grade || 'D'],
       reward: GAME_CONSTANTS.QUEST_BASE_REWARDS[questData.grade || 'D'],
-      createdAt: new Date().toISOString(),
-      completeAvailableAt: null, // 완료 가능 시간 (FOCUS 기반 대기시간 후)
+      createdAt: createdAt.toISOString(),
+      completeAvailableAt: completeAvailableAt.toISOString(), // Design v3.0: 생성 시 대기시간 설정
       status: 'pending' // pending, in_progress, completed
     };
 
@@ -234,7 +261,7 @@ export class StateManager {
     return quest;
   }
 
-  // 퀘스트 시작 (스태미나 소모)
+  // 퀘스트 시작 (스태미나 소모) - Design v3.0: completeAvailableAt은 생성 시 설정됨
   startQuest(questId) {
     const quest = this.state.quests.find(q => q.id === questId);
     if (!quest) return { success: false, error: '퀘스트를 찾을 수 없습니다' };
@@ -246,19 +273,13 @@ export class StateManager {
     // 스태미나 소모
     this.state.daily.stamina -= quest.staminaCost;
 
-    // 대기시간 계산 (FOCUS 기반)
-    const hunter = this.state.hunter;
-    const focus = hunter ? hunter.stats.FOCUS : 5;
-    const waitMinutes = this.getQuestWaitTime(focus);
-    const completeAvailableAt = new Date(Date.now() + waitMinutes * 60 * 1000).toISOString();
-
     quest.status = 'in_progress';
-    quest.completeAvailableAt = completeAvailableAt;
+    // completeAvailableAt은 createQuest에서 이미 설정됨
 
     this.set('quests', this.state.quests);
     this.save();
 
-    return { success: true, waitMinutes, completeAvailableAt };
+    return { success: true, completeAvailableAt: quest.completeAvailableAt };
   }
 
   // 퀘스트 대기시간 계산
@@ -267,7 +288,7 @@ export class StateManager {
     return tier ? tier.minutes : 10;
   }
 
-  // 퀘스트 완료
+  // 퀘스트 완료 - 퀘스트 보상은 항상 100% 지급 (Real Hunter가 되는 행위)
   completeQuest(questId) {
     const questIndex = this.state.quests.findIndex(q => q.id === questId);
     if (questIndex === -1) return { success: false, error: '퀘스트를 찾을 수 없습니다' };
@@ -279,22 +300,26 @@ export class StateManager {
       return { success: false, error: '아직 완료할 수 없습니다' };
     }
 
-    // 보상 계산 (100% - 리얼 헌터)
+    // 보상 계산 (퀘스트 보상은 항상 100% - 실생활 퀘스트이므로)
     const hunter = this.state.hunter;
-    const intBonus = hunter ? 1 + (hunter.stats.INT * 0.02) : 1;
-    const expReward = Math.floor(quest.reward.exp * intBonus);
-    const goldReward = Math.floor(quest.reward.gold * intBonus);
+    const effectiveStats = this.getEffectiveStats() || hunter.stats;
+    const intBonus = hunter ? 1 + (effectiveStats.INT * 0.02) : 1;
+    const costumeBonus = this.getCostumeBonus();
+    const expReward = Math.floor(quest.reward.exp * intBonus * costumeBonus.expMult);
+    const goldReward = Math.floor(quest.reward.gold * intBonus * costumeBonus.goldMult);
 
     // 카테고리에 따른 스탯 보너스
     const category = GAME_CONSTANTS.QUEST_CATEGORIES[quest.category];
+    const isRestQuest = category && category.stat === 'STAMINA';
     let statGain = null;
-    if (category && category.stat !== 'STAMINA' && hunter) {
+
+    if (category && !isRestQuest && hunter) {
       // 10% 확률로 해당 스탯 +1
       if (Math.random() < 0.1) {
         hunter.stats[category.stat]++;
         statGain = category.stat;
       }
-    } else if (category && category.stat === 'STAMINA') {
+    } else if (isRestQuest) {
       // 휴식 카테고리: 스태미나 회복
       this.state.daily.stamina = Math.min(
         this.state.daily.stamina + 20,
@@ -312,6 +337,9 @@ export class StateManager {
 
     // 일일 퀘스트 카운트 증가
     this.state.daily.questsCompleted++;
+    if (isRestQuest) {
+      this.state.daily.restQuestsCompleted++; // 휴식 퀘스트 별도 카운트 (anti-abuse)
+    }
     this.state.statistics.totalQuestsCompleted++;
 
     this.save();
@@ -341,27 +369,105 @@ export class StateManager {
 
   // ========== 헌터 모드 체크 ==========
 
-  // 오늘 실제 퀘스트를 완료했는지 확인
+  /**
+   * Real Hunter 판정 로직:
+   * - 오늘 >= 1개의 실생활 퀘스트를 완료했는가?
+   * - 휴식 퀘스트는 1개까지만 Real 자격에 인정 (anti-abuse)
+   *
+   * 예: 휴식 퀘스트만 3개 완료 → 1개만 인정 → Real Hunter
+   * 예: 휴식 퀘스트만 0개 완료 → Simulation
+   * 예: 운동 1개 + 휴식 5개 → 운동 1개 + 휴식 1개 = 2개 인정 → Real Hunter
+   */
   isRealHunterToday() {
-    return this.state.daily.questsCompleted > 0;
+    this.checkDailyReset();
+    const { questsCompleted, restQuestsCompleted } = this.state.daily;
+
+    // 비휴식 퀘스트 수 = 전체 - 휴식
+    const nonRestQuests = questsCompleted - restQuestsCompleted;
+
+    // Real 자격 인정 퀘스트 수 = 비휴식 + min(휴식, 1)
+    const eligibleQuests = nonRestQuests + Math.min(restQuestsCompleted, 1);
+
+    return eligibleQuests >= 1;
   }
 
-  // 현재 보상 배율 가져오기
+  // 현재 헌터 타입 가져오기 ("Real" 또는 "Simulation")
+  getHunterType() {
+    return this.isRealHunterToday() ? 'Real' : 'Simulation';
+  }
+
+  // 현재 보상 배율 가져오기 (Real: 1.0, Simulation: 0.35)
   getCurrentRewardMultiplier() {
     return this.isRealHunterToday()
       ? GAME_CONSTANTS.REWARD_MULTIPLIER.REAL_HUNTER
       : GAME_CONSTANTS.REWARD_MULTIPLIER.SIMULATION;
   }
 
+  // 장착된 코스튬의 EXP 배율 가져오기
+  getCostumeExpBonus() {
+    const bonus = this.getCostumeBonus();
+    return bonus.expMult;
+  }
+
+  // 장착된 코스튬의 골드 배율 가져오기
+  getCostumeGoldBonus() {
+    const bonus = this.getCostumeBonus();
+    return bonus.goldMult;
+  }
+
+  /**
+   * 장착된 코스튬의 전체 statBonus 가져오기
+   * @returns { expMult, goldMult, strFlat, intFlat, wilFlat, focusFlat, lukFlat }
+   */
+  getCostumeBonus() {
+    const equippedCostume = this.state.equippedCostume;
+    return getCostumeStatBonus(equippedCostume);
+  }
+
+  /**
+   * 코스튬 플랫 보너스가 적용된 효과 스탯 계산
+   * 기본 스탯 + 코스튬 플랫 보너스
+   */
+  getEffectiveStats() {
+    const hunter = this.state.hunter;
+    if (!hunter) return null;
+
+    const bonus = this.getCostumeBonus();
+    return {
+      STR: hunter.stats.STR + bonus.strFlat,
+      INT: hunter.stats.INT + bonus.intFlat,
+      WIL: hunter.stats.WIL + bonus.wilFlat,
+      FOCUS: hunter.stats.FOCUS + bonus.focusFlat,
+      LUK: hunter.stats.LUK + bonus.lukFlat
+    };
+  }
+
+  // 장착된 코스튬 정보 가져오기
+  getEquippedCostume() {
+    const equippedCostume = this.state.equippedCostume;
+    if (!equippedCostume) return null;
+    return getCostumeById(equippedCostume);
+  }
+
+  // 현재 직업 이름 가져오기
+  getCurrentJobName() {
+    const costume = this.getEquippedCostume();
+    return costume ? costume.jobTitle : '각성한 자';
+  }
+
   // ========== 아이들 시스템 ==========
 
   startIdleSystem() {
+    // 크리티컬 애니메이션 쿨다운 타임스탬프 초기화
+    this.lastCriticalAnimationTime = 0;
+
     // 1초마다 아이들 골드 계산
     this.idleTimer = setInterval(() => {
       this.updateIdleGold();
     }, 1000);
   }
 
+  // Design v3.0: 크리티컬 히트 시스템 (매 틱마다 5% + FOCUS*0.3% 확률로 2배 골드)
   updateIdleGold() {
     const hunter = this.state.hunter;
     if (!hunter) return;
@@ -372,8 +478,10 @@ export class StateManager {
 
     if (elapsedSeconds > 0) {
       const str = hunter.stats.STR;
-      const questsToday = this.state.daily.questsCompleted;
-      let goldPerSecond = calculateIdleGold(str, questsToday);
+      const focus = hunter.stats.FOCUS;
+
+      // Design v3.0: goldPerSecond = baseGold * (1 + STR * 0.05)
+      let goldPerSecond = calculateIdleGold(str);
 
       // 자동전투 부스트 체크
       if (this.state.idle.autoBattleBoost) {
@@ -389,7 +497,18 @@ export class StateManager {
         goldPerSecond *= GAME_CONSTANTS.REWARD_MULTIPLIER.SIMULATION;
       }
 
-      const goldEarned = Math.floor(goldPerSecond * elapsedSeconds);
+      let goldEarned = Math.floor(goldPerSecond * elapsedSeconds);
+
+      // Design v3.0: 크리티컬 히트 체크 (매 틱마다 critChance = 0.05 + FOCUS * 0.003)
+      let isCritical = false;
+      if (goldEarned > 0) {
+        const critChance = 0.05 + (focus * 0.003); // 5% + FOCUS당 0.3%
+        if (Math.random() < critChance) {
+          goldEarned *= 2; // 크리티컬 시 골드 2배
+          isCritical = true;
+        }
+      }
+
       if (goldEarned > 0) {
         hunter.gold += goldEarned;
         this.state.idle.totalGoldEarned += goldEarned;
@@ -398,10 +517,20 @@ export class StateManager {
       this.state.idle.lastUpdate = now;
       this.save();
       this.notify('idle', this.state.idle);
+
+      // Design v3.0: 크리티컬 발생 시 애니메이션 (1.5초 쿨다운 적용)
+      if (isCritical) {
+        const cooldown = GAME_CONSTANTS.CRITICAL_ANIMATION_COOLDOWN || 1500;
+        if (now - this.lastCriticalAnimationTime >= cooldown) {
+          this.lastCriticalAnimationTime = now;
+          this.notify('critical', { gold: goldEarned });
+        }
+        // 쿨다운 중이라도 골드는 이미 2배 적용됨
+      }
     }
   }
 
-  // 오프라인 보상 계산
+  // 오프라인 보상 계산 (Design v3.0)
   calculateOfflineReward() {
     const hunter = this.state.hunter;
     if (!hunter) return 0;
@@ -414,7 +543,7 @@ export class StateManager {
     );
 
     const str = hunter.stats.STR;
-    let goldPerSecond = calculateIdleGold(str, 0); // 오프라인은 퀘스트 보너스 없음
+    let goldPerSecond = calculateIdleGold(str); // Design v3.0: 단순화된 공식
     goldPerSecond *= GAME_CONSTANTS.REWARD_MULTIPLIER.SIMULATION; // 오프라인은 시뮬레이션 배율
 
     return Math.floor(goldPerSecond * elapsedSeconds);

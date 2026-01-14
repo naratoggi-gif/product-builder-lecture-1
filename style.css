@@ -68,6 +68,13 @@ body {
   z-index: 100;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .app-title {
   font-size: 1.2rem;
   font-weight: 700;
@@ -462,6 +469,23 @@ body {
   text-decoration: none;
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+/* 시뮬레이션 가이드 */
+.simulation-guide {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(239, 68, 68, 0.1));
+  border: 1px dashed var(--warning);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.simulation-guide p {
+  color: var(--warning);
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin: 0;
 }
 
 /* 헌터 카드 */
@@ -1232,6 +1256,45 @@ body {
 }
 
 /* === 게이트 화면 === */
+
+/* 현재 게이트 배너 */
+.current-gate-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.current-gate-banner.gate-weekday {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(59, 130, 246, 0.1));
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+}
+
+.current-gate-banner.gate-weekend {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(239, 68, 68, 0.1));
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.current-gate-banner.gate-sudden {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(168, 85, 247, 0.1));
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: #c084fc;
+  animation: glowPurple 1s ease-in-out infinite;
+}
+
+.gate-bonus {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+}
+
 .hunter-mode-indicator {
   display: flex;
   justify-content: space-between;
@@ -1690,6 +1753,190 @@ body {
   color: var(--text-secondary);
 }
 
+/* ========== 장착 코스튬 카드 ========== */
+.equipped-costume-card {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(6, 182, 212, 0.1));
+  border-color: var(--primary);
+}
+
+.equipped-costume-card .exp-bonus {
+  background: var(--success);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.equipped-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.equipped-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.equipped-icon {
+  font-size: 2.5rem;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  width: 60px;
+  height: 60px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.equipped-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.equipped-job {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.equipped-name {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.btn-unequip {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.no-costume {
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.equipped-info .hint {
+  font-size: 0.8rem;
+  color: var(--primary);
+}
+
+/* ========== 코스튬 카드 확장 ========== */
+.costume-card.equipped {
+  border-color: var(--success);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), var(--bg-card));
+}
+
+.equipped-badge {
+  background: var(--success);
+  color: white;
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.costume-job-title {
+  color: var(--primary);
+  font-size: 0.85rem;
+  font-style: italic;
+  margin-bottom: 4px;
+}
+
+.costume-stats {
+  margin: 8px 0;
+}
+
+.costume-exp-bonus {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-secondary);
+  padding: 6px 10px;
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+.exp-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.exp-value {
+  font-weight: 700;
+  color: var(--success);
+}
+
+.costume-requirements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  margin: 8px 0;
+  font-size: 0.75rem;
+}
+
+.costume-requirements.unmet {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.costume-requirements.met {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.req-label {
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+
+.req-stat {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.req-stat.met {
+  background: var(--success);
+  color: white;
+}
+
+.req-stat.unmet {
+  background: var(--danger);
+  color: white;
+}
+
+.btn-equip-costume {
+  background: var(--success);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+
+.equipped-label {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.cannot-equip {
+  color: var(--danger);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
 /* 알림 */
 #notification-container {
   position: fixed;
@@ -1751,6 +1998,701 @@ body {
   to {
     opacity: 0;
     transform: translateY(-20px);
+  }
+}
+
+/* ========== 게이트 시스템 배경 ========== */
+
+/* 평일 게이트 - 푸른색 */
+.gate-weekday {
+  background: linear-gradient(180deg, #0a0a1a 0%, #0d1b2a 50%, #1b263b 100%);
+}
+
+.gate-weekday::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(59, 130, 246, 0.1) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* 주말 레이드 - 붉은색 */
+.gate-weekend {
+  background: linear-gradient(180deg, #1a0a0a 0%, #2a0d0d 50%, #3b1b1b 100%);
+}
+
+.gate-weekend::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(239, 68, 68, 0.15) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+  animation: pulseRed 3s ease-in-out infinite;
+}
+
+@keyframes pulseRed {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* 돌발 게이트 - 보라색 + 노이즈 */
+.gate-sudden {
+  background: linear-gradient(180deg, #0f0a1a 0%, #1a0d2a 50%, #2d1b3b 100%);
+}
+
+.gate-sudden::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(168, 85, 247, 0.2) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+  animation: pulsePurple 2s ease-in-out infinite;
+}
+
+@keyframes pulsePurple {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* 게이트 인디케이터 (헤더) */
+.gate-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.gate-indicator.weekday {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.gate-indicator.weekend {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  animation: glowRed 2s ease-in-out infinite;
+}
+
+.gate-indicator.sudden {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  animation: glowPurple 1s ease-in-out infinite;
+}
+
+@keyframes glowRed {
+  0%, 100% { box-shadow: 0 0 5px rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); }
+}
+
+@keyframes glowPurple {
+  0%, 100% { box-shadow: 0 0 5px rgba(168, 85, 247, 0.3); }
+  50% { box-shadow: 0 0 15px rgba(168, 85, 247, 0.6); }
+}
+
+.gate-icon {
+  font-size: 1rem;
+}
+
+/* ========== 돌발 게이트 WARNING 애니메이션 ========== */
+
+.sudden-gate-warning {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.9);
+  animation: warningFlash 0.2s ease-in-out 5;
+}
+
+.sudden-gate-warning.fade-out {
+  animation: fadeOutWarning 0.5s ease-out forwards;
+}
+
+@keyframes warningFlash {
+  0%, 100% { background: rgba(0, 0, 0, 0.9); }
+  50% { background: rgba(168, 85, 247, 0.3); }
+}
+
+@keyframes fadeOutWarning {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.warning-content {
+  text-align: center;
+  position: relative;
+}
+
+.warning-noise {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)' opacity='0.1'/%3E%3C/svg%3E");
+  animation: noiseMove 0.1s steps(3) infinite;
+  pointer-events: none;
+  opacity: 0.3;
+}
+
+@keyframes noiseMove {
+  0% { transform: translate(0, 0); }
+  33% { transform: translate(-5px, 5px); }
+  66% { transform: translate(5px, -5px); }
+  100% { transform: translate(0, 0); }
+}
+
+.warning-text {
+  font-size: 4rem;
+  font-weight: 900;
+  color: #a855f7;
+  text-shadow:
+    0 0 10px #a855f7,
+    0 0 20px #a855f7,
+    0 0 40px #7c3aed,
+    0 0 80px #7c3aed;
+  animation: warningPulse 0.5s ease-in-out infinite, glitch 0.3s ease-in-out infinite;
+  letter-spacing: 8px;
+}
+
+@keyframes warningPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes glitch {
+  0%, 100% { text-shadow: 0 0 10px #a855f7, 0 0 20px #a855f7, 0 0 40px #7c3aed; }
+  25% { text-shadow: -2px 0 #ef4444, 2px 0 #3b82f6, 0 0 20px #a855f7; }
+  75% { text-shadow: 2px 0 #ef4444, -2px 0 #3b82f6, 0 0 20px #a855f7; }
+}
+
+.warning-subtext {
+  font-size: 1.5rem;
+  color: #c084fc;
+  margin-top: 16px;
+  animation: fadeInUp 0.5s ease-out 0.3s both;
+}
+
+.warning-timer {
+  font-size: 1rem;
+  color: #9ca3b8;
+  margin-top: 12px;
+  animation: fadeInUp 0.5s ease-out 0.5s both;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* notification warning type */
+.notification-warning {
+  background: linear-gradient(135deg, #a855f7, #7c3aed);
+  color: white;
+}
+
+/* 크리티컬 히트 애니메이션 */
+#critical-container {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 500;
+  pointer-events: none;
+}
+
+.critical-text {
+  font-size: 3rem;
+  font-weight: 900;
+  color: #f59e0b;
+  text-shadow:
+    0 0 10px #f59e0b,
+    0 0 20px #f59e0b,
+    0 0 30px #f97316,
+    0 0 40px #f97316,
+    2px 2px 0 #000,
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000;
+  animation: criticalPop 0.8s ease-out forwards;
+  white-space: nowrap;
+}
+
+.critical-gold {
+  font-size: 1.5rem;
+  color: #fbbf24;
+  text-shadow:
+    0 0 10px #f59e0b,
+    2px 2px 0 #000;
+  animation: criticalGold 0.8s ease-out forwards;
+  margin-top: 8px;
+}
+
+@keyframes criticalPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  50% {
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.2) translateY(-30px);
+  }
+}
+
+@keyframes criticalGold {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+/* ========== 돌발 게이트 카드 ========== */
+.sudden-gate-card {
+  border: 2px solid #a855f7;
+  animation: suddenPulse 2s ease-in-out infinite;
+}
+
+.sudden-gate-card.active {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(168, 85, 247, 0.1));
+}
+
+.sudden-gate-card.cleared {
+  opacity: 0.7;
+  animation: none;
+  border-color: var(--success);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(16, 185, 129, 0.1));
+}
+
+@keyframes suddenPulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(168, 85, 247, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.6); }
+}
+
+.sudden-gate-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sudden-icon {
+  font-size: 1.5rem;
+  color: #a855f7;
+}
+
+.sudden-gate-header h3 {
+  flex: 1;
+  color: #c084fc;
+}
+
+.sudden-timer {
+  background: rgba(168, 85, 247, 0.3);
+  color: #c084fc;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.sudden-desc {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.sudden-reward {
+  background: var(--bg-secondary);
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  color: var(--success);
+  font-weight: 600;
+}
+
+.btn-clear-sudden {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #a855f7, #7c3aed);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  animation: clearBtnPulse 1s ease-in-out infinite;
+}
+
+@keyframes clearBtnPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+.sudden-cleared-badge {
+  text-align: center;
+  padding: 12px;
+  background: var(--success);
+  color: white;
+  border-radius: 12px;
+  font-weight: 700;
+}
+
+/* ========== 보스 인디케이터 ========== */
+.boss-indicator {
+  background: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  animation: bossGlow 2s ease-in-out infinite;
+}
+
+@keyframes bossGlow {
+  0%, 100% { box-shadow: 0 0 5px rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); }
+}
+
+.boss-badge {
+  background: var(--danger);
+  color: white;
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+  animation: bossBadgePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes bossBadgePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.gate-card.has-boss {
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* ========== 보너스 노트 ========== */
+.bonus-note {
+  font-size: 0.85rem !important;
+  color: var(--warning) !important;
+}
+
+/* ========== 코스튬 상점 업그레이드 ========== */
+.job-name-badge {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.equipped-bonuses {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.bonus-tag {
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.bonus-tag.exp {
+  background: rgba(139, 92, 246, 0.2);
+  color: var(--primary);
+}
+
+.bonus-tag.gold {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+}
+
+.equipped-stat-bonuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.stat-bonus {
+  background: var(--bg-secondary);
+  color: var(--success);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* 코스튬 카드 배율/플랫 보너스 */
+.costume-mult-bonus {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mult-tag {
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.mult-tag.exp {
+  background: rgba(139, 92, 246, 0.2);
+  color: var(--primary);
+}
+
+.mult-tag.gold {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+}
+
+.costume-flat-bonus {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* ========== 내러티브 UI ========== */
+
+/* 오늘의 명언 위젯 */
+.quote-widget {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.quote-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.quote-content {
+  flex: 1;
+}
+
+.quote-text {
+  font-size: 0.95rem;
+  font-style: italic;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.quote-author {
+  font-size: 0.8rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* 일일 평가 카드 */
+.evaluation-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.evaluation-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.evaluation-icon {
+  font-size: 1.2rem;
+  color: var(--secondary);
+}
+
+.evaluation-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.insight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.insight-bullet {
+  color: var(--secondary);
+  font-weight: 700;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.insight-item p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* 연속 기록 경고 */
+.streak-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.streak-warning .warning-icon {
+  font-size: 1.4rem;
+  color: var(--danger);
+}
+
+.streak-warning p {
+  font-size: 0.85rem;
+  color: var(--danger);
+  line-height: 1.4;
+}
+
+/* 게이트 입장 경고 */
+.gate-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.gate-warning-banner.simulation {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--danger);
+}
+
+.gate-warning-banner.real {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: var(--real-hunter);
+}
+
+.gate-warning-banner .warning-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+/* 퀘스트 완료 내러티브 메시지 */
+.quest-narrative-toast {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+  border: 1px solid var(--primary);
+  border-radius: 12px;
+  padding: 16px 24px;
+  max-width: 90%;
+  text-align: center;
+  z-index: 250;
+  animation: narrativeSlideIn 0.3s ease-out;
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.3);
+}
+
+.quest-narrative-toast .narrative-icon {
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.quest-narrative-toast .narrative-text {
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+@keyframes narrativeSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes narrativeFadeOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
   }
 }
 

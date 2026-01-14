@@ -1,8 +1,39 @@
 // The Hunter System - 퀘스트 화면
 import { stateManager } from '../../core/stateManager.js';
 import { GAME_CONSTANTS } from '../../config/constants.js';
+import { getQuestCompletionNarrative } from '../../config/narrative.js';
 
 let countdownInterval = null;
+
+// 내러티브 토스트 표시
+function showNarrativeToast(message, category) {
+  // 기존 토스트 제거
+  const existing = document.querySelector('.quest-narrative-toast');
+  if (existing) existing.remove();
+
+  // 카테고리별 아이콘
+  const icons = {
+    exercise: '&#128170;',  // 근육
+    study: '&#128218;',     // 책
+    meditation: '&#129504;', // 뇌
+    rest: '&#128164;'       // 수면
+  };
+
+  const toast = document.createElement('div');
+  toast.className = 'quest-narrative-toast';
+  toast.innerHTML = `
+    <span class="narrative-icon">${icons[category] || '&#10024;'}</span>
+    <p class="narrative-text">${message}</p>
+  `;
+
+  document.body.appendChild(toast);
+
+  // 2초 후 제거
+  setTimeout(() => {
+    toast.style.animation = 'narrativeFadeOut 0.3s ease-out forwards';
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
+}
 
 export function renderQuests() {
   const app = document.getElementById('app');
@@ -263,14 +294,23 @@ function setupEventListeners() {
   document.querySelectorAll('.btn-complete-quest').forEach(btn => {
     btn.addEventListener('click', () => {
       const questId = parseInt(btn.dataset.questId);
+      const quests = stateManager.get('quests');
+      const quest = quests.find(q => q.id === questId);
       const result = stateManager.completeQuest(questId);
 
       if (result.success) {
+        // 내러티브 메시지 표시
+        const narrative = getQuestCompletionNarrative(quest?.category || 'exercise');
+        showNarrativeToast(narrative, quest?.category);
+
+        // 보상 알림
         let msg = `퀘스트 완료! +${result.rewards.exp} EXP, +${result.rewards.gold} G`;
         if (result.rewards.statGain) {
           msg += ` (${result.rewards.statGain} +1!)`;
         }
-        window.showNotification(msg, 'success');
+        setTimeout(() => {
+          window.showNotification(msg, 'success');
+        }, 1500);
         renderQuests();
       } else {
         window.showNotification(result.error, 'error');

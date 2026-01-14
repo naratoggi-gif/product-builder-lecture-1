@@ -1,6 +1,7 @@
 // The Hunter System - 메인 앱
 import { router } from './ui/router.js';
 import { stateManager } from './core/stateManager.js';
+import { gateSystem } from './core/gateSystem.js';
 import { renderDashboard } from './ui/screens/dashboard.js';
 import { renderQuests } from './ui/screens/quests.js';
 import { renderHunter } from './ui/screens/hunter.js';
@@ -42,6 +43,11 @@ function initApp() {
   // 헌터 상태 표시 업데이트
   stateManager.subscribe('hunter', updateHunterStatus);
   updateHunterStatus();
+
+  // 게이트 시스템 초기화
+  gateSystem.init();
+  gateSystem.subscribe(updateGateIndicator);
+  updateGateIndicator();
 
   // 오프라인 보상 체크
   checkOfflineReward();
@@ -103,6 +109,51 @@ function updateHunterStatus() {
 
   statusEl.innerHTML = `
     <span class="status-badge ${statusClass}">${statusText}</span>
+  `;
+}
+
+// 게이트 인디케이터 업데이트
+function updateGateIndicator() {
+  // 게이트 인디케이터 컨테이너 확인/생성
+  let indicatorEl = document.getElementById('gateIndicator');
+  if (!indicatorEl) {
+    const headerLeft = document.querySelector('.header-left');
+    if (!headerLeft) return;
+
+    indicatorEl = document.createElement('div');
+    indicatorEl.id = 'gateIndicator';
+    headerLeft.appendChild(indicatorEl);
+  }
+
+  const hunter = stateManager.get('hunter');
+  if (!hunter) {
+    indicatorEl.innerHTML = '';
+    return;
+  }
+
+  const currentGate = gateSystem.getCurrentGate();
+  const gateIcons = {
+    weekday: '&#128682;',
+    weekend: '&#128128;',
+    sudden: '&#9888;'
+  };
+
+  let extraInfo = '';
+  if (currentGate.id === 'sudden') {
+    const remaining = gateSystem.getSuddenGateRemainingTime();
+    if (remaining) {
+      const mins = Math.ceil(remaining / 60000);
+      extraInfo = ` (${mins}분)`;
+    }
+  } else if (currentGate.id === 'weekend') {
+    extraInfo = ' (x5)';
+  }
+
+  indicatorEl.innerHTML = `
+    <div class="gate-indicator ${currentGate.id}">
+      <span class="gate-icon">${gateIcons[currentGate.id] || '&#128682;'}</span>
+      <span>${currentGate.name}${extraInfo}</span>
+    </div>
   `;
 }
 
