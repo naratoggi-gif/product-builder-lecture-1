@@ -149,6 +149,7 @@ function renderQuestCard(quest, hunter) {
   const category = GAME_CONSTANTS.QUEST_CATEGORIES[quest.category];
   const isInProgress = quest.status === 'in_progress';
   const canComplete = isInProgress && new Date(quest.completeAvailableAt) <= new Date();
+  const essenceReward = GAME_CONSTANTS.ESSENCE_GAIN[quest.grade] || 0;
 
   return `
     <div class="quest-card ${quest.status}" data-quest-id="${quest.id}">
@@ -159,7 +160,7 @@ function renderQuestCard(quest, hunter) {
       <h4 class="quest-title">${quest.title}</h4>
       <div class="quest-info">
         <span class="quest-stamina">&#9889; ${quest.staminaCost}</span>
-        <span class="quest-reward">+${quest.reward.exp} EXP / +${quest.reward.gold} G</span>
+        <span class="quest-reward">+${quest.reward.exp} EXP / +${essenceReward} E</span>
       </div>
       <div class="quest-actions">
         ${quest.status === 'pending' ? `
@@ -307,25 +308,15 @@ function setupEventListeners() {
         const narrative = getQuestCompletionNarrative(quest?.category || 'exercise');
         showNarrativeToast(narrative, quest?.category);
 
-        // 보상 알림 (Narrative Growth Update)
-        let msg = `완료! +${result.rewards.exp} EXP, +${result.rewards.gold} G`;
-        
-        if (result.rewards.statExpGained > 0) {
-           const category = GAME_CONSTANTS.QUEST_CATEGORIES[quest.category];
-           if (category) {
-             msg += ` / ${category.stat} 숙련도 +${result.rewards.statExpGained}`;
-           }
+        // 보상 알림 (v5.0: EXP + Essence only, no Gold from quests)
+        let msg = `완료! +${result.rewards.exp} EXP`;
+
+        if (result.rewards.essenceGained > 0) {
+          msg += `, +${result.rewards.essenceGained} 에센스`;
         }
 
         setTimeout(() => {
           window.showNotification(msg, 'success');
-          
-          if (result.rewards.statLevelUp) {
-             const slu = result.rewards.statLevelUp;
-             setTimeout(() => {
-                window.showNotification(`축하합니다! ${slu.stat} 스탯이 상승했습니다! (${slu.oldVal} -> ${slu.newVal})`, 'success');
-             }, 1000);
-          }
         }, 1500);
         renderQuests();
       } else {

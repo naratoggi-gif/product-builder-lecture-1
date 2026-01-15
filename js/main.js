@@ -5,10 +5,12 @@ import { gateSystem } from './core/gateSystem.js';
 import { renderDashboard } from './ui/screens/dashboard.js';
 import { renderQuests } from './ui/screens/quests.js';
 import { renderHunter } from './ui/screens/hunter.js';
+import { renderIdleGrowth } from './ui/screens/idleGrowth.js';
+import { renderHunterGrowth } from './ui/screens/hunterGrowth.js';
 import { renderGates } from './ui/screens/gates.js';
 import { renderShop } from './ui/screens/shop.js';
 import { renderAwakening } from './ui/screens/awakening.js';
-import { GAME_CONSTANTS } from './config/constants.js';
+import { GAME_CONSTANTS, getNextUnlockInfo } from './config/constants.js';
 
 // 앱 초기화
 function initApp() {
@@ -16,6 +18,8 @@ function initApp() {
   router.register('dashboard', renderDashboard);
   router.register('quests', renderQuests);
   router.register('hunter', renderHunter);
+  router.register('idle-growth', renderIdleGrowth);
+  router.register('hunter-growth', renderHunterGrowth);
   router.register('gates', renderGates);
   router.register('shop', renderShop);
   router.register('awakening', renderAwakening);
@@ -49,6 +53,9 @@ function initApp() {
   gateSystem.subscribe(updateGateIndicator);
   updateGateIndicator();
 
+  // 레벨 해금 이벤트 구독
+  stateManager.subscribe('levelUnlock', showUnlockRewardModal);
+
   // 오프라인 보상 체크
   checkOfflineReward();
 }
@@ -70,6 +77,14 @@ function renderNavbar() {
     <a href="#hunter" class="nav-item" data-route="hunter">
       <span class="nav-icon">&#129333;</span>
       <span class="nav-label">헌터</span>
+    </a>
+    <a href="#idle-growth" class="nav-item" data-route="idle-growth">
+      <span class="nav-icon">&#128200;</span>
+      <span class="nav-label">스탯</span>
+    </a>
+    <a href="#hunter-growth" class="nav-item" data-route="hunter-growth">
+      <span class="nav-icon">&#128084;</span>
+      <span class="nav-label">전직</span>
     </a>
     <a href="#gates" class="nav-item" data-route="gates">
       <span class="nav-icon">&#128682;</span>
@@ -160,7 +175,23 @@ function updateGateIndicator() {
 // 테마 적용
 function applyTheme() {
   const settings = stateManager.get('settings');
-  document.body.classList.toggle('dark-theme', settings.theme === 'dark');
+  const isDark = settings.theme === 'dark';
+
+  // Apply theme class
+  document.body.classList.toggle('light-theme', !isDark);
+  document.body.classList.toggle('dark-theme', isDark);
+
+  // Update theme icon
+  const themeIcon = document.querySelector('.theme-icon');
+  if (themeIcon) {
+    themeIcon.innerHTML = isDark ? '&#9728;' : '&#127769;'; // Sun for dark mode (switch to light), Moon for light mode (switch to dark)
+  }
+
+  // Update meta theme-color
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) {
+    metaTheme.content = isDark ? '#0a0a1a' : '#f8fafc';
+  }
 }
 
 // 테마 토글
@@ -206,6 +237,79 @@ window.resetGame = function() {
     stateManager.reset();
     location.reload();
   }
+};
+
+// ========== 레벨 해금 보상 모달 ==========
+function showUnlockRewardModal(data) {
+  const { oldLevel, newLevel, unlocks } = data;
+
+  // 모달 컨테이너 생성
+  const modal = document.createElement('div');
+  modal.className = 'unlock-modal';
+  modal.innerHTML = `
+    <div class="unlock-modal-backdrop"></div>
+    <div class="unlock-modal-content">
+      <div class="unlock-header">
+        <div class="level-up-badge">LEVEL UP!</div>
+        <div class="level-change">
+          <span class="old-level">Lv.${oldLevel}</span>
+          <span class="level-arrow">→</span>
+          <span class="new-level">Lv.${newLevel}</span>
+        </div>
+      </div>
+
+      <div class="unlock-title">
+        <span class="unlock-icon">🔓</span>
+        <h2>새로운 기능 해금!</h2>
+      </div>
+
+      <div class="unlock-list">
+        ${unlocks.map(unlock => `
+          <div class="unlock-item" data-category="${unlock.category}">
+            <div class="unlock-item-icon">${unlock.icon}</div>
+            <div class="unlock-item-info">
+              <h3>${unlock.name}</h3>
+              <p>${unlock.description}</p>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <button class="btn-unlock-confirm">확인</button>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // 애니메이션 시작
+  requestAnimationFrame(() => {
+    modal.classList.add('show');
+  });
+
+  // 확인 버튼 클릭
+  modal.querySelector('.btn-unlock-confirm').addEventListener('click', () => {
+    modal.classList.remove('show');
+    setTimeout(() => modal.remove(), 300);
+  });
+
+  // 배경 클릭으로도 닫기
+  modal.querySelector('.unlock-modal-backdrop').addEventListener('click', () => {
+    modal.classList.remove('show');
+    setTimeout(() => modal.remove(), 300);
+  });
+}
+
+// 레벨업 알림 (해금 없을 때)
+window.showLevelUpNotification = function(newLevel) {
+  const hunter = stateManager.get('hunter');
+  const nextUnlock = getNextUnlockInfo(newLevel);
+
+  let message = `레벨 업! Lv.${newLevel}`;
+  if (nextUnlock) {
+    message += ` (다음 해금: Lv.${nextUnlock.level})`;
+  }
+
+  window.showNotification(message, 'success');
 };
 
 // DOM 로드 시 초기화

@@ -1,6 +1,106 @@
-// 스킬 데이터 - 직업별 세분화
+// The Hunter System - 스킬 시스템
+// Two-Layer System:
+// Layer 1: Base Skills (기본 스킬)
+// Layer 2: Costume Overrides (코스튬이 스킬을 변형)
+
+// ========== BASE SKILLS (Layer 1) ==========
+// 모든 헌터가 기본으로 사용하는 스킬
+export const BASE_SKILLS = {
+  basicBolt: {
+    id: 'basicBolt',
+    name: '마력탄',
+    description: '기본적인 마력 공격',
+    type: 'magic',
+    damageType: 'magical',
+    baseDamage: 10,
+    statScaling: { INT: 2.0 },
+    mpCost: 5,
+    vfx: 'bolt_blue',
+    icon: '⚡',
+    unlockLevel: 1
+  },
+  basicSlash: {
+    id: 'basicSlash',
+    name: '베기',
+    description: '기본적인 물리 베기',
+    type: 'attack',
+    damageType: 'physical',
+    baseDamage: 15,
+    statScaling: { STR: 2.5 },
+    mpCost: 3,
+    vfx: 'slash_white',
+    icon: '⚔️',
+    unlockLevel: 1
+  },
+  basicPunch: {
+    id: 'basicPunch',
+    name: '주먹',
+    description: '기본적인 물리 타격',
+    type: 'attack',
+    damageType: 'physical',
+    baseDamage: 12,
+    statScaling: { STR: 2.0, WIL: 1.0 },
+    mpCost: 2,
+    vfx: 'punch_impact',
+    icon: '👊',
+    unlockLevel: 1
+  },
+  focusStrike: {
+    id: 'focusStrike',
+    name: '집중 일격',
+    description: '집중력을 모아 정밀한 공격',
+    type: 'attack',
+    damageType: 'physical',
+    baseDamage: 20,
+    statScaling: { FOCUS: 3.0 },
+    mpCost: 8,
+    vfx: 'focus_slash',
+    icon: '🎯',
+    unlockLevel: 10
+  },
+  luckyStrike: {
+    id: 'luckyStrike',
+    name: '행운의 일격',
+    description: '운에 따라 크리티컬 확률이 증가',
+    type: 'attack',
+    damageType: 'physical',
+    baseDamage: 8,
+    statScaling: { LUK: 2.5 },
+    critBonus: 25,
+    mpCost: 6,
+    vfx: 'lucky_sparkle',
+    icon: '🍀',
+    unlockLevel: 10
+  }
+};
+
+// 기본 스킬 가져오기
+export function getBaseSkill(skillId) {
+  return BASE_SKILLS[skillId] || null;
+}
+
+// 해금된 기본 스킬 목록
+export function getUnlockedBaseSkills(hunterLevel) {
+  return Object.values(BASE_SKILLS).filter(skill => hunterLevel >= skill.unlockLevel);
+}
+
+// 스킬 데미지 계산 (기본)
+export function calculateSkillDamage(skill, hunterStats) {
+  let damage = skill.baseDamage || 0;
+
+  if (skill.statScaling) {
+    for (const [stat, multiplier] of Object.entries(skill.statScaling)) {
+      const statValue = hunterStats[stat] || 0;
+      damage += statValue * multiplier;
+    }
+  }
+
+  return Math.floor(damage);
+}
+
+// ========== EXTENDED SKILLS (기존 직업별 스킬) ==========
+// 직업별 세분화된 스킬 (추후 확장용)
 // classRequired: 해당 직업(들)만 배울 수 있음
-// 배열에 있는 직업 중 하나라도 해당하면 배울 수 있음
 
 export const SKILLS = {
   // ========================================

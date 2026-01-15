@@ -69,7 +69,7 @@ export function renderDashboard() {
       <div class="card hunter-card">
         <div class="hunter-summary">
           <div class="hunter-avatar">
-            <div class="avatar-icon">&#129333;</div>
+            <div class="avatar-icon">${hunter.gender === 'female' ? '&#128105;' : '&#128104;'}</div>
             <div class="rank-badge rank-${hunter.rank.toLowerCase()}">${hunter.rank}</div>
           </div>
           <div class="hunter-info">
@@ -87,7 +87,7 @@ export function renderDashboard() {
         </div>
       </div>
 
-      <!-- 스태미나 & 골드 -->
+      <!-- 스태미나 & 골드 & 에센스 (v5.0 Dual Economy) -->
       <div class="resources-row">
         <div class="resource-card stamina">
           <div class="resource-icon">&#9889;</div>
@@ -105,6 +105,15 @@ export function renderDashboard() {
             <span class="resource-label">골드</span>
             <span class="resource-value">${hunter.gold.toLocaleString()} G</span>
           </div>
+          <span class="resource-hint">자동 수급</span>
+        </div>
+        <div class="resource-card essence">
+          <div class="resource-icon">&#10024;</div>
+          <div class="resource-info">
+            <span class="resource-label">에센스</span>
+            <span class="resource-value">${(hunter.essence || 0).toLocaleString()} E</span>
+          </div>
+          <span class="resource-hint">퀘스트</span>
         </div>
       </div>
 

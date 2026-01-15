@@ -1,7 +1,8 @@
-// The Hunter System - 상점 화면 (코스튬 기반 직업 전직)
+// The Hunter System - 상점 화면 (코스튬 기반 직업 전직 & 아이템)
 import { stateManager } from '../../core/stateManager.js';
 import { GAME_CONSTANTS } from '../../config/constants.js';
 import { COSTUMES, getCostumeById, canEquipCostume, getCostumeStatBonus } from '../../config/costumes.js';
+import { SHOP_ITEMS } from '../../config/shopItems.js';
 
 export function renderShop() {
   const app = document.getElementById('app');
@@ -15,300 +16,175 @@ export function renderShop() {
     return;
   }
 
-  const equippedData = equippedCostume ? getCostumeById(equippedCostume) : null;
-  const costumeBonus = equippedData ? getCostumeStatBonus(equippedCostume) : null;
-  const currentJobName = stateManager.getCurrentJobName();
+  // Current state
+  const gold = hunter.gold || 0;
+  const essence = hunter.essence || 0;
+  
+  // Tab state (default to General if not set)
+  let activeTab = 'general'; 
 
-  app.innerHTML = `
-    <div class="shop-screen">
-      <div class="screen-header">
-        <h1>상점</h1>
-        <div class="gold-display">
-          <span class="gold-icon">&#128176;</span>
-          <span class="gold-amount">${hunter.gold.toLocaleString()} G</span>
-        </div>
-      </div>
-
-      <!-- 현재 장착 코스튬 / 직업 -->
-      <div class="card equipped-costume-card">
-        <div class="card-header">
-          <h3>현재 직업</h3>
-          <span class="job-name-badge">${currentJobName}</span>
-        </div>
-        <div class="equipped-info">
-          ${equippedData ? `
-            <div class="equipped-display">
-              <div class="equipped-icon">&#128085;</div>
-              <div class="equipped-details">
-                <span class="equipped-job">${equippedData.jobTitle}</span>
-                <span class="equipped-name">${equippedData.name}</span>
-              </div>
+  const render = () => {
+    app.innerHTML = `
+      <div class="shop-screen">
+        <div class="screen-header">
+          <h1>상점</h1>
+          <div class="currency-container">
+            <div class="currency-display gold">
+              <span class="currency-icon">&#128176;</span>
+              <span class="currency-amount">${gold.toLocaleString()} G</span>
             </div>
-            <div class="equipped-bonuses">
-              ${costumeBonus.expMult > 1 ? `<span class="bonus-tag exp">EXP x${costumeBonus.expMult}</span>` : ''}
-              ${costumeBonus.goldMult > 1 ? `<span class="bonus-tag gold">Gold x${costumeBonus.goldMult}</span>` : ''}
+            <div class="currency-display essence">
+              <span class="currency-icon">&#10024;</span>
+              <span class="currency-amount">${essence.toLocaleString()} E</span>
             </div>
-            <button class="btn-unequip" id="unequipBtn">해제</button>
-          ` : `
-            <p class="no-costume">장착된 코스튬이 없습니다</p>
-            <p class="hint">코스튬을 장착하여 직업을 변경하세요!</p>
-          `}
-        </div>
-        ${equippedData && costumeBonus ? `
-          <div class="equipped-stat-bonuses">
-            ${costumeBonus.strFlat > 0 ? `<span class="stat-bonus">+${costumeBonus.strFlat} STR</span>` : ''}
-            ${costumeBonus.intFlat > 0 ? `<span class="stat-bonus">+${costumeBonus.intFlat} INT</span>` : ''}
-            ${costumeBonus.wilFlat > 0 ? `<span class="stat-bonus">+${costumeBonus.wilFlat} WIL</span>` : ''}
-            ${costumeBonus.focusFlat > 0 ? `<span class="stat-bonus">+${costumeBonus.focusFlat} FOCUS</span>` : ''}
-            ${costumeBonus.lukFlat > 0 ? `<span class="stat-bonus">+${costumeBonus.lukFlat} LUK</span>` : ''}
-          </div>
-        ` : ''}
-      </div>
-
-      <!-- 광고 보상 (외부 에너지 계약) -->
-      <div class="card energy-contract-card">
-        <div class="card-header">
-          <h3>외부 에너지 계약</h3>
-          <span class="contract-icon">&#9889;</span>
-        </div>
-        <p class="contract-desc">광고 시청을 통해 특별한 보상을 획득하세요</p>
-
-        <div class="contract-list">
-          <!-- 자동전투 부스트 -->
-          <div class="contract-item ${daily.adWatched.autoBattle ? 'used' : ''}">
-            <div class="contract-info">
-              <span class="contract-name">자동전투 부스트</span>
-              <span class="contract-effect">30분간 골드 수급 x2</span>
-            </div>
-            ${!daily.adWatched.autoBattle ? `
-              <button class="btn-watch-ad" data-type="autoBattle">시청</button>
-            ` : '<span class="used-badge">사용완료</span>'}
-          </div>
-
-          <!-- 스태미나 회복 -->
-          <div class="contract-item ${daily.adWatched.stamina >= 3 ? 'used' : ''}">
-            <div class="contract-info">
-              <span class="contract-name">스태미나 회복</span>
-              <span class="contract-effect">+20 스태미나 (${daily.adWatched.stamina}/3)</span>
-            </div>
-            ${daily.adWatched.stamina < 3 ? `
-              <button class="btn-watch-ad" data-type="stamina">시청</button>
-            ` : '<span class="used-badge">한도 도달</span>'}
-          </div>
-        </div>
-      </div>
-
-      <!-- 코스튬 상점 -->
-      <div class="costume-section">
-        <h3>코스튬 컬렉션</h3>
-        <div class="costume-tabs">
-          <button class="costume-tab active" data-rarity="all">전체</button>
-          <button class="costume-tab" data-rarity="NORMAL">일반</button>
-          <button class="costume-tab" data-rarity="RARE">레어</button>
-          <button class="costume-tab" data-rarity="EPIC">에픽</button>
-          <button class="costume-tab" data-rarity="LEGENDARY">전설</button>
-        </div>
-
-        <div class="costume-grid" id="costumeGrid">
-          ${renderCostumeGrid(COSTUMES, ownedCostumes, hunter, equippedCostume)}
-        </div>
-      </div>
-    </div>
-  `;
-
-  setupShopEvents(ownedCostumes, hunter, equippedCostume);
-}
-
-function renderCostumeGrid(costumes, owned, hunter, equippedCostume, filter = 'all') {
-  const filtered = filter === 'all' ? costumes : costumes.filter(c => c.rarity === filter);
-
-  return filtered.map(costume => {
-    const isOwned = owned.includes(costume.id);
-    const isEquipped = equippedCostume === costume.id;
-    const rarity = GAME_CONSTANTS.COSTUME_RARITY[costume.rarity] || { color: '#f59e0b', name: '전설' };
-    const canBuy = costume.price && hunter.gold >= costume.price && !isOwned;
-    const equipCheck = canEquipCostume(costume.id, hunter.stats);
-    const bonus = costume.statBonus || {};
-
-    // 플랫 보너스 태그 생성
-    const flatBonusTags = [];
-    if (bonus.strFlat) flatBonusTags.push(`+${bonus.strFlat} STR`);
-    if (bonus.intFlat) flatBonusTags.push(`+${bonus.intFlat} INT`);
-    if (bonus.wilFlat) flatBonusTags.push(`+${bonus.wilFlat} WIL`);
-    if (bonus.focusFlat) flatBonusTags.push(`+${bonus.focusFlat} FOCUS`);
-    if (bonus.lukFlat) flatBonusTags.push(`+${bonus.lukFlat} LUK`);
-
-    return `
-      <div class="costume-card ${isOwned ? 'owned' : ''} ${isEquipped ? 'equipped' : ''}" data-costume-id="${costume.id}">
-        <div class="costume-header" style="border-color: ${rarity.color}">
-          <span class="costume-rarity" style="color: ${rarity.color}">${rarity.name}</span>
-          ${isEquipped ? '<span class="equipped-badge">장착중</span>' : ''}
-        </div>
-        <div class="costume-icon">&#128085;</div>
-        <h4 class="costume-name">${costume.name}</h4>
-        <p class="costume-job-title">"${costume.jobTitle}"</p>
-        <p class="costume-desc">${costume.description}</p>
-
-        <div class="costume-stats">
-          <!-- 배율 보너스 -->
-          <div class="costume-mult-bonus">
-            ${bonus.expMult > 1 ? `<span class="mult-tag exp">EXP x${bonus.expMult}</span>` : ''}
-            ${bonus.goldMult > 1 ? `<span class="mult-tag gold">Gold x${bonus.goldMult}</span>` : ''}
-          </div>
-          <!-- 플랫 보너스 -->
-          <div class="costume-flat-bonus">
-            ${flatBonusTags.map(tag => `<span class="bonus-stat">${tag}</span>`).join('')}
           </div>
         </div>
 
-        ${costume.requiredStats ? `
-          <div class="costume-requirements ${equipCheck.canEquip ? 'met' : 'unmet'}">
-            <span class="req-label">장착 조건:</span>
-            ${Object.entries(costume.requiredStats).map(([stat, val]) => {
-              const current = hunter.stats[stat] || 0;
-              const hasStat = current >= val;
-              return `<span class="req-stat ${hasStat ? 'met' : 'unmet'}">${stat} ${current}/${val}</span>`;
-            }).join('')}
-          </div>
-        ` : '<div class="costume-requirements met"><span class="req-label">장착 조건: 없음</span></div>'}
+        <!-- 상점 탭 -->
+        <div class="shop-tabs">
+            <button class="shop-tab ${activeTab === 'general' ? 'active' : ''}" data-tab="general">
+                일반 상점 (Gold)
+            </button>
+            <button class="shop-tab ${activeTab === 'hunter' ? 'active' : ''}" data-tab="hunter">
+                헌터 상점 (Essence)
+            </button>
+        </div>
 
-        <div class="costume-action">
-          ${isEquipped ? '<span class="equipped-label">장착중</span>' :
-            isOwned ? (equipCheck.canEquip ?
-              `<button class="btn-equip-costume" data-id="${costume.id}">장착하기</button>` :
-              `<span class="cannot-equip">${equipCheck.reason}</span>`) :
-            costume.adRequired ? '<button class="btn-ad-costume">광고 시청</button>' :
-            costume.eventOnly ? '<span class="event-badge">이벤트 전용</span>' :
-            costume.achievementOnly ? '<span class="event-badge">업적 보상</span>' :
-            canBuy ? `<button class="btn-buy-costume" data-id="${costume.id}">${costume.price} G</button>` :
-            `<span class="price-tag">${costume.price} G</span>`
-          }
+        <div class="shop-content">
+            ${activeTab === 'general' ? renderGeneralShop(gold) : renderHunterShop(essence, ownedCostumes, equippedCostume, hunter)}
         </div>
       </div>
     `;
-  }).join('');
+    
+    bindEvents();
+  };
+
+  const bindEvents = () => {
+      // 탭 전환
+      app.querySelectorAll('.shop-tab').forEach(btn => {
+          btn.addEventListener('click', () => {
+              activeTab = btn.dataset.tab;
+              render();
+          });
+      });
+
+      // 일반 아이템 구매
+      app.querySelectorAll('.btn-buy-item').forEach(btn => {
+          btn.addEventListener('click', () => {
+              const itemId = btn.dataset.id;
+              const item = SHOP_ITEMS.GENERAL.find(i => i.id === itemId);
+              if (item) {
+                  const result = stateManager.purchaseItem(item);
+                  if (result.success) {
+                      window.showNotification(`${item.name} 구매 완료!`, 'success');
+                      renderShop(); // Re-render to update currency
+                  } else {
+                      window.showNotification(result.error, 'error');
+                  }
+              }
+          });
+      });
+
+      // 코스튬 구매
+      app.querySelectorAll('.btn-buy-costume').forEach(btn => {
+          btn.addEventListener('click', () => {
+              const costumeId = btn.dataset.id;
+              // Hard Rule: Costumes use Essence, never Gold logic here (handled by purchaseCostume)
+              const result = stateManager.purchaseCostume(costumeId);
+              if (result.success) {
+                  const costume = getCostumeById(costumeId);
+                  window.showNotification(`${costume.name} 구매 완료!`, 'success');
+                  renderShop();
+              } else {
+                  window.showNotification(result.error, 'error');
+              }
+          });
+      });
+
+      // 코스튬 장착 (편의성)
+      app.querySelectorAll('.btn-equip-costume').forEach(btn => {
+          btn.addEventListener('click', () => {
+              const costumeId = btn.dataset.id;
+              const result = stateManager.equipCostume(costumeId);
+              if (result.success) {
+                  window.showNotification('코스튬 장착 완료!', 'success');
+                  renderShop();
+              } else {
+                  window.showNotification(result.error, 'error');
+              }
+          });
+      });
+  };
+
+  render();
 }
 
-function setupShopEvents(ownedCostumes, hunter, equippedCostume) {
-  // 장착 해제
-  const unequipBtn = document.getElementById('unequipBtn');
-  if (unequipBtn) {
-    unequipBtn.addEventListener('click', () => {
-      stateManager.set('equippedCostume', null);
-      // 직업 명칭 초기화
-      const hunterData = stateManager.get('hunter');
-      hunterData.title = '각성한 자';
-      stateManager.set('hunter', hunterData);
-      window.showNotification('코스튬을 해제했습니다', 'info');
-      renderShop();
-    });
-  }
-
-  // 광고 시청 버튼
-  document.querySelectorAll('.btn-watch-ad').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const type = btn.dataset.type;
-
-      if (confirm('광고를 시청하시겠습니까?\n(데모에서는 바로 보상을 받습니다)')) {
-        if (type === 'autoBattle') {
-          stateManager.activateAutoBattleBoost();
-          window.showNotification('자동전투 부스트 30분 활성화!', 'success');
-        } else if (type === 'stamina') {
-          const success = stateManager.recoverStaminaByAd();
-          if (success) {
-            window.showNotification('스태미나 +20 회복!', 'success');
-          }
-        }
-        renderShop();
-      }
-    });
-  });
-
-  // 탭 전환
-  document.querySelectorAll('.costume-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.costume-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-
-      const rarity = tab.dataset.rarity;
-      const currentHunter = stateManager.get('hunter');
-      const currentOwned = stateManager.get('costumes') || [];
-      const currentEquipped = stateManager.get('equippedCostume');
-
-      document.getElementById('costumeGrid').innerHTML =
-        renderCostumeGrid(COSTUMES, currentOwned, currentHunter, currentEquipped, rarity);
-
-      setupCostumeButtons();
-    });
-  });
-
-  setupCostumeButtons();
+function renderGeneralShop(gold) {
+    return `
+        <div class="shop-grid">
+            ${SHOP_ITEMS.GENERAL.map(item => `
+                <div class="card shop-item-card">
+                    <div class="item-icon">${item.icon}</div>
+                    <div class="item-info">
+                        <h4 class="item-name">${item.name}</h4>
+                        <p class="item-desc">${item.description}</p>
+                    </div>
+                    <button class="btn-buy-item" data-id="${item.id}" ${gold < item.price ? 'disabled' : ''}>
+                        <span class="price-val">${item.price.toLocaleString()} G</span>
+                    </button>
+                </div>
+            `).join('')}
+        </div>
+        <div class="shop-notice">
+            <p>* 일반 아이템은 골드로 구매할 수 있습니다.</p>
+        </div>
+    `;
 }
 
-function setupCostumeButtons() {
-  // 코스튬 구매
-  document.querySelectorAll('.btn-buy-costume').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const costumeId = btn.dataset.id;
-      const costume = getCostumeById(costumeId);
-      const hunter = stateManager.get('hunter');
+function renderHunterShop(essence, owned, equippedId, hunter) {
+    return `
+        <div class="shop-section-title">
+            <h3>코스튬 (전직)</h3>
+            <p>에센스로 구매 가능한 헌터 전용 장비입니다.</p>
+        </div>
+        <div class="costume-grid">
+            ${COSTUMES.map(costume => {
+                const isOwned = owned.includes(costume.id) || costume.id === 'hunter_basic';
+                const isEquipped = equippedId === costume.id;
+                const canBuy = essence >= costume.essencePrice;
+                const equipCheck = canEquipCostume(costume.id, hunter.stats);
 
-      if (costume && hunter.gold >= costume.price) {
-        hunter.gold -= costume.price;
-        stateManager.set('hunter', hunter);
+                let actionBtn = '';
+                if (isEquipped) {
+                    actionBtn = `<button class="btn-action equipped" disabled>장착 중</button>`;
+                } else if (isOwned) {
+                    if (equipCheck.canEquip) {
+                        actionBtn = `<button class="btn-equip-costume" data-id="${costume.id}">장착하기</button>`;
+                    } else {
+                        actionBtn = `<button class="btn-action locked" disabled>조건 미달</button>`;
+                    }
+                } else {
+                    // Purchase Button - Display Essence Price
+                    actionBtn = `<button class="btn-buy-costume" data-id="${costume.id}" ${!canBuy ? 'disabled' : ''}>
+                        ${costume.essencePrice} Essence
+                    </button>`;
+                }
 
-        const costumes = stateManager.get('costumes') || [];
-        costumes.push(costumeId);
-        stateManager.set('costumes', costumes);
-
-        window.showNotification(`${costume.name} 구매 완료!`, 'success');
-        renderShop();
-      }
-    });
-  });
-
-  // 코스튬 장착
-  document.querySelectorAll('.btn-equip-costume').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const costumeId = btn.dataset.id;
-      const costume = getCostumeById(costumeId);
-      const hunter = stateManager.get('hunter');
-
-      const equipCheck = canEquipCostume(costumeId, hunter.stats);
-      if (!equipCheck.canEquip) {
-        window.showNotification(equipCheck.reason, 'error');
-        return;
-      }
-
-      // 코스튬 장착
-      stateManager.set('equippedCostume', costumeId);
-
-      // 직업 명칭 변경
-      hunter.title = costume.jobTitle;
-      stateManager.set('hunter', hunter);
-
-      window.showNotification(`"${costume.jobTitle}"(으)로 전직했습니다!`, 'success');
-      renderShop();
-    });
-  });
-
-  // 광고 코스튬
-  document.querySelectorAll('.btn-ad-costume').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (confirm('광고를 시청하여 코스튬을 획득하시겠습니까?')) {
-        const card = btn.closest('.costume-card');
-        const costumeId = card.dataset.costumeId;
-        const costume = getCostumeById(costumeId);
-
-        if (costume) {
-          const costumes = stateManager.get('costumes') || [];
-          costumes.push(costumeId);
-          stateManager.set('costumes', costumes);
-
-          window.showNotification(`${costume.name} 획득!`, 'success');
-          renderShop();
-        }
-      }
-    });
-  });
+                return `
+                    <div class="costume-card ${isOwned ? 'owned' : ''} ${isEquipped ? 'equipped' : ''}">
+                        <div class="costume-header">
+                            <span class="costume-rarity ${costume.rarity.toLowerCase()}">${costume.rarity}</span>
+                        </div>
+                        <div class="costume-icon">&#128085;</div>
+                        <h4 class="costume-name">${costume.name}</h4>
+                        <p class="costume-job-title">${costume.jobTitle}</p>
+                        
+                        <div class="costume-action">
+                            ${actionBtn}
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
 }

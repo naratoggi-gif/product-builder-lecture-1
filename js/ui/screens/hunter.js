@@ -40,7 +40,7 @@ export function renderHunter() {
       <div class="card hunter-profile">
         <div class="profile-header">
           <div class="profile-avatar">
-            <div class="avatar-icon-large">&#129333;</div>
+            <div class="avatar-icon-large">${hunter.gender === 'female' ? '&#128105;' : '&#128104;'}</div>
             <div class="rank-badge rank-${hunter.rank.toLowerCase()}">${hunter.rank}</div>
           </div>
           <div class="profile-info">
@@ -53,7 +53,10 @@ export function renderHunter() {
           <div class="exp-fill" style="width: ${expPercent}%"></div>
           <span class="exp-text">${hunter.exp} / ${expRequired} EXP</span>
         </div>
-        <div class="total-exp">총 골드: ${hunter.gold.toLocaleString()} G</div>
+        <div class="hunter-resources">
+          <span class="resource-display gold">&#128176; ${hunter.gold.toLocaleString()} G</span>
+          <span class="resource-display essence">&#10024; ${(hunter.essence || 0).toLocaleString()} E</span>
+        </div>
       </div>
 
       <!-- 기본 스탯 (Narrative Growth) -->

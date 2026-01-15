@@ -13,15 +13,14 @@ export const GAME_CONSTANTS = {
   BONUS_STAT_POINTS_INTERVAL: 10,
   BONUS_STAT_POINTS: 0,
 
-  // 스탯 성장 시스템 (Narrative Growth)
-  STAT_EXP_REQUIRED: 100, // 스탯 1 상승을 위한 경험치
-  STAT_EXP_GAIN: {        // 퀘스트 등급별 스탯 경험치 획득량
-    E: 10,
-    D: 15,
-    C: 25,
-    B: 40,
-    A: 60,
-    S: 100
+  // v5.0 Dual Economy: Essence rewards by quest grade
+  ESSENCE_GAIN: {
+    E: 5,
+    D: 10,
+    C: 15,
+    B: 20,
+    A: 30,
+    S: 40
   },
 
   // 초기 스탯 (기획서: 모두 5)
@@ -46,14 +45,14 @@ export const GAME_CONSTANTS = {
     S: 40
   },
 
-  // 퀘스트 등급별 기본 보상
+  // 퀘스트 등급별 기본 보상 (v5.0: Gold removed - earned via idle only)
   QUEST_BASE_REWARDS: {
-    E: { exp: 20, gold: 50 },
-    D: { exp: 40, gold: 100 },
-    C: { exp: 70, gold: 180 },
-    B: { exp: 120, gold: 300 },
-    A: { exp: 200, gold: 500 },
-    S: { exp: 350, gold: 850 }
+    E: { exp: 20, gold: 0 },
+    D: { exp: 40, gold: 0 },
+    C: { exp: 70, gold: 0 },
+    B: { exp: 120, gold: 0 },
+    A: { exp: 200, gold: 0 },
+    S: { exp: 350, gold: 0 }
   },
 
   // 퀘스트 카테고리 -> 스탯 연결
@@ -97,9 +96,9 @@ export const GAME_CONSTANTS = {
     SIMULATION: { id: 'simulation', name: '시뮬레이션 게이트', available: 'always' }
   },
 
-  // 코스튬 레어리티
+  // 코스튬 레어리티 (v5.0: NORMAL now uses essence)
   COSTUME_RARITY: {
-    NORMAL: { id: 'normal', name: '일반', color: '#9ca3af', obtain: 'gold' },
+    NORMAL: { id: 'normal', name: '일반', color: '#9ca3af', obtain: 'essence' },
     RARE: { id: 'rare', name: '레어', color: '#3b82f6', obtain: 'ads' },
     EPIC: { id: 'epic', name: '에픽', color: '#a855f7', obtain: 'events' },
     LEGENDARY: { id: 'legendary', name: '전설', color: '#fbbf24', obtain: 'achievement' }
@@ -112,6 +111,144 @@ export const GAME_CONSTANTS = {
     RANDOM_GATE_RETRY: true
   }
 };
+
+// ========== 레벨 해금 시스템 ==========
+// 레벨별 해금되는 기능들 (데이터 드리븐)
+export const LEVEL_UNLOCKS = {
+  3: ['C_GRADE_QUESTS'],
+  5: ['WEEKEND_RAID_GATE', 'B_GRADE_QUESTS'],
+  7: ['SUDDEN_GATE'],
+  10: ['SKILL_SLOT_1', 'A_GRADE_QUESTS'],
+  15: ['COSTUME_SLOT', 'S_GRADE_QUESTS'],
+  20: ['SKILL_SLOT_2'],
+  25: ['RANK_UP_D'],
+  30: ['COSTUME_TRANSFORM'],
+  40: ['RANK_UP_C'],
+  50: ['SKILL_SLOT_3', 'RANK_UP_B']
+};
+
+// 해금 기능 상세 정보
+export const UNLOCK_DETAILS = {
+  // 퀘스트 등급
+  C_GRADE_QUESTS: {
+    name: 'C등급 퀘스트',
+    description: 'C등급 퀘스트를 생성할 수 있습니다.',
+    icon: '📋',
+    category: 'quest'
+  },
+  B_GRADE_QUESTS: {
+    name: 'B등급 퀘스트',
+    description: 'B등급 퀘스트를 생성할 수 있습니다.',
+    icon: '📋',
+    category: 'quest'
+  },
+  A_GRADE_QUESTS: {
+    name: 'A등급 퀘스트',
+    description: 'A등급 퀘스트를 생성할 수 있습니다.',
+    icon: '📋',
+    category: 'quest'
+  },
+  S_GRADE_QUESTS: {
+    name: 'S등급 퀘스트',
+    description: 'S등급 퀘스트를 생성할 수 있습니다.',
+    icon: '📋',
+    category: 'quest'
+  },
+
+  // 게이트
+  WEEKEND_RAID_GATE: {
+    name: '주말 레이드 게이트',
+    description: '주말에 특별 레이드 게이트에 입장할 수 있습니다. (보상 5배)',
+    icon: '🏰',
+    category: 'gate'
+  },
+  SUDDEN_GATE: {
+    name: '돌발 게이트',
+    description: '랜덤하게 발생하는 돌발 게이트에 도전할 수 있습니다.',
+    icon: '⚡',
+    category: 'gate'
+  },
+
+  // 스킬
+  SKILL_SLOT_1: {
+    name: '스킬 슬롯 1',
+    description: '첫 번째 스킬 슬롯이 해금됩니다.',
+    icon: '✨',
+    category: 'skill'
+  },
+  SKILL_SLOT_2: {
+    name: '스킬 슬롯 2',
+    description: '두 번째 스킬 슬롯이 해금됩니다.',
+    icon: '✨',
+    category: 'skill'
+  },
+  SKILL_SLOT_3: {
+    name: '스킬 슬롯 3',
+    description: '세 번째 스킬 슬롯이 해금됩니다.',
+    icon: '✨',
+    category: 'skill'
+  },
+
+  // 코스튬
+  COSTUME_SLOT: {
+    name: '코스튬 장착',
+    description: '코스튬을 장착하여 추가 능력을 얻을 수 있습니다.',
+    icon: '👔',
+    category: 'costume'
+  },
+  COSTUME_TRANSFORM: {
+    name: '코스튬 변신',
+    description: '코스튬 변신 기능이 해금됩니다.',
+    icon: '🎭',
+    category: 'costume'
+  },
+
+  // 랭크
+  RANK_UP_D: {
+    name: 'D랭크 승급',
+    description: '헌터 랭크가 D로 상승합니다!',
+    icon: '🏅',
+    category: 'rank'
+  },
+  RANK_UP_C: {
+    name: 'C랭크 승급',
+    description: '헌터 랭크가 C로 상승합니다!',
+    icon: '🏅',
+    category: 'rank'
+  },
+  RANK_UP_B: {
+    name: 'B랭크 승급',
+    description: '헌터 랭크가 B로 상승합니다!',
+    icon: '🏅',
+    category: 'rank'
+  }
+};
+
+// 특정 레벨에서 해금되는 기능들 가져오기
+export function getUnlocksAtLevel(level) {
+  return LEVEL_UNLOCKS[level] || [];
+}
+
+// 특정 기능이 해금되었는지 확인
+export function isFeatureUnlocked(featureId, unlockedFeatures = []) {
+  return unlockedFeatures.includes(featureId);
+}
+
+// 다음 해금까지 필요한 레벨 정보
+export function getNextUnlockInfo(currentLevel) {
+  const levels = Object.keys(LEVEL_UNLOCKS).map(Number).sort((a, b) => a - b);
+  const nextLevel = levels.find(lvl => lvl > currentLevel);
+
+  if (!nextLevel) return null;
+
+  return {
+    level: nextLevel,
+    unlocks: LEVEL_UNLOCKS[nextLevel].map(id => ({
+      id,
+      ...UNLOCK_DETAILS[id]
+    }))
+  };
+}
 
 // 필요 경험치 계산
 export function getRequiredExp(level) {
@@ -129,12 +266,24 @@ export function getAutoBattleCritRate(focus) {
   return GAME_CONSTANTS.AUTO_BATTLE_CRIT_BASE + (focus * GAME_CONSTANTS.AUTO_BATTLE_CRIT_PER_FOCUS);
 }
 
-// 아이들 초당 골드 계산 (Design v3.0: goldPerSecond = baseGold * (1 + STR * 0.05))
+/**
+ * Calculate base idle gold per second (v5.0)
+ *
+ * Formula: goldPerSecond = baseGold * (1 + STR * 0.05)
+ *
+ * Additional multipliers applied in stateManager.updateIdleGold():
+ * - Hunter Multiplier: Real=1.0x, Simulation=0.35x
+ * - Auto Battle Boost: x2 (from ads, 30 min duration)
+ * - Critical Hit: x2 (5% + FOCUS*0.3% chance)
+ *
+ * @param {number} str - STR stat value
+ * @returns {number} Base gold per second (before multipliers)
+ */
 export function calculateIdleGold(str) {
   return GAME_CONSTANTS.IDLE_BASE_GOLD * (1 + str * GAME_CONSTANTS.IDLE_STR_MULTIPLIER);
 }
 
-// 보상 계산 (리얼 헌터 vs 시뮬레이션)
+// 보상 계산 (리얼 헌터 vs 시뮬레이션) - v5.0: Gold removed from quest rewards
 export function calculateReward(baseReward, isRealHunter) {
   const multiplier = isRealHunter
     ? GAME_CONSTANTS.REWARD_MULTIPLIER.REAL_HUNTER
@@ -142,7 +291,7 @@ export function calculateReward(baseReward, isRealHunter) {
 
   return {
     exp: Math.floor(baseReward.exp * multiplier),
-    gold: Math.floor(baseReward.gold * multiplier)
+    gold: 0 // v5.0: Gold earned via idle only
   };
 }
 
@@ -168,4 +317,9 @@ export function calculateCombatStats(stats) {
 // 스태미나 효율 계산 (WIL 기반)
 export function getStaminaEfficiency(wil) {
   return 1 + (wil * 0.02); // WIL 1당 2% 스태미나 효율 증가
+}
+
+// 연마 비용 계산 (Refine System)
+export function calculateRefineCost(currentStatValue) {
+  return 10 + (currentStatValue * 2);
 }

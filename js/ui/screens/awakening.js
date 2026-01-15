@@ -2,8 +2,11 @@
 import { stateManager } from '../../core/stateManager.js';
 import { GAME_CONSTANTS } from '../../config/constants.js';
 
+let selectedGender = null;
+
 export function renderAwakening() {
   const app = document.getElementById('app');
+  selectedGender = null;
 
   app.innerHTML = `
     <div class="awakening-screen">
@@ -40,6 +43,21 @@ export function renderAwakening() {
           but real action makes you a true hunter."
         </div>
 
+        <!-- Gender Selection -->
+        <div class="gender-selection">
+          <label>성별 선택</label>
+          <div class="gender-buttons">
+            <button class="gender-btn" data-gender="male">
+              <span class="gender-icon">&#128104;</span>
+              <span class="gender-label">남성</span>
+            </button>
+            <button class="gender-btn" data-gender="female">
+              <span class="gender-icon">&#128105;</span>
+              <span class="gender-label">여성</span>
+            </button>
+          </div>
+        </div>
+
         <div class="name-input-section">
           <label for="hunterName">헌터 이름을 입력하세요</label>
           <input
@@ -61,31 +79,43 @@ export function renderAwakening() {
   const nameInput = document.getElementById('hunterName');
   const awakenBtn = document.getElementById('awakenBtn');
 
-  nameInput.addEventListener('input', () => {
-    const name = nameInput.value.trim();
-    awakenBtn.disabled = name.length < 2;
+  // Gender selection
+  document.querySelectorAll('.gender-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedGender = btn.dataset.gender;
+      updateAwakenButton();
+    });
   });
+
+  nameInput.addEventListener('input', updateAwakenButton);
+
+  function updateAwakenButton() {
+    const name = nameInput.value.trim();
+    awakenBtn.disabled = name.length < 2 || !selectedGender;
+  }
 
   awakenBtn.addEventListener('click', () => {
     const name = nameInput.value.trim();
-    if (name.length >= 2) {
-      createHunter(name);
+    if (name.length >= 2 && selectedGender) {
+      createHunter(name, selectedGender);
     }
   });
 
   nameInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       const name = nameInput.value.trim();
-      if (name.length >= 2) {
-        createHunter(name);
+      if (name.length >= 2 && selectedGender) {
+        createHunter(name, selectedGender);
       }
     }
   });
 }
 
-function createHunter(name) {
+function createHunter(name, gender) {
   // 헌터 생성
-  stateManager.createHunter(name);
+  stateManager.createHunter(name, gender);
 
   // 각성 완료 애니메이션
   const app = document.getElementById('app');

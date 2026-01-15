@@ -1,33 +1,89 @@
 /* The Hunter System - 스타일시트 */
 
-/* CSS 변수 */
-:root {
-  --primary: #8b5cf6;
-  --primary-dark: #7c3aed;
-  --secondary: #06b6d4;
+/* ========== CSS 변수 - Dark Theme (Hunter System Window) ========== */
+:root, .dark-theme {
+  /* Primary: 네온 블루-퍼플 계열 */
+  --primary: #00d4ff;
+  --primary-dark: #0099cc;
+  --primary-glow: rgba(0, 212, 255, 0.5);
+
+  /* Secondary: 네온 퍼플 */
+  --secondary: #a855f7;
+  --secondary-glow: rgba(168, 85, 247, 0.5);
+
+  /* Accent: 네온 그린/골드 */
+  --accent: #00ff88;
+  --accent-glow: rgba(0, 255, 136, 0.4);
+
+  /* Status Colors */
+  --success: #00ff88;
+  --warning: #ffaa00;
+  --danger: #ff4444;
+  --real-hunter: #00ff88;
+  --simulation: #ff4444;
+
+  /* Background: 다크 블루-블랙 */
+  --bg: #0a0a1a;
+  --bg-card: #0d1525;
+  --bg-secondary: #111827;
+  --bg-overlay: rgba(0, 10, 30, 0.9);
+
+  /* Text */
+  --text: #e0f0ff;
+  --text-secondary: #7aa3cc;
+
+  /* Borders & Effects */
+  --border: #1e3a5f;
+  --border-glow: #00d4ff;
+  --shadow: 0 4px 20px rgba(0, 212, 255, 0.15);
+  --glow: 0 0 20px rgba(0, 212, 255, 0.3);
+  --neon-glow: 0 0 10px var(--primary), 0 0 20px var(--primary-glow), 0 0 30px var(--primary-glow);
+
+  /* System Window Effect */
+  --window-border: linear-gradient(135deg, #00d4ff 0%, #a855f7 50%, #00d4ff 100%);
+  --scanline: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 212, 255, 0.03) 2px,
+    rgba(0, 212, 255, 0.03) 4px
+  );
+}
+
+/* ========== Light Theme ========== */
+.light-theme {
+  --primary: #6366f1;
+  --primary-dark: #4f46e5;
+  --primary-glow: rgba(99, 102, 241, 0.3);
+
+  --secondary: #8b5cf6;
+  --secondary-glow: rgba(139, 92, 246, 0.3);
+
+  --accent: #10b981;
+  --accent-glow: rgba(16, 185, 129, 0.3);
+
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
   --real-hunter: #22c55e;
   --simulation: #ef4444;
-  --bg: #0a0a0f;
-  --bg-card: #151520;
-  --bg-secondary: #1e1e2d;
-  --text: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --border: #2d2d3d;
-  --shadow: 0 4px 20px rgba(139, 92, 246, 0.15);
-  --glow: 0 0 20px rgba(139, 92, 246, 0.3);
-}
 
-.light-theme {
   --bg: #f8fafc;
   --bg-card: #ffffff;
   --bg-secondary: #f1f5f9;
+  --bg-overlay: rgba(255, 255, 255, 0.95);
+
   --text: #1e293b;
   --text-secondary: #64748b;
+
   --border: #e2e8f0;
-  --shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  --border-glow: #6366f1;
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  --glow: none;
+  --neon-glow: none;
+
+  --window-border: none;
+  --scanline: none;
 }
 
 /* 리셋 */
@@ -237,6 +293,29 @@ body {
   letter-spacing: 8px;
   margin-bottom: 16px;
   text-shadow: 0 0 10px var(--primary);
+}
+
+.dark-theme .glitch-text {
+  text-shadow:
+    0 0 10px var(--primary),
+    0 0 20px var(--primary-glow),
+    0 0 40px var(--primary-glow);
+  animation: systemGlow 2s ease-in-out infinite;
+}
+
+@keyframes systemGlow {
+  0%, 100% {
+    text-shadow:
+      0 0 10px var(--primary),
+      0 0 20px var(--primary-glow),
+      0 0 40px var(--primary-glow);
+  }
+  50% {
+    text-shadow:
+      0 0 15px var(--primary),
+      0 0 30px var(--primary-glow),
+      0 0 60px var(--primary-glow);
+  }
 }
 
 .message-box {
@@ -572,11 +651,11 @@ body {
   text-shadow: 0 1px 2px rgba(0,0,0,0.5);
 }
 
-/* 리소스 (스태미나, 골드) */
+/* 리소스 (스태미나, 골드, 에센스) - v5.0 Dual Economy */
 .resources-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
   margin-bottom: 16px;
 }
 
@@ -615,6 +694,23 @@ body {
   height: 100%;
   background: var(--secondary);
   transition: width 0.3s;
+}
+
+/* v5.0 Dual Economy Resource Hints */
+.resource-hint {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+.resource-card.gold .resource-value {
+  color: #f59e0b;
+}
+
+.resource-card.essence .resource-value {
+  color: var(--secondary);
 }
 
 /* 아이들 카드 */
@@ -2750,5 +2846,842 @@ body {
   white-space: nowrap;
   min-width: 60px;
   text-align: right;
+}
+
+/* ========== Gender Selection ========== */
+.gender-selection {
+  margin: 24px 0;
+}
+
+.gender-selection label {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.gender-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.gender-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 32px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: var(--text);
+}
+
+.gender-btn:hover {
+  border-color: var(--primary);
+}
+
+.dark-theme .gender-btn:hover {
+  background: rgba(0, 212, 255, 0.1);
+}
+
+.light-theme .gender-btn:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.gender-btn.selected {
+  border-color: var(--primary);
+  box-shadow: var(--glow);
+}
+
+.dark-theme .gender-btn.selected {
+  background: rgba(0, 212, 255, 0.15);
+  box-shadow: 0 0 15px var(--primary-glow);
+}
+
+.light-theme .gender-btn.selected {
+  background: rgba(99, 102, 241, 0.15);
+}
+
+.gender-icon {
+  font-size: 2.5rem;
+}
+
+.gender-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* ========== Hunter System Window Effects (Dark Theme) ========== */
+
+/* Neon glow headers */
+.dark-theme .app-header {
+  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg) 100%);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 20px rgba(0, 212, 255, 0.1);
+}
+
+.dark-theme .app-title {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  filter: drop-shadow(0 0 8px var(--primary-glow));
+}
+
+/* Neon cards */
+.dark-theme .card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.05), var(--shadow);
+  position: relative;
+}
+
+.dark-theme .card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--scanline);
+  pointer-events: none;
+  border-radius: 16px;
+}
+
+/* Glowing buttons */
+.dark-theme .btn-primary {
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+  box-shadow: 0 0 15px var(--primary-glow);
+  border: 1px solid var(--primary);
+}
+
+.dark-theme .btn-primary:hover:not(:disabled) {
+  box-shadow: 0 0 25px var(--primary-glow);
+}
+
+/* Neon status badges */
+.dark-theme .status-badge.real-hunter {
+  background: var(--real-hunter);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.dark-theme .status-badge.simulation {
+  background: var(--simulation);
+  box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+}
+
+/* Hunter mode banner glow */
+.dark-theme .hunter-mode-banner.real {
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.1), rgba(0, 255, 136, 0.05));
+  border: 1px solid var(--real-hunter);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.1);
+}
+
+.dark-theme .hunter-mode-banner.simulation {
+  background: linear-gradient(135deg, rgba(255, 68, 68, 0.1), rgba(255, 68, 68, 0.05));
+  border: 1px solid var(--simulation);
+  box-shadow: 0 0 20px rgba(255, 68, 68, 0.1);
+}
+
+/* Glowing avatar */
+.dark-theme .avatar-icon,
+.dark-theme .avatar-icon-large {
+  background: linear-gradient(135deg, var(--primary-dark), var(--secondary));
+  box-shadow: 0 0 20px var(--primary-glow);
+}
+
+/* Neon progress bars */
+.dark-theme .exp-fill,
+.dark-theme .stamina-fill,
+.dark-theme .resource-fill {
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+/* Bottom nav glow */
+.dark-theme .bottom-nav {
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 20px rgba(0, 212, 255, 0.1);
+}
+
+.dark-theme .nav-item.active {
+  color: var(--primary);
+  text-shadow: 0 0 10px var(--primary-glow);
+}
+
+/* Glowing rank badges */
+.dark-theme .rank-badge {
+  box-shadow: 0 0 10px currentColor;
+}
+
+/* Modal overlay */
+.dark-theme .modal {
+  background: var(--bg-overlay);
+  backdrop-filter: blur(4px);
+}
+
+.dark-theme .modal-content {
+  border: 1px solid var(--border);
+  box-shadow: 0 0 30px var(--primary-glow);
+}
+
+/* Theme toggle button */
+.theme-toggle {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .theme-toggle {
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.theme-toggle:hover {
+  border-color: var(--primary);
+  transform: scale(1.05);
+}
+
+.theme-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+/* Refine screen enhancements */
+.dark-theme .refine-screen .essence-card {
+  background: linear-gradient(135deg, var(--bg-card), rgba(168, 85, 247, 0.1));
+  border: 1px solid var(--secondary);
+  box-shadow: 0 0 20px var(--secondary-glow);
+}
+
+.btn-refine {
+  background: linear-gradient(135deg, var(--secondary), var(--primary));
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-refine:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-refine:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dark-theme .btn-refine:hover:not(:disabled) {
+  box-shadow: 0 0 15px var(--secondary-glow);
+  opacity: 1;
+}
+
+/* ========== Refine Screen - Tank Style ========== */
+.refine-screen {
+  padding-bottom: 20px;
+}
+
+.refine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.refine-card {
+  padding: 16px;
+  transition: all 0.3s ease;
+}
+
+.refine-card.level-up-flash {
+  animation: levelUpFlash 0.6s ease-out;
+}
+
+@keyframes levelUpFlash {
+  0% { box-shadow: 0 0 0 0 var(--accent); }
+  50% { box-shadow: 0 0 30px 10px var(--accent-glow); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.refine-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.refine-header .stat-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.refine-header .stat-icon {
+  font-size: 1.8rem;
+}
+
+.refine-header .stat-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.refine-header .stat-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.refine-header .stat-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.stat-level {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.stat-level .level-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.stat-level .level-next {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* Tank-style container */
+.refine-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.refine-tank {
+  position: relative;
+  width: 60px;
+  height: 80px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: 8px 8px 16px 16px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.dark-theme .refine-tank {
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+.refine-liquid {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg,
+    var(--stat-color) 0%,
+    color-mix(in srgb, var(--stat-color) 70%, black) 100%
+  );
+  transition: height 0.5s ease-out;
+  border-radius: 0 0 14px 14px;
+}
+
+.dark-theme .refine-liquid {
+  box-shadow:
+    0 0 10px var(--stat-glow),
+    inset 0 5px 15px rgba(255, 255, 255, 0.2);
+}
+
+.refine-liquid.almost-full {
+  animation: liquidPulse 1s ease-in-out infinite;
+}
+
+@keyframes liquidPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.liquid-shine {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 8px;
+  height: 15px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  transform: skewX(-10deg);
+}
+
+.tank-markers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.tank-markers .marker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+}
+
+.tank-markers .marker::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -3px;
+  width: 8px;
+  height: 7px;
+  border-right: 2px solid var(--border);
+}
+
+.refine-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progress-numbers {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 1.1rem;
+}
+
+.progress-numbers .current {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.progress-numbers .divider {
+  color: var(--text-secondary);
+}
+
+.progress-numbers .required {
+  color: var(--text-secondary);
+}
+
+.progress-percent {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Refine action buttons */
+.refine-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-refine-amount,
+.btn-refine-max {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-refine-amount {
+  background: var(--bg-secondary);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-refine-amount:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: rgba(0, 212, 255, 0.1);
+}
+
+.btn-refine-max {
+  background: linear-gradient(135deg, var(--secondary), var(--primary));
+  color: white;
+}
+
+.btn-refine-max:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.dark-theme .btn-refine-max:hover:not(:disabled) {
+  box-shadow: 0 0 15px var(--primary-glow);
+}
+
+.btn-refine-amount:disabled,
+.btn-refine-max:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Essence card */
+.essence-card {
+  text-align: center;
+  padding: 20px;
+}
+
+.essence-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.essence-icon {
+  font-size: 2rem;
+}
+
+.essence-amount {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+.dark-theme .essence-amount {
+  text-shadow: 0 0 15px var(--secondary-glow);
+}
+
+.essence-label {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.essence-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+/* v5.0 Gold card for stat refinement (idle growth) */
+.gold-refine-card {
+  text-align: center;
+  padding: 20px;
+}
+
+.gold-refine-card .gold-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.gold-refine-card .gold-icon {
+  font-size: 2rem;
+}
+
+.gold-refine-card .gold-amount {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #f59e0b;
+}
+
+.dark-theme .gold-refine-card .gold-amount {
+  text-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
+}
+
+.gold-refine-card .gold-label {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.gold-refine-card .gold-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+/* Hunter resources display */
+.hunter-resources {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.hunter-resources .resource-display {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.hunter-resources .resource-display.gold {
+  color: #f59e0b;
+}
+
+.hunter-resources .resource-display.essence {
+  color: var(--secondary);
+}
+
+/* Shop screen essence display */
+.shop-screen .essence-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(6, 182, 212, 0.2));
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--secondary);
+}
+
+.shop-screen .essence-icon {
+  font-size: 1.2rem;
+}
+
+.shop-screen .essence-amount {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+/* ========== Level Unlock Modal ========== */
+.unlock-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.unlock-modal.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.unlock-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.unlock-modal-content {
+  position: relative;
+  background: var(--bg-card);
+  border-radius: 20px;
+  padding: 32px 24px;
+  max-width: 360px;
+  width: 90%;
+  text-align: center;
+  transform: scale(0.9) translateY(20px);
+  transition: transform 0.3s ease;
+  border: 2px solid var(--primary);
+}
+
+.unlock-modal.show .unlock-modal-content {
+  transform: scale(1) translateY(0);
+}
+
+.dark-theme .unlock-modal-content {
+  box-shadow: 0 0 40px var(--primary-glow), inset 0 0 20px rgba(0, 212, 255, 0.05);
+}
+
+/* Header */
+.unlock-header {
+  margin-bottom: 24px;
+}
+
+.level-up-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, var(--accent), var(--primary));
+  color: black;
+  font-weight: 900;
+  font-size: 1.5rem;
+  padding: 8px 24px;
+  border-radius: 30px;
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+  animation: levelUpPulse 1s ease-in-out infinite;
+}
+
+@keyframes levelUpPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.dark-theme .level-up-badge {
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+
+.level-change {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 1.3rem;
+}
+
+.old-level {
+  color: var(--text-secondary);
+}
+
+.level-arrow {
+  color: var(--primary);
+  font-weight: bold;
+}
+
+.new-level {
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 1.5rem;
+}
+
+.dark-theme .new-level {
+  text-shadow: 0 0 10px var(--primary-glow);
+}
+
+/* Unlock Title */
+.unlock-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.unlock-title .unlock-icon {
+  font-size: 1.5rem;
+}
+
+.unlock-title h2 {
+  font-size: 1.2rem;
+  color: var(--text);
+  margin: 0;
+}
+
+/* Unlock List */
+.unlock-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.unlock-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-secondary);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  animation: unlockSlideIn 0.5s ease-out both;
+}
+
+.unlock-item:nth-child(1) { animation-delay: 0.1s; }
+.unlock-item:nth-child(2) { animation-delay: 0.2s; }
+.unlock-item:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes unlockSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.unlock-item-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.unlock-item-info h3 {
+  font-size: 1rem;
+  color: var(--text);
+  margin: 0 0 4px 0;
+}
+
+.unlock-item-info p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Category colors */
+.unlock-item[data-category="quest"] {
+  border-left: 3px solid #4dabf7;
+}
+
+.unlock-item[data-category="gate"] {
+  border-left: 3px solid #ff6b6b;
+}
+
+.unlock-item[data-category="skill"] {
+  border-left: 3px solid #ffd43b;
+}
+
+.unlock-item[data-category="costume"] {
+  border-left: 3px solid #cc5de8;
+}
+
+.unlock-item[data-category="rank"] {
+  border-left: 3px solid var(--accent);
+}
+
+.dark-theme .unlock-item[data-category="rank"] {
+  background: linear-gradient(135deg, var(--bg-secondary), rgba(0, 255, 136, 0.1));
+}
+
+/* Confirm Button */
+.btn-unlock-confirm {
+  width: 100%;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-unlock-confirm:hover {
+  transform: translateY(-2px);
+}
+
+.dark-theme .btn-unlock-confirm {
+  box-shadow: 0 0 15px var(--primary-glow);
+}
+
+.dark-theme .btn-unlock-confirm:hover {
+  box-shadow: 0 0 25px var(--primary-glow);
 }
 
