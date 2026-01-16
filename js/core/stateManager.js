@@ -634,9 +634,11 @@ export class StateManager {
   }
 
   // 장착된 코스튬의 골드 배율 가져오기
+  // v5.1: 코스튬 장착 시 무조건 2배 골드 적용 (시너지 효과)
   getCostumeGoldBonus() {
-    const bonus = this.getCostumeBonus();
-    return bonus.goldMult;
+    const equippedCostume = this.state.equippedCostume;
+    // 코스튬이 장착되어 있으면 2x, 아니면 1x
+    return equippedCostume ? 2.0 : 1.0;
   }
 
   /**

@@ -3685,3 +3685,694 @@ body {
   box-shadow: 0 0 25px var(--primary-glow);
 }
 
+/* ========== v5.1 Costume Shop & Avatar Updates ========== */
+
+/* Clickable resource cards */
+.resource-card.clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.resource-card.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.resource-card.gold.clickable:hover {
+  border-color: var(--warning);
+}
+
+.resource-card.essence.clickable:hover {
+  border-color: var(--secondary);
+}
+
+/* Hunter avatar with costume */
+.hunter-avatar {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.hunter-avatar:hover {
+  transform: scale(1.05);
+}
+
+.hunter-avatar.has-costume {
+  position: relative;
+}
+
+.costume-indicator {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  background: var(--secondary);
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  border: 2px solid var(--bg-card);
+}
+
+.avatar-icon.costume-normal {
+  background: linear-gradient(135deg, #9ca3af, #6b7280);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.avatar-icon.costume-rare {
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  text-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
+
+.avatar-icon.costume-epic {
+  background: linear-gradient(135deg, #c084fc, #a855f7);
+  text-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+}
+
+.avatar-icon.costume-legendary {
+  background: linear-gradient(135deg, #fcd34d, #f59e0b);
+  text-shadow: 0 0 20px rgba(245, 158, 11, 0.7);
+  animation: legendaryGlow 2s ease-in-out infinite;
+}
+
+@keyframes legendaryGlow {
+  0%, 100% { text-shadow: 0 0 20px rgba(245, 158, 11, 0.7); }
+  50% { text-shadow: 0 0 30px rgba(245, 158, 11, 1); }
+}
+
+.hunter-title.costume-title {
+  color: var(--secondary);
+  font-weight: 600;
+}
+
+.costume-bonus-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.hunter-card.costume-equipped {
+  border-color: var(--secondary);
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+}
+
+/* Idle rate bonus info */
+.bonus-info {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
+/* ========== Costume Shop (v5.1) ========== */
+
+.costume-shop .screen-header {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.costume-shop .screen-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* Essence balance card */
+.essence-balance-card {
+  text-align: center;
+  background: linear-gradient(135deg, var(--bg-card), rgba(168, 85, 247, 0.1));
+  border: 1px solid var(--secondary);
+}
+
+.essence-balance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.essence-icon-large {
+  font-size: 2rem;
+}
+
+.essence-info {
+  text-align: left;
+}
+
+.essence-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.essence-amount-large {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+.essence-source {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+/* Equipped section */
+.equipped-section h3 {
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.equipped-costume-display {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+}
+
+.equipped-sprite {
+  font-size: 2.5rem;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border-radius: 12px;
+}
+
+.equipped-sprite.rare {
+  border: 2px solid #3b82f6;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+}
+
+.equipped-sprite.epic {
+  border: 2px solid #a855f7;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+}
+
+.equipped-sprite.legendary {
+  border: 2px solid #f59e0b;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
+  animation: legendaryBorder 2s ease-in-out infinite;
+}
+
+@keyframes legendaryBorder {
+  0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 11, 0.5); }
+  50% { box-shadow: 0 0 25px rgba(245, 158, 11, 0.8); }
+}
+
+.equipped-info {
+  flex: 1;
+}
+
+.equipped-name {
+  display: block;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.equipped-job {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.equipped-bonus {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.bonus-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.bonus-tag.gold-bonus {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #000;
+}
+
+.bonus-tag.exp-bonus {
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  color: white;
+}
+
+/* No costume equipped */
+.no-costume-equipped {
+  text-align: center;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 2px dashed var(--border);
+}
+
+.no-costume-icon {
+  font-size: 2.5rem;
+  opacity: 0.5;
+}
+
+.no-costume-equipped p {
+  color: var(--text-secondary);
+  margin: 4px 0;
+}
+
+.no-costume-hint {
+  font-size: 0.8rem;
+  color: var(--warning);
+}
+
+/* Costume shop section */
+.costume-shop-section {
+  margin-top: 16px;
+}
+
+.costume-shop-section h3 {
+  margin-bottom: 4px;
+}
+
+.shop-hint {
+  color: var(--warning);
+  font-size: 0.8rem;
+  margin-bottom: 12px;
+}
+
+/* Costume shop grid */
+.costume-shop-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.costume-shop-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.costume-shop-card.is-equipped {
+  border-color: var(--success);
+  background: linear-gradient(135deg, var(--bg-card), rgba(16, 185, 129, 0.1));
+}
+
+.costume-shop-card.is-owned {
+  border-color: var(--primary);
+}
+
+.costume-shop-card.can-buy:hover {
+  border-color: var(--secondary);
+  transform: translateY(-2px);
+}
+
+.costume-shop-card.rarity-rare {
+  border-left: 3px solid #3b82f6;
+}
+
+.costume-shop-card.rarity-epic {
+  border-left: 3px solid #a855f7;
+}
+
+.costume-shop-card.rarity-legendary {
+  border-left: 3px solid #f59e0b;
+  background: linear-gradient(135deg, var(--bg-card), rgba(245, 158, 11, 0.05));
+}
+
+.costume-sprite-container {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.costume-sprite {
+  font-size: 1.8rem;
+}
+
+.costume-rarity-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 0.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.costume-rarity-badge.normal {
+  background: #6b7280;
+  color: white;
+}
+
+.costume-rarity-badge.rare {
+  background: #3b82f6;
+  color: white;
+}
+
+.costume-rarity-badge.epic {
+  background: #a855f7;
+  color: white;
+}
+
+.costume-rarity-badge.legendary {
+  background: linear-gradient(135deg, #fcd34d, #f59e0b);
+  color: #000;
+}
+
+.costume-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.costume-details .costume-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.costume-details .costume-job {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin: 2px 0;
+}
+
+.costume-bonuses {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.bonus-item {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+}
+
+.bonus-item.gold {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(245, 158, 11, 0.2));
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.costume-req {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.costume-req.unmet {
+  color: var(--danger);
+}
+
+.costume-action {
+  flex-shrink: 0;
+}
+
+.btn-costume-action {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 80px;
+}
+
+.btn-costume-action.buy {
+  background: linear-gradient(135deg, #a855f7, #7c3aed);
+  color: white;
+}
+
+.btn-costume-action.buy:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+
+.btn-costume-action.buy:disabled {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
+.btn-costume-action.equip {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
+}
+
+.btn-costume-action.equip:hover {
+  transform: scale(1.05);
+}
+
+.btn-costume-action.equipped {
+  background: var(--success);
+  color: white;
+  cursor: default;
+}
+
+.btn-costume-action.locked {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
+/* Gold usage guide */
+.gold-usage-guide {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  background: linear-gradient(135deg, var(--bg-card), rgba(251, 191, 36, 0.1));
+  border: 1px solid var(--warning);
+}
+
+.guide-icon {
+  font-size: 2rem;
+}
+
+.guide-content h4 {
+  margin: 0 0 4px 0;
+  color: var(--warning);
+}
+
+.guide-content p {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0 0 8px 0;
+}
+
+.btn-go-stat {
+  display: inline-block;
+  padding: 6px 12px;
+  background: var(--warning);
+  color: #000;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.btn-go-stat:hover {
+  transform: translateX(4px);
+}
+
+/* Idle Growth (Stat Enhancement) updates */
+.gold-source-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.gold-source-info .info-item {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+
+
+/* ========== Shop Refactor Styles (v5.1) ========== */
+
+.currency-bar-card {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.currency-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.currency-display.gold .currency-amount { color: var(--warning); }
+.currency-display.essence .currency-amount { color: var(--secondary); }
+
+.currency-icon { font-size: 1.4rem; }
+.currency-amount { font-size: 1.2rem; font-weight: 700; }
+
+.shop-tabs-container {
+  display: flex;
+  background: var(--bg-card);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.shop-main-tab {
+  flex: 1;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.shop-main-tab.active {
+  background: var(--bg-secondary);
+  color: var(--primary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.shop-main-tab[data-tab=\hunter\].active {
+    color: var(--secondary);
+}
+
+.guide-card {
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.gold-guide {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fcd34d;
+}
+
+.essence-guide {
+  background: rgba(168, 85, 247, 0.1);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #d8b4fe;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.shop-item-card {
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.item-icon {
+  font-size: 2rem;
+  margin-right: 16px;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+}
+
+.item-info {
+  flex: 1;
+}
+
+.item-name {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.item-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.item-price-row {
+  display: flex;
+  align-items: center;
+}
+
+.price-tag.gold { color: var(--warning); font-weight: 700; }
+.price-tag.essence { color: var(--secondary); font-weight: 700; }
+
+.btn-buy-item {
+  background: var(--primary);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-buy-item.disabled {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.section-title {
+    margin-top: 24px;
+    margin-bottom: 12px;
+    font-size: 1.1rem;
+    color: var(--text);
+    border-left: 4px solid var(--primary);
+    padding-left: 12px;
+}

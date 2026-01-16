@@ -2,9 +2,38 @@
 import { stateManager } from '../../core/stateManager.js';
 import { GAME_CONSTANTS, getRequiredExp, calculateIdleGold } from '../../config/constants.js';
 import { getDailyQuote, generateDailyEvaluation, WARNING_MESSAGES } from '../../config/narrative.js';
+import { getCostumeById } from '../../config/costumes.js';
 
 let idleUpdateInterval = null;
 let criticalUnsubscribe = null;
+
+// 코스튬에 따른 아바타 스프라이트 반환
+function getAvatarSprite(gender, costume) {
+  if (!costume) {
+    // 기본 아바타
+    return gender === 'female' ? '👩' : '👨';
+  }
+
+  // 코스튬별 스프라이트 맵핑
+  const costumeSprites = {
+    // Normal
+    'hunter_basic': gender === 'female' ? '👩‍🦱' : '👨‍🦱',
+    'shadow_cloak': '🥷',
+    'warrior_armor': '⚔️',
+    'scholar_robe': '🧙',
+    // Rare
+    'mage_robe': '🧙‍♂️',
+    'lucky_charm': '🍀',
+    'assassin_gear': '🗡️',
+    // Epic
+    'dragon_scale': '🐉',
+    'esper_suit': '🔮',
+    // Legendary
+    'monarch_regalia': '👑'
+  };
+
+  return costumeSprites[costume.id] || (gender === 'female' ? '👩' : '👨');
+}
 
 export function renderDashboard() {
   const app = document.getElementById('app');
@@ -66,26 +95,37 @@ export function renderDashboard() {
       ` : ''}
 
       <!-- 헌터 정보 카드 -->
-      <div class="card hunter-card">
+      ${(() => {
+        const equippedCostumeId = stateManager.get('equippedCostume');
+        const equippedCostume = equippedCostumeId ? getCostumeById(equippedCostumeId) : null;
+        const avatarSprite = getAvatarSprite(hunter.gender, equippedCostume);
+        const jobTitle = equippedCostume ? equippedCostume.jobTitle : hunter.title;
+        const hasCostume = !!equippedCostume;
+
+        return `
+      <div class="card hunter-card ${hasCostume ? 'costume-equipped' : ''}">
         <div class="hunter-summary">
-          <div class="hunter-avatar">
-            <div class="avatar-icon">${hunter.gender === 'female' ? '&#128105;' : '&#128104;'}</div>
+          <div class="hunter-avatar ${hasCostume ? 'has-costume' : ''}" onclick="window.location.hash='shop'">
+            <div class="avatar-icon ${equippedCostume ? 'costume-' + equippedCostume.rarity.toLowerCase() : ''}">${avatarSprite}</div>
             <div class="rank-badge rank-${hunter.rank.toLowerCase()}">${hunter.rank}</div>
+            ${hasCostume ? '<div class="costume-indicator">&#128084;</div>' : ''}
           </div>
           <div class="hunter-info">
             <h2>${hunter.name}</h2>
-            <p class="hunter-title">${hunter.title}</p>
+            <p class="hunter-title ${hasCostume ? 'costume-title' : ''}">${jobTitle}</p>
             <div class="level-info">
               <span class="level">Lv. ${hunter.level}</span>
               ${hunter.statPoints > 0 ? `<span class="stat-points-badge">+${hunter.statPoints} 포인트</span>` : ''}
             </div>
+            ${hasCostume ? `<div class="costume-bonus-badge">&#128176; x2 골드</div>` : ''}
           </div>
         </div>
         <div class="exp-bar">
           <div class="exp-fill" style="width: ${expPercent}%"></div>
           <span class="exp-text">${hunter.exp} / ${expRequired} EXP</span>
         </div>
-      </div>
+      </div>`;
+      })()}
 
       <!-- 스태미나 & 골드 & 에센스 (v5.0 Dual Economy) -->
       <div class="resources-row">
@@ -99,21 +139,21 @@ export function renderDashboard() {
             <div class="resource-fill" style="width: ${(daily.stamina / GAME_CONSTANTS.DAILY_STAMINA) * 100}%"></div>
           </div>
         </div>
-        <div class="resource-card gold">
+        <div class="resource-card gold clickable" onclick="window.location.hash='idle-growth'">
           <div class="resource-icon">&#128176;</div>
           <div class="resource-info">
             <span class="resource-label">골드</span>
             <span class="resource-value">${hunter.gold.toLocaleString()} G</span>
           </div>
-          <span class="resource-hint">자동 수급</span>
+          <span class="resource-hint">자동 수급 → 스탯 강화</span>
         </div>
-        <div class="resource-card essence">
+        <div class="resource-card essence clickable" onclick="window.location.hash='shop'">
           <div class="resource-icon">&#10024;</div>
           <div class="resource-info">
             <span class="resource-label">에센스</span>
             <span class="resource-value">${(hunter.essence || 0).toLocaleString()} E</span>
           </div>
-          <span class="resource-hint">퀘스트</span>
+          <span class="resource-hint">퀘스트 → 코스튬 구매</span>
         </div>
       </div>
 
@@ -242,6 +282,7 @@ function showCriticalAnimation(data) {
 }
 
 // Design v3.0: goldPerSecond = baseGold * (1 + STR * 0.05)
+// v5.1: 코스튬 장착 시 2배 골드 적용
 function updateIdleRate() {
   const rateEl = document.getElementById('idleRate');
   if (!rateEl) {
@@ -253,17 +294,31 @@ function updateIdleRate() {
   if (!hunter) return;
 
   let goldPerSecond = calculateIdleGold(hunter.stats.STR);
+  const bonusLabels = [];
 
   // 시뮬레이션 패널티
   if (!stateManager.isRealHunterToday()) {
     goldPerSecond *= GAME_CONSTANTS.REWARD_MULTIPLIER.SIMULATION;
+    bonusLabels.push('SIM 0.35x');
+  }
+
+  // 코스튬 보너스 (2x)
+  const costumeBonus = stateManager.getCostumeGoldBonus();
+  if (costumeBonus > 1) {
+    goldPerSecond *= costumeBonus;
+    bonusLabels.push('코스튬 x2');
   }
 
   // 자동전투 부스트
   const idle = stateManager.get('idle');
   if (idle.autoBattleBoost && Date.now() < idle.autoBattleBoost.endTime) {
     goldPerSecond *= GAME_CONSTANTS.AD_REWARDS.AUTO_BATTLE_BOOST.multiplier;
-    rateEl.innerHTML = `<span class="boosted">${goldPerSecond.toFixed(2)} G/s (x2)</span>`;
+    bonusLabels.push('부스트 x2');
+  }
+
+  if (bonusLabels.length > 0) {
+    const bonusText = bonusLabels.join(' · ');
+    rateEl.innerHTML = `<span class="boosted">${goldPerSecond.toFixed(2)} G/s</span> <span class="bonus-info">(${bonusText})</span>`;
   } else {
     rateEl.textContent = `${goldPerSecond.toFixed(2)} G/s`;
   }

@@ -35,14 +35,14 @@ A gamified goal management application inspired by "Solo Leveling", where real-l
 -   **Gates**: Dungeons/Challenges (Weekday/Weekend/Sudden).
 -   **Shop**: Split into General (Gold) and Hunter (Essence) tabs.
 
-## Recent Changes (v5.0)
--   **Stat Growth Rule**: Stats are upgraded using Gold only.
--   **Refine Tab Split**: Created "Idle Growth (Gold)" and "Hunter Growth (Essence)" tabs.
--   **Essence Condenser**: Implemented passive essence generation with daily cap logic.
--   **Shop Refactor**:
-    -   Split shop into "General Shop (Gold)" and "Hunter Shop (Essence)".
-    -   Created `shopItems.js` config.
-    -   Enforced hard rule: Costumes buyable only with Essence.
+## Recent Changes (v5.1 Shop Refactor)
+-   **Dual Currency UI**: Shop header now displays both Gold and Essence balances clearly.
+-   **Tabbed Shop Interface**: 
+    -   **General Shop (Gold)**: Sells consumables and buffs.
+    -   **Hunter Shop (Essence)**: Sells Costumes (Jobs) and Elite Skills.
+-   **Strict Currency Rules**: 
+    -   Costumes can *only* be purchased with Essence.
+    -   Gold purchases for Hunter items are blocked at UI and Logic levels.
 
 ## Current Plan
 -   [x] **v5.0 Stat Growth Rule**: Switch stat upgrades to Gold only.

@@ -44,18 +44,22 @@ export function renderIdleGrowth() {
   app.innerHTML = `
     <div class="refine-screen">
       <div class="screen-header">
-        <h1>방치형 성장 (Gold)</h1>
-        <p class="screen-subtitle">골드를 투자하여 능력치를 성장시키세요</p>
+        <h1>💰 스탯 강화</h1>
+        <p class="screen-subtitle">골드를 투자하여 기본 능력치를 성장시키세요</p>
       </div>
 
       <!-- 골드 보유량 (v5.0: Gold for idle growth) -->
       <div class="card gold-refine-card">
         <div class="gold-display">
-          <span class="gold-icon">&#128176;</span>
+          <span class="gold-icon">💰</span>
           <span class="gold-amount">${gold.toLocaleString()}</span>
           <span class="gold-label">보유 골드</span>
         </div>
-        <p class="gold-hint">자동 수급으로 골드를 획득합니다</p>
+        <p class="gold-hint">자동 수급으로 골드 획득 → 스탯 강화에 사용</p>
+        <div class="gold-source-info">
+          <span class="info-item">📈 STR 스탯 ↑ → 골드 수급량 ↑</span>
+          <span class="info-item">🎭 코스튬 장착 → 골드 x2</span>
+        </div>
       </div>
 
       <!-- 스탯 리스트 -->
