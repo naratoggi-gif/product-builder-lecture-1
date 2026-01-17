@@ -1,7 +1,8 @@
 // The Hunter System - 방치형 성장 화면 (Idle Growth)
-// v5.0 Dual Economy: Gold is used for stat refinement (idle growth)
+// v6.1: Progress Refining System - 게이지 기반 스탯 연마
 import { stateManager } from '../../core/stateManager.js';
 import { calculateRefineCost } from '../../config/constants.js';
+import { getRefineNarrative } from '../../config/narrative.js';
 
 export function renderIdleGrowth() {
   const app = document.getElementById('app');
@@ -12,27 +13,28 @@ export function renderIdleGrowth() {
     return;
   }
 
-  // v5.0: Use gold instead of essence for stat refinement
+  // v6.1: Gold는 스탯 연마에만 사용 (Essence는 코스튬 구매에만 사용)
   const gold = hunter.gold || 0;
   const statTraining = hunter.statTraining || {};
 
+  // v6.1: 스탯별 효과 설명 (더 명확한 설명)
   const statDescriptions = {
-    STR: '물리 데미지, 아이들 골드',
-    INT: '스킬 데미지, 보상 배율',
+    STR: '아이들 골드 +5%/Lv, 물리 데미지',
+    INT: '퀘스트 EXP +2%/Lv, 스킬 데미지',
     WIL: '방어력, 스태미나 효율',
-    FOCUS: '퀘스트 대기시간, 크리티컬',
-    LUK: '드롭률, 랜덤 보너스'
+    FOCUS: '퀘스트 대기시간 감소, 크리티컬',
+    LUK: '드롭률 증가, 랜덤 보너스'
   };
 
   const statIcons = {
-    STR: '&#128170;',
-    INT: '&#128218;',
-    WIL: '&#128737;',
-    FOCUS: '&#127919;',
-    LUK: '&#127808;'
+    STR: '💪',
+    INT: '📚',
+    WIL: '🛡️',
+    FOCUS: '🎯',
+    LUK: '🍀'
   };
 
-  // 스탯별 컬러 테마
+  // v6.1: 스탯별 컬러 테마 (더 선명한 색상)
   const statColors = {
     STR: { main: '#ff6b6b', glow: 'rgba(255, 107, 107, 0.5)' },
     INT: { main: '#4dabf7', glow: 'rgba(77, 171, 247, 0.5)' },
@@ -41,24 +43,32 @@ export function renderIdleGrowth() {
     LUK: { main: '#cc5de8', glow: 'rgba(204, 93, 232, 0.5)' }
   };
 
+  // v6.1: 코스튬 골드 배율 표시
+  const costumeGoldBonus = stateManager.getCostumeGoldBonus();
+  const hasCostume = costumeGoldBonus > 1;
+
   app.innerHTML = `
     <div class="refine-screen">
       <div class="screen-header">
-        <h1>💰 스탯 강화</h1>
-        <p class="screen-subtitle">골드를 투자하여 기본 능력치를 성장시키세요</p>
+        <h1>💰 스탯 연마</h1>
+        <p class="screen-subtitle">골드를 투자하여 게이지를 채우면 스탯이 상승합니다</p>
       </div>
 
-      <!-- 골드 보유량 (v5.0: Gold for idle growth) -->
+      <!-- v6.1: 골드 보유량 (Progress Refining) -->
       <div class="card gold-refine-card">
         <div class="gold-display">
           <span class="gold-icon">💰</span>
           <span class="gold-amount">${gold.toLocaleString()}</span>
           <span class="gold-label">보유 골드</span>
         </div>
-        <p class="gold-hint">자동 수급으로 골드 획득 → 스탯 강화에 사용</p>
+        <p class="gold-hint">자동 수급 골드 → 스탯 연마 게이지에 투자</p>
         <div class="gold-source-info">
-          <span class="info-item">📈 STR 스탯 ↑ → 골드 수급량 ↑</span>
-          <span class="info-item">🎭 코스튬 장착 → 골드 x2</span>
+          <span class="info-item">📈 STR Lv 당 골드 수급량 +5%</span>
+          <span class="info-item ${hasCostume ? 'active-bonus' : ''}">🎭 코스튬 장착 시 골드 x2 ${hasCostume ? '(활성!)' : ''}</span>
+        </div>
+        <div class="refine-rule-box">
+          <span class="rule-icon">📊</span>
+          <span class="rule-text">게이지 100% 달성 시 스탯 +1 상승</span>
         </div>
       </div>
 
@@ -178,9 +188,11 @@ export function renderIdleGrowth() {
   });
 }
 
-// 레벨업 이펙트
+// v6.1: 레벨업 이펙트 (현대 판타지 소설 톤)
 function showLevelUpEffect(stat, newLevel) {
-  window.showNotification(`${stat} 레벨 업! → Lv.${newLevel}`, 'success');
+  // 현대 판타지 스타일 내러티브 메시지
+  const narrative = getRefineNarrative(stat);
+  window.showNotification(`${stat} Lv.${newLevel} 달성! ${narrative}`, 'success');
 
   // 카드에 레벨업 애니메이션 추가
   const card = document.querySelector(`.refine-card[data-stat="${stat}"]`);

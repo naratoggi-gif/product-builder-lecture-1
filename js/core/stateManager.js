@@ -1,8 +1,10 @@
-// The Hunter System - 상태 관리자
+// The Hunter System - 상태 관리자 (v6.1)
+// v6.1: Progress Refining System, Hunter ID Card, Costume Synergy, Code Stability
 import { GAME_CONSTANTS, getRequiredExp, calculateIdleGold, getAutoBattleCritRate, calculateRefineCost, getUnlocksAtLevel, UNLOCK_DETAILS } from '../config/constants.js';
 import { getCostumeById, getCostumeStatBonus, canEquipCostume } from '../config/costumes.js';
 
 const STORAGE_KEY = GAME_CONSTANTS.STORAGE_KEY;
+const STORAGE_BACKUP_KEY = STORAGE_KEY + '_backup';
 
 export class StateManager {
   constructor() {
@@ -13,9 +15,18 @@ export class StateManager {
     this.startIdleSystem();
   }
 
-  // 로컬 타임존 기준 오늘 날짜 키 (YYYY-MM-DD) - ISO 형식
+  // v6.1: 로컬 타임존 기준 오늘 날짜 키 (YYYY-MM-DD) - en-CA 로캘 사용
+  // 이 형식은 ISO 8601과 호환되며 모든 날짜 비교에 사용됨
   getTodayKey(date = new Date()) {
-    return date.toLocaleDateString('en-CA'); // YYYY-MM-DD 형식
+    try {
+      return date.toLocaleDateString('en-CA'); // YYYY-MM-DD 형식
+    } catch (e) {
+      // Fallback: 수동으로 YYYY-MM-DD 생성
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
   }
 
   // 레거시 호환성
@@ -139,10 +150,21 @@ export class StateManager {
     }
   }
 
-  // 로컬 스토리지에서 불러오기 (v5.0 Dual Economy Migration)
+  // v6.1: 로컬 스토리지에서 불러오기 (데이터 유실 방지 강화)
   load() {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      let saved = localStorage.getItem(STORAGE_KEY);
+
+      // v6.1: 메인 데이터가 없거나 손상된 경우 백업에서 복원 시도
+      if (!saved) {
+        const backup = localStorage.getItem(STORAGE_BACKUP_KEY);
+        if (backup) {
+          console.warn('[v6.1] 메인 데이터 없음, 백업에서 복원 시도');
+          saved = backup;
+          localStorage.setItem(STORAGE_KEY, backup);
+        }
+      }
+
       if (saved) {
         const data = JSON.parse(saved);
         this.state = { ...this.getDefaultState(), ...data };
@@ -222,12 +244,43 @@ export class StateManager {
     }
   }
 
-  // 로컬 스토리지에 저장
+  // v6.1: 로컬 스토리지에 저장 (백업 포함, 데이터 유실 방지)
   save() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+      const stateJson = JSON.stringify(this.state);
+
+      // 저장 전 유효성 검사
+      if (!stateJson || stateJson === 'null' || stateJson === '{}') {
+        console.error('[v6.1] 빈 상태 저장 방지됨');
+        return;
+      }
+
+      // 메인 저장
+      localStorage.setItem(STORAGE_KEY, stateJson);
+
+      // v6.1: 정기 백업 (5분마다 또는 중요 변경 시)
+      const now = Date.now();
+      if (!this._lastBackupTime || now - this._lastBackupTime > 5 * 60 * 1000) {
+        localStorage.setItem(STORAGE_BACKUP_KEY, stateJson);
+        this._lastBackupTime = now;
+      }
     } catch (e) {
-      console.error('상태 저장 실패:', e);
+      console.error('[v6.1] 상태 저장 실패:', e);
+      // 저장 실패 시 알림
+      if (e.name === 'QuotaExceededError') {
+        console.warn('[v6.1] 저장 공간 부족 - 오래된 데이터 정리 필요');
+      }
+    }
+  }
+
+  // v6.1: 강제 백업 (중요 변경 후 호출)
+  forceBackup() {
+    try {
+      const stateJson = JSON.stringify(this.state);
+      localStorage.setItem(STORAGE_BACKUP_KEY, stateJson);
+      this._lastBackupTime = Date.now();
+    } catch (e) {
+      console.error('[v6.1] 백업 실패:', e);
     }
   }
 
@@ -350,31 +403,269 @@ export class StateManager {
     return this.upgradeStatWithGold(statName, amount);
   }
 
-  // v5.0: Upgrade Stat using Gold Only
-  upgradeStatWithGold(statName, amount) {
+  /**
+   * v6.1: Progress Refining System (게이지 기반 스탯 연마)
+   *
+   * 스탯 상승은 포인트 할당이 아닌 게이지(Progress Bar)를 채우는 방식
+   * - Gold를 소모해 진행도를 높임
+   * - 100% 달성 시 스탯 +1
+   *
+   * @param {string} statName - 연마할 스탯명 (STR, INT, WIL, FOCUS, LUK)
+   * @param {number} goldAmount - 투자할 골드량
+   * @returns {{ success: boolean, levelUp: boolean, levelsGained: number, newStatValue: number, progressPercent: number, error?: string }}
+   */
+  upgradeStatWithGold(statName, goldAmount) {
     const hunter = this.state.hunter;
     if (!hunter) return { success: false, error: '헌터 정보가 없습니다' };
 
-    // v5.0: Use gold instead of essence for stat refinement (idle growth)
-    if (hunter.gold < amount) return { success: false, error: '골드가 부족합니다' };
+    // v6.1: Gold는 스탯 연마에만 사용
+    if (hunter.gold < goldAmount) return { success: false, error: '골드가 부족합니다' };
 
-    hunter.gold -= amount;
-    hunter.statTraining[statName] = (hunter.statTraining[statName] || 0) + amount;
+    // 현재 스탯 레벨과 진행도
+    const currentStatLevel = hunter.stats[statName];
+    const currentProgress = hunter.statTraining[statName] || 0;
+    const requiredForLevel = calculateRefineCost(currentStatLevel);
 
-    let levelUp = false;
+    // 골드 소모
+    hunter.gold -= goldAmount;
+
+    // 진행도 증가
+    hunter.statTraining[statName] = currentProgress + goldAmount;
+
+    // 레벨업 체크 (100% 달성 시)
+    let levelsGained = 0;
     let cost = calculateRefineCost(hunter.stats[statName]);
 
     while (hunter.statTraining[statName] >= cost) {
       hunter.statTraining[statName] -= cost;
       hunter.stats[statName]++;
-      levelUp = true;
+      levelsGained++;
       cost = calculateRefineCost(hunter.stats[statName]); // 다음 레벨 비용 재계산
     }
+
+    // 현재 진행도 퍼센트 계산
+    const newProgress = hunter.statTraining[statName];
+    const newCost = calculateRefineCost(hunter.stats[statName]);
+    const progressPercent = Math.min(100, (newProgress / newCost) * 100);
 
     this.save();
     this.notify('hunter', hunter);
 
-    return { success: true, levelUp, newStatValue: hunter.stats[statName] };
+    // v6.1: 레벨업 시 강제 백업 및 랭크 체크
+    if (levelsGained > 0) {
+      this.forceBackup();
+      // 스탯 상승 시 실시간 랭크 계산
+      this.calculateAndUpdateRank();
+    }
+
+    return {
+      success: true,
+      levelUp: levelsGained > 0,
+      levelsGained,
+      newStatValue: hunter.stats[statName],
+      progressPercent,
+      goldSpent: goldAmount
+    };
+  }
+
+  /**
+   * v6.1: 스탯 연마 진행도 조회
+   * @param {string} statName - 조회할 스탯명
+   * @returns {{ current: number, required: number, percent: number, nextLevel: number }}
+   */
+  getRefineProgress(statName) {
+    const hunter = this.state.hunter;
+    if (!hunter) return { current: 0, required: 0, percent: 0, nextLevel: 1 };
+
+    const current = hunter.statTraining[statName] || 0;
+    const required = calculateRefineCost(hunter.stats[statName]);
+    const percent = Math.min(100, (current / required) * 100);
+    const nextLevel = hunter.stats[statName] + 1;
+
+    return { current, required, percent, nextLevel };
+  }
+
+  // ========== v6.1: Hunter ID Card & Rank System ==========
+
+  /**
+   * v6.1: 헌터 칭호 계산 (주력 스탯 기반)
+   * 가장 높은 스탯에 따라 칭호가 결정됨
+   */
+  calculateHunterTitle() {
+    const hunter = this.state.hunter;
+    if (!hunter) return '각성한 자';
+
+    const stats = hunter.stats;
+    const entries = Object.entries(stats);
+
+    // 최고 스탯 찾기
+    let maxStat = { name: 'STR', value: 0 };
+    for (const [name, value] of entries) {
+      if (value > maxStat.value) {
+        maxStat = { name, value };
+      }
+    }
+
+    // 스탯별 칭호 맵핑
+    const titleMap = {
+      STR: this._getStrengthTitle(maxStat.value),
+      INT: this._getIntelligenceTitle(maxStat.value),
+      WIL: this._getWillTitle(maxStat.value),
+      FOCUS: this._getFocusTitle(maxStat.value),
+      LUK: this._getLuckTitle(maxStat.value)
+    };
+
+    return titleMap[maxStat.name] || '각성한 자';
+  }
+
+  _getStrengthTitle(value) {
+    if (value >= 50) return '강철의 파괴자';
+    if (value >= 35) return '철권 전사';
+    if (value >= 25) return '힘의 구현자';
+    if (value >= 15) return '근력 수련가';
+    return '초보 전사';
+  }
+
+  _getIntelligenceTitle(value) {
+    if (value >= 50) return '천재 마법사';
+    if (value >= 35) return '아케인 학자';
+    if (value >= 25) return '지식의 탐구자';
+    if (value >= 15) return '책벌레';
+    return '초보 학자';
+  }
+
+  _getWillTitle(value) {
+    if (value >= 50) return '불굴의 정신';
+    if (value >= 35) return '철인 수행자';
+    if (value >= 25) return '의지의 수호자';
+    if (value >= 15) return '인내의 수련생';
+    return '초보 수행자';
+  }
+
+  _getFocusTitle(value) {
+    if (value >= 50) return '일섬의 달인';
+    if (value >= 35) return '예리한 사냥꾼';
+    if (value >= 25) return '집중의 명수';
+    if (value >= 15) return '정밀 사격수';
+    return '초보 궁수';
+  }
+
+  _getLuckTitle(value) {
+    if (value >= 50) return '운명의 총아';
+    if (value >= 35) return '행운의 화신';
+    if (value >= 25) return '복덩이';
+    if (value >= 15) return '행운아';
+    return '평범한 행인';
+  }
+
+  /**
+   * v6.1: 헌터 ID 카드 정보 반환
+   * 대시보드 상단에 표시될 헌터 자격증 데이터
+   */
+  getHunterIdCard() {
+    const hunter = this.state.hunter;
+    if (!hunter) return null;
+
+    // 주력 스탯 계산
+    const stats = hunter.stats;
+    let mainStat = { name: 'STR', value: 0 };
+    for (const [name, value] of Object.entries(stats)) {
+      if (value > mainStat.value) {
+        mainStat = { name, value };
+      }
+    }
+
+    // 총 스탯 합계
+    const totalStats = Object.values(stats).reduce((sum, v) => sum + v, 0);
+
+    // 칭호 계산
+    const title = this.calculateHunterTitle();
+
+    // 코스튬 정보
+    const equippedCostume = this.getEquippedCostume();
+    const jobTitle = equippedCostume ? equippedCostume.jobTitle : title;
+
+    return {
+      id: hunter.id,
+      name: hunter.name,
+      rank: hunter.rank || 'E',
+      level: hunter.level,
+      title: title,
+      jobTitle: jobTitle,
+      mainStat: mainStat,
+      totalStats: totalStats,
+      gender: hunter.gender,
+      createdAt: hunter.createdAt,
+      currentStreak: this.state.statistics.currentStreak || 0,
+      isRealHunter: this.isRealHunterToday(),
+      equippedCostume: equippedCostume
+    };
+  }
+
+  /**
+   * v6.1: 헌터 랭크 정보 반환 (등급별 색상/설명)
+   */
+  getRankInfo(rank) {
+    const rankData = {
+      'E': { name: 'E등급', color: '#9ca3af', description: '신입 헌터', minStats: 0 },
+      'D': { name: 'D등급', color: '#10b981', description: '숙련 헌터', minStats: 35 },
+      'C': { name: 'C등급', color: '#3b82f6', description: '정예 헌터', minStats: 50 },
+      'B': { name: 'B등급', color: '#a855f7', description: '베테랑 헌터', minStats: 75 },
+      'A': { name: 'A등급', color: '#f59e0b', description: '상위 헌터', minStats: 100 },
+      'S': { name: 'S등급', color: '#ef4444', description: '최상위 헌터', minStats: 150 }
+    };
+    return rankData[rank] || rankData['E'];
+  }
+
+  /**
+   * v6.1: 총 스탯 기반 실시간 랭크 계산 및 승급
+   * 스탯 총합이 일정 기준을 넘으면 자동으로 랭크 승급
+   */
+  calculateAndUpdateRank() {
+    const hunter = this.state.hunter;
+    if (!hunter) return null;
+
+    const totalStats = Object.values(hunter.stats).reduce((sum, v) => sum + v, 0);
+
+    // 랭크 기준 (총 스탯 합계)
+    const rankThresholds = [
+      { rank: 'S', minStats: 150 },
+      { rank: 'A', minStats: 100 },
+      { rank: 'B', minStats: 75 },
+      { rank: 'C', minStats: 50 },
+      { rank: 'D', minStats: 35 },
+      { rank: 'E', minStats: 0 }
+    ];
+
+    let newRank = 'E';
+    for (const threshold of rankThresholds) {
+      if (totalStats >= threshold.minStats) {
+        newRank = threshold.rank;
+        break;
+      }
+    }
+
+    const oldRank = hunter.rank;
+    if (newRank !== oldRank) {
+      hunter.rank = newRank;
+      this.save();
+
+      // 랭크 승급 알림
+      if (this._getRankOrder(newRank) > this._getRankOrder(oldRank)) {
+        this.notify('rankUp', {
+          oldRank,
+          newRank,
+          totalStats
+        });
+      }
+    }
+
+    return { rank: newRank, totalStats };
+  }
+
+  _getRankOrder(rank) {
+    const order = { 'E': 1, 'D': 2, 'C': 3, 'B': 4, 'A': 5, 'S': 6 };
+    return order[rank] || 0;
   }
 
   // ========== 퀘스트 관련 ==========

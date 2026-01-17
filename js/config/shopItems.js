@@ -1,5 +1,7 @@
 // The Hunter System - Shop Items Configuration
-// v5.0 Dual Economy: Gold (General) vs Essence (Hunter)
+// v6.1 Dual Economy (엄격한 분리):
+// - Gold: 자동사냥/방치로 획득 → 스탯 연마에만 사용 (General Shop)
+// - Essence: 현실 퀘스트로 획득 → 특별 코스튬 구매에만 사용 (Hunter Shop)
 
 export const SHOP_ITEMS = {
   GENERAL: [

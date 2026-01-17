@@ -1,9 +1,10 @@
-// The Hunter System - Shop Screen (v5.1 Refactor)
+// The Hunter System - Shop Screen (v6.1)
+// v6.1: Costume-Skill Synergy - 코스튬 장착 시 외형 변화 + 골드 x2 배율
 import { stateManager } from '../../core/stateManager.js';
 import { SHOP_ITEMS } from '../../config/shopItems.js';
 import { COSTUMES, getCostumeById, canEquipCostume } from '../../config/costumes.js';
 
-// 코스튬별 스프라이트 맵핑
+// v6.1: 코스튬별 스프라이트 맵핑 (외형 변화 시스템)
 const COSTUME_SPRITES = {
   'hunter_basic': '👨‍🦱',
   'shadow_cloak': '🥷',
@@ -109,7 +110,7 @@ function renderGeneralShop(hunter) {
   `;
 }
 
-// --- Hunter Shop (Essence) - Costumes ---
+// --- v6.1: Hunter Shop (Essence Only) - Costumes with Synergy ---
 function renderHunterShop(hunter) {
   const ownedCostumes = stateManager.get('costumes') || [];
   const equippedCostumeId = stateManager.get('equippedCostume');
@@ -117,9 +118,32 @@ function renderHunterShop(hunter) {
 
   return `
     <div class="hunter-shop-section">
+      <!-- v6.1: Dual Economy 안내 -->
       <div class="guide-card essence-guide">
-        <p>✨ 에센스는 퀘스트 완료로만 획득할 수 있는 증명의 화폐입니다.</p>
-        <p>코스튬을 구매하여 자동 사냥 효율(골드 획득량)을 높이세요!</p>
+        <p>✨ <strong>에센스</strong>는 현실 퀘스트 완료로만 획득하는 증명의 화폐입니다.</p>
+        <p>💰 <strong>골드</strong>는 자동 사냥으로 획득 → 스탯 연마에만 사용됩니다.</p>
+      </div>
+
+      <!-- v6.1: 코스튬 시너지 안내 -->
+      <div class="synergy-info-card">
+        <div class="synergy-header">
+          <span class="synergy-icon">🎭</span>
+          <span class="synergy-title">코스튬 시너지 효과</span>
+        </div>
+        <div class="synergy-effects">
+          <div class="synergy-item">
+            <span class="effect-icon">👤</span>
+            <span class="effect-text">아바타 외형 변화</span>
+          </div>
+          <div class="synergy-item highlight">
+            <span class="effect-icon">💰</span>
+            <span class="effect-text">골드 획득량 x2 배율</span>
+          </div>
+          <div class="synergy-item">
+            <span class="effect-icon">⚔️</span>
+            <span class="effect-text">스킬 이름/효과 변경</span>
+          </div>
+        </div>
       </div>
 
       <!-- Currently Equipped -->

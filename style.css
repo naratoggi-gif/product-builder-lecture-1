@@ -2356,6 +2356,26 @@ body {
   margin-top: 8px;
 }
 
+/* v6.1: 크리티컬 내러티브 (현대 판타지 소설 톤) */
+.critical-narrative {
+  font-size: 0.9rem;
+  color: #00d4ff;
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.7);
+  animation: criticalNarrative 1.2s ease-out forwards;
+  margin-top: 8px;
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 8px;
+  max-width: 300px;
+}
+
+@keyframes criticalNarrative {
+  0% { opacity: 0; transform: translateY(10px); }
+  20% { opacity: 1; transform: translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+
 @keyframes criticalPop {
   0% {
     opacity: 0;
@@ -4376,3 +4396,854 @@ body {
     border-left: 4px solid var(--primary);
     padding-left: 12px;
 }
+
+/* ========== v6.1: Hunter ID Card (헌터 자격증) ========== */
+.hunter-id-card {
+  background: linear-gradient(145deg, var(--bg-card), rgba(15, 23, 42, 0.95));
+  border: 2px solid var(--rank-color, var(--border));
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--rank-glow, none), var(--shadow);
+}
+
+.hunter-id-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--rank-color, var(--primary)), transparent);
+}
+
+.hunter-id-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--scanline);
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.id-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.id-card-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--rank-color, var(--primary));
+  text-transform: uppercase;
+}
+
+.id-card-number {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.id-card-body {
+  display: flex;
+  gap: 16px;
+}
+
+.id-card-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar-frame {
+  width: 80px;
+  height: 80px;
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  border: 3px solid var(--rank-color, var(--border));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.avatar-frame.costume-normal { border-color: #9ca3af; }
+.avatar-frame.costume-rare { border-color: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.3); }
+.avatar-frame.costume-epic { border-color: #a855f7; box-shadow: 0 0 20px rgba(168, 85, 247, 0.4); }
+.avatar-frame.costume-legendary { border-color: #fbbf24; box-shadow: 0 0 25px rgba(251, 191, 36, 0.5); animation: legendaryGlow 2s ease-in-out infinite; }
+
+@keyframes legendaryGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba(251, 191, 36, 0.4); }
+  50% { box-shadow: 0 0 35px rgba(251, 191, 36, 0.7); }
+}
+
+.rank-emblem {
+  padding: 6px 12px;
+  border-radius: 8px;
+  text-align: center;
+  min-width: 60px;
+}
+
+.rank-letter {
+  font-size: 1.2rem;
+  font-weight: 900;
+  display: block;
+}
+
+.rank-label {
+  font-size: 0.6rem;
+  opacity: 0.8;
+  display: block;
+  margin-top: 2px;
+}
+
+.id-card-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hunter-name {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.hunter-title-row,
+.hunter-job-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.title-label,
+.job-label {
+  color: var(--text-secondary);
+  min-width: 40px;
+}
+
+.title-value {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.job-value {
+  color: var(--secondary);
+  font-weight: 600;
+}
+
+.hunter-main-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  width: fit-content;
+}
+
+.hunter-main-stat .stat-icon {
+  font-size: 1rem;
+}
+
+.hunter-main-stat .stat-info {
+  font-size: 0.8rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.id-card-stats {
+  display: flex;
+  gap: 16px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.id-card-stats .stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.id-card-stats .stat-label {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.id-card-stats .stat-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.id-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.status-indicator {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.status-indicator.real {
+  background: rgba(0, 255, 136, 0.15);
+  color: var(--success);
+}
+
+.status-indicator.simulation {
+  background: rgba(255, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+.costume-bonus {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--warning);
+  padding: 4px 10px;
+  background: rgba(245, 158, 11, 0.15);
+  border-radius: 8px;
+}
+
+/* 간략 헌터 카드 (ID 카드 아래) */
+.hunter-card .hunter-level-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hunter-card .level-badge {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* ========== v6.1: Progress Refining (게이지 기반 연마) ========== */
+.refine-screen {
+  padding-bottom: 24px;
+}
+
+.refine-screen .screen-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.refine-screen .screen-header h1 {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+
+.refine-screen .screen-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.gold-refine-card {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 20px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.gold-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gold-display .gold-icon {
+  font-size: 2rem;
+}
+
+.gold-display .gold-amount {
+  font-size: 2rem;
+  font-weight: 900;
+  color: var(--warning);
+}
+
+.gold-display .gold-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
+.gold-hint {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.gold-source-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.gold-source-info .info-item {
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+/* 연마 카드 */
+.refine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.refine-card {
+  padding: 16px;
+  transition: all 0.3s ease;
+}
+
+.refine-card.level-up-flash {
+  animation: levelUpFlash 0.6s ease-out;
+}
+
+@keyframes levelUpFlash {
+  0% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.7); }
+  50% { box-shadow: 0 0 30px 10px rgba(0, 255, 136, 0.5); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); }
+}
+
+.refine-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.stat-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stat-icon {
+  font-size: 1.5rem;
+}
+
+.stat-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stat-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.stat-level {
+  text-align: right;
+}
+
+.level-value {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--primary);
+  display: block;
+}
+
+.level-next {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* v6.1: 컨테이너 스타일 게이지 바 */
+.refine-container {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.refine-tank {
+  width: 60px;
+  height: 100px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: 8px 8px 20px 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.refine-liquid {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg, var(--stat-color, var(--primary)), rgba(0, 0, 0, 0.3));
+  border-radius: 0 0 16px 16px;
+  transition: height 0.5s ease-out;
+  box-shadow: 0 -2px 10px var(--stat-glow, var(--primary-glow));
+}
+
+.refine-liquid.almost-full {
+  animation: liquidPulse 1s ease-in-out infinite;
+}
+
+@keyframes liquidPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+.liquid-shine {
+  position: absolute;
+  top: 10%;
+  left: 20%;
+  width: 30%;
+  height: 10%;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  filter: blur(2px);
+}
+
+.tank-markers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.tank-markers .marker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+}
+
+.refine-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.progress-numbers {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: monospace;
+}
+
+.progress-numbers .current {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.progress-numbers .divider {
+  color: var(--text-secondary);
+}
+
+.progress-numbers .required {
+  font-size: 1rem;
+  color: var(--text-secondary);
+}
+
+.progress-percent {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* 연마 버튼 */
+.refine-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-refine-amount,
+.btn-refine-max {
+  flex: 1;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-refine-amount {
+  background: var(--bg-secondary);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-refine-amount:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.btn-refine-max {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white;
+}
+
+.btn-refine-max:hover:not(:disabled) {
+  transform: scale(1.02);
+  box-shadow: 0 4px 15px var(--primary-glow);
+}
+
+.btn-refine-amount:disabled,
+.btn-refine-max:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ========== v6.1: 코스튬 장착 시 아바타 변화 효과 ========== */
+.hunter-avatar.has-costume .avatar-icon {
+  animation: costumeGlow 3s ease-in-out infinite;
+}
+
+@keyframes costumeGlow {
+  0%, 100% { filter: drop-shadow(0 0 5px var(--primary-glow)); }
+  50% { filter: drop-shadow(0 0 15px var(--primary-glow)); }
+}
+
+.costume-bonus-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* Light theme adjustments for ID Card */
+.light-theme .hunter-id-card {
+  background: linear-gradient(145deg, var(--bg-card), #f1f5f9);
+}
+
+.light-theme .avatar-frame {
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.light-theme .refine-tank {
+  background: #e2e8f0;
+}
+
+.light-theme .gold-refine-card {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05));
+}
+
+/* v6.1: 연마 규칙 박스 */
+.refine-rule-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(168, 85, 247, 0.1));
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 10px;
+}
+
+.refine-rule-box .rule-icon {
+  font-size: 1.2rem;
+}
+
+.refine-rule-box .rule-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.gold-source-info .info-item.active-bonus {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* ========== v6.1: Costume Synergy Info Card ========== */
+.synergy-info-card {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(0, 212, 255, 0.1));
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.synergy-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.synergy-icon {
+  font-size: 1.3rem;
+}
+
+.synergy-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+.synergy-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.synergy-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.synergy-item.highlight {
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.synergy-item .effect-icon {
+  font-size: 1rem;
+}
+
+/* ========== v6.1: Enhanced Essence Guide ========== */
+.guide-card.essence-guide {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.08), rgba(168, 85, 247, 0.03));
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+.guide-card.essence-guide p {
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.guide-card.essence-guide p:last-child {
+  margin-bottom: 0;
+}
+
+.guide-card.essence-guide strong {
+  color: var(--text);
+}
+
+/* ========== v6.1: Rank Up Modal ========== */
+.rank-up-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.rank-up-modal.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rank-up-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.rank-up-modal-content {
+  position: relative;
+  background: linear-gradient(145deg, var(--bg-card), #0a0f1a);
+  border: 2px solid var(--primary);
+  border-radius: 20px;
+  padding: 32px;
+  max-width: 400px;
+  width: 90%;
+  text-align: center;
+  transform: scale(0.9);
+  transition: transform 0.3s ease;
+  box-shadow: 0 0 50px rgba(0, 212, 255, 0.3);
+}
+
+.rank-up-modal.show .rank-up-modal-content {
+  transform: scale(1);
+}
+
+.rank-up-header {
+  margin-bottom: 24px;
+}
+
+.rank-up-badge {
+  display: inline-block;
+  padding: 8px 24px;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 4px;
+  border-radius: 12px;
+  animation: rankUpPulse 1s ease-in-out infinite;
+}
+
+@keyframes rankUpPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 20px var(--primary-glow); }
+  50% { transform: scale(1.05); box-shadow: 0 0 40px var(--primary-glow); }
+}
+
+.rank-change-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.old-rank {
+  font-size: 3rem;
+  font-weight: 900;
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+.rank-arrow {
+  font-size: 2rem;
+  color: var(--primary);
+  animation: arrowBounce 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes arrowBounce {
+  from { transform: translateX(-5px); }
+  to { transform: translateX(5px); }
+}
+
+.new-rank {
+  font-size: 4rem;
+  font-weight: 900;
+  animation: newRankGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes newRankGlow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.3); }
+}
+
+.rank-info-display h2 {
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+}
+
+.rank-description {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+}
+
+.rank-narrative {
+  color: var(--primary);
+  font-size: 0.85rem;
+  font-style: italic;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.total-stats-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.stats-label {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.stats-value {
+  color: var(--success);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.btn-rank-confirm {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-rank-confirm:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 20px var(--primary-glow);
+}
+
+/* Rank-specific colors */
+.rank-e { color: #9ca3af; }
+.rank-d { color: #10b981; }
+.rank-c { color: #3b82f6; }
+.rank-b { color: #a855f7; }
+.rank-a { color: #f59e0b; }
+.rank-s { color: #ef4444; }

@@ -1,4 +1,10 @@
-// The Hunter System - 메인 앱
+// The Hunter System - 메인 앱 (v6.1)
+// v6.1 Features:
+// - Progress Refining: 게이지 기반 스탯 연마 시스템
+// - Hunter ID Card: 헌터 자격증 UI (랭크/칭호 실시간 반영)
+// - Costume Synergy: 코스튬 장착 시 외형 변화 + 골드 x2
+// - Dual Economy: Gold(스탯 연마) / Essence(코스튬 구매) 완전 분리
+// - Code Stability: en-CA 로캘, localStorage 백업
 import { router } from './ui/router.js';
 import { stateManager } from './core/stateManager.js';
 import { gateSystem } from './core/gateSystem.js';
@@ -11,6 +17,8 @@ import { renderGates } from './ui/screens/gates.js';
 import { renderShop } from './ui/screens/shop.js';
 import { renderAwakening } from './ui/screens/awakening.js';
 import { GAME_CONSTANTS, getNextUnlockInfo } from './config/constants.js';
+
+const APP_VERSION = '6.1.0';
 
 // 앱 초기화
 function initApp() {
@@ -55,6 +63,9 @@ function initApp() {
 
   // 레벨 해금 이벤트 구독
   stateManager.subscribe('levelUnlock', showUnlockRewardModal);
+
+  // v6.1: 랭크 승급 이벤트 구독
+  stateManager.subscribe('rankUp', showRankUpModal);
 
   // 오프라인 보상 체크
   checkOfflineReward();
@@ -311,6 +322,63 @@ window.showLevelUpNotification = function(newLevel) {
 
   window.showNotification(message, 'success');
 };
+
+// v6.1: 랭크 승급 모달 (현대 판타지 소설 톤)
+function showRankUpModal(data) {
+  const { oldRank, newRank, totalStats } = data;
+  const rankInfo = stateManager.getRankInfo(newRank);
+
+  // 랭크별 내러티브 메시지
+  const narratives = {
+    'D': "축하합니다! 이제 저급 게이트를 솔로 클리어할 수 있습니다.",
+    'C': "중급 헌터로 인정받았습니다. 길드 가입 자격이 주어집니다.",
+    'B': "당신의 이름이 헌터 협회 본부에 등록되었습니다.",
+    'A': "국가 재난급 게이트 공략에 참여할 수 있습니다.",
+    'S': "전 세계에 당신의 이름이 알려집니다. 전설의 시작입니다."
+  };
+
+  const modal = document.createElement('div');
+  modal.className = 'rank-up-modal';
+  modal.innerHTML = `
+    <div class="rank-up-modal-backdrop"></div>
+    <div class="rank-up-modal-content">
+      <div class="rank-up-header">
+        <div class="rank-up-badge">RANK UP!</div>
+      </div>
+      <div class="rank-change-display">
+        <span class="old-rank rank-${oldRank.toLowerCase()}">${oldRank}</span>
+        <span class="rank-arrow">→</span>
+        <span class="new-rank rank-${newRank.toLowerCase()}" style="color: ${rankInfo.color}; text-shadow: 0 0 20px ${rankInfo.color};">${newRank}</span>
+      </div>
+      <div class="rank-info-display">
+        <h2 style="color: ${rankInfo.color};">${rankInfo.name}</h2>
+        <p class="rank-description">${rankInfo.description}</p>
+        <p class="rank-narrative">"${narratives[newRank] || '새로운 힘을 얻었습니다!'}"</p>
+        <div class="total-stats-display">
+          <span class="stats-label">총 스탯</span>
+          <span class="stats-value">${totalStats}</span>
+        </div>
+      </div>
+      <button class="btn-rank-confirm">확인</button>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  requestAnimationFrame(() => {
+    modal.classList.add('show');
+  });
+
+  modal.querySelector('.btn-rank-confirm').addEventListener('click', () => {
+    modal.classList.remove('show');
+    setTimeout(() => modal.remove(), 300);
+  });
+
+  modal.querySelector('.rank-up-modal-backdrop').addEventListener('click', () => {
+    modal.classList.remove('show');
+    setTimeout(() => modal.remove(), 300);
+  });
+}
 
 // DOM 로드 시 초기화
 document.addEventListener('DOMContentLoaded', initApp);

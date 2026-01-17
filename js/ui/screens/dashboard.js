@@ -1,20 +1,21 @@
-// The Hunter System - 대시보드 화면
+// The Hunter System - 대시보드 화면 (v6.1)
+// v6.1: Hunter ID Card, Progress Refining, Costume Synergy, Modern Fantasy Narrative
 import { stateManager } from '../../core/stateManager.js';
 import { GAME_CONSTANTS, getRequiredExp, calculateIdleGold } from '../../config/constants.js';
-import { getDailyQuote, generateDailyEvaluation, WARNING_MESSAGES } from '../../config/narrative.js';
+import { getDailyQuote, generateDailyEvaluation, WARNING_MESSAGES, getCriticalNarrative } from '../../config/narrative.js';
 import { getCostumeById } from '../../config/costumes.js';
 
 let idleUpdateInterval = null;
 let criticalUnsubscribe = null;
 
-// 코스튬에 따른 아바타 스프라이트 반환
+// v6.1: 코스튬에 따른 아바타 스프라이트 반환 (외형 변경 시스템)
 function getAvatarSprite(gender, costume) {
   if (!costume) {
     // 기본 아바타
     return gender === 'female' ? '👩' : '👨';
   }
 
-  // 코스튬별 스프라이트 맵핑
+  // v6.1: 코스튬별 스프라이트 맵핑 (코스튬 장착 시 외형 변경)
   const costumeSprites = {
     // Normal
     'hunter_basic': gender === 'female' ? '👩‍🦱' : '👨‍🦱',
@@ -33,6 +34,31 @@ function getAvatarSprite(gender, costume) {
   };
 
   return costumeSprites[costume.id] || (gender === 'female' ? '👩' : '👨');
+}
+
+// v6.1: 랭크별 색상 및 스타일 반환
+function getRankStyle(rank) {
+  const rankStyles = {
+    'E': { color: '#9ca3af', bgColor: 'rgba(156, 163, 175, 0.2)', glow: 'none' },
+    'D': { color: '#10b981', bgColor: 'rgba(16, 185, 129, 0.2)', glow: '0 0 10px rgba(16, 185, 129, 0.5)' },
+    'C': { color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.2)', glow: '0 0 12px rgba(59, 130, 246, 0.5)' },
+    'B': { color: '#a855f7', bgColor: 'rgba(168, 85, 247, 0.2)', glow: '0 0 15px rgba(168, 85, 247, 0.5)' },
+    'A': { color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.2)', glow: '0 0 18px rgba(245, 158, 11, 0.5)' },
+    'S': { color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.2)', glow: '0 0 20px rgba(239, 68, 68, 0.6)' }
+  };
+  return rankStyles[rank] || rankStyles['E'];
+}
+
+// v6.1: 스탯 아이콘 맵핑
+function getStatIcon(statName) {
+  const icons = {
+    STR: '💪',
+    INT: '📚',
+    WIL: '🛡️',
+    FOCUS: '🎯',
+    LUK: '🍀'
+  };
+  return icons[statName] || '⭐';
 }
 
 export function renderDashboard() {
@@ -59,8 +85,72 @@ export function renderDashboard() {
   // 경고 체크 (3일 이상 연속 기록 없음)
   const showStreakWarning = currentStreak === 0 && !isRealHunter;
 
+  // v6.1: Hunter ID Card 정보 가져오기
+  const idCard = stateManager.getHunterIdCard();
+  const rankInfo = stateManager.getRankInfo(hunter.rank);
+  const rankStyle = getRankStyle(hunter.rank);
+
   app.innerHTML = `
     <div class="dashboard-screen">
+      <!-- v6.1: 헌터 자격증 (ID Card) -->
+      <div class="hunter-id-card" style="--rank-color: ${rankStyle.color}; --rank-bg: ${rankStyle.bgColor}; --rank-glow: ${rankStyle.glow};">
+        <div class="id-card-header">
+          <span class="id-card-badge">HUNTER LICENSE</span>
+          <span class="id-card-number">#${String(hunter.id).slice(-6)}</span>
+        </div>
+        <div class="id-card-body">
+          <div class="id-card-avatar">
+            ${(() => {
+              const equippedCostumeId = stateManager.get('equippedCostume');
+              const equippedCostume = equippedCostumeId ? getCostumeById(equippedCostumeId) : null;
+              const avatarSprite = getAvatarSprite(hunter.gender, equippedCostume);
+              return `<div class="avatar-frame ${equippedCostume ? 'costume-' + equippedCostume.rarity.toLowerCase() : ''}">${avatarSprite}</div>`;
+            })()}
+            <div class="rank-emblem" style="background: ${rankStyle.bgColor}; color: ${rankStyle.color}; box-shadow: ${rankStyle.glow};">
+              <span class="rank-letter">${hunter.rank}</span>
+              <span class="rank-label">${rankInfo.name}</span>
+            </div>
+          </div>
+          <div class="id-card-info">
+            <h2 class="hunter-name">${hunter.name}</h2>
+            <div class="hunter-title-row">
+              <span class="title-label">칭호</span>
+              <span class="title-value">${idCard.title}</span>
+            </div>
+            ${idCard.equippedCostume ? `
+            <div class="hunter-job-row">
+              <span class="job-label">직업</span>
+              <span class="job-value">${idCard.jobTitle}</span>
+            </div>
+            ` : ''}
+            <div class="hunter-main-stat">
+              <span class="stat-icon">${getStatIcon(idCard.mainStat.name)}</span>
+              <span class="stat-info">주력: ${idCard.mainStat.name} Lv.${idCard.mainStat.value}</span>
+            </div>
+            <div class="id-card-stats">
+              <div class="stat-item">
+                <span class="stat-label">레벨</span>
+                <span class="stat-value">Lv.${hunter.level}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">총 스탯</span>
+                <span class="stat-value">${idCard.totalStats}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">연속</span>
+                <span class="stat-value">${idCard.currentStreak}일</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="id-card-footer">
+          <span class="status-indicator ${isRealHunter ? 'real' : 'simulation'}">
+            ${isRealHunter ? '🔥 REAL HUNTER' : '⚠️ SIMULATION'}
+          </span>
+          ${idCard.equippedCostume ? '<span class="costume-bonus">💰 x2 Gold Active</span>' : ''}
+        </div>
+      </div>
+
       <!-- 오늘의 명언 위젯 -->
       <div class="quote-widget">
         <div class="quote-icon">&#128172;</div>
@@ -94,30 +184,18 @@ export function renderDashboard() {
       </div>
       ` : ''}
 
-      <!-- 헌터 정보 카드 -->
+      <!-- 헌터 정보 카드 (간략 버전) -->
       ${(() => {
         const equippedCostumeId = stateManager.get('equippedCostume');
         const equippedCostume = equippedCostumeId ? getCostumeById(equippedCostumeId) : null;
-        const avatarSprite = getAvatarSprite(hunter.gender, equippedCostume);
-        const jobTitle = equippedCostume ? equippedCostume.jobTitle : hunter.title;
         const hasCostume = !!equippedCostume;
 
         return `
       <div class="card hunter-card ${hasCostume ? 'costume-equipped' : ''}">
         <div class="hunter-summary">
-          <div class="hunter-avatar ${hasCostume ? 'has-costume' : ''}" onclick="window.location.hash='shop'">
-            <div class="avatar-icon ${equippedCostume ? 'costume-' + equippedCostume.rarity.toLowerCase() : ''}">${avatarSprite}</div>
-            <div class="rank-badge rank-${hunter.rank.toLowerCase()}">${hunter.rank}</div>
-            ${hasCostume ? '<div class="costume-indicator">&#128084;</div>' : ''}
-          </div>
-          <div class="hunter-info">
-            <h2>${hunter.name}</h2>
-            <p class="hunter-title ${hasCostume ? 'costume-title' : ''}">${jobTitle}</p>
-            <div class="level-info">
-              <span class="level">Lv. ${hunter.level}</span>
-              ${hunter.statPoints > 0 ? `<span class="stat-points-badge">+${hunter.statPoints} 포인트</span>` : ''}
-            </div>
-            ${hasCostume ? `<div class="costume-bonus-badge">&#128176; x2 골드</div>` : ''}
+          <div class="hunter-level-display">
+            <span class="level-badge">Lv. ${hunter.level}</span>
+            ${hunter.statPoints > 0 ? `<span class="stat-points-badge">+${hunter.statPoints} 포인트</span>` : ''}
           </div>
         </div>
         <div class="exp-bar">
@@ -249,13 +327,16 @@ function ensureCriticalContainer() {
   }
 }
 
-// 크리티컬 애니메이션 표시
+// v6.1: 크리티컬 애니메이션 표시 (현대 판타지 소설 톤)
 function showCriticalAnimation(data) {
   const container = document.getElementById('critical-container');
   if (!container) return;
 
   // 기존 애니메이션 제거
   container.innerHTML = '';
+
+  // v6.1: 현대 판타지 내러티브 가져오기
+  const narrative = getCriticalNarrative();
 
   // 크리티컬 텍스트 생성
   const wrapper = document.createElement('div');
@@ -269,8 +350,13 @@ function showCriticalAnimation(data) {
   goldText.className = 'critical-gold';
   goldText.textContent = `+${data.gold} G`;
 
+  const narrativeText = document.createElement('div');
+  narrativeText.className = 'critical-narrative';
+  narrativeText.textContent = narrative;
+
   wrapper.appendChild(critText);
   wrapper.appendChild(goldText);
+  wrapper.appendChild(narrativeText);
   container.appendChild(wrapper);
 
   // 애니메이션 종료 후 제거
@@ -278,7 +364,7 @@ function showCriticalAnimation(data) {
     if (container.contains(wrapper)) {
       container.removeChild(wrapper);
     }
-  }, 800);
+  }, 1200);
 }
 
 // Design v3.0: goldPerSecond = baseGold * (1 + STR * 0.05)
