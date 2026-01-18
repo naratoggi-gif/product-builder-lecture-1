@@ -5247,3 +5247,804 @@ body {
 .rank-b { color: #a855f7; }
 .rank-a { color: #f59e0b; }
 .rank-s { color: #ef4444; }
+
+/* ========== v6.3: Guild Management System Styles ========== */
+
+/* GPS HUD Display in Header */
+.gps-hud-display {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.1));
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffc107;
+}
+
+.gps-hud-display .gps-icon {
+  font-size: 0.9rem;
+}
+
+.gps-hud-display .gps-value {
+  color: #ffd54f;
+}
+
+/* Guild Screen */
+.guild-screen {
+  padding-bottom: 20px;
+}
+
+.guild-screen .screen-header h1 {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+
+.guild-screen .screen-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+}
+
+/* GPS Summary Card */
+.guild-gps-card {
+  background: linear-gradient(135deg, var(--bg-card), rgba(255, 193, 7, 0.05));
+  border: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+.gps-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.gps-display .gps-icon {
+  font-size: 2rem;
+}
+
+.gps-display .gps-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.gps-display .gps-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.gps-display .gps-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #ffc107;
+}
+
+.gps-breakdown {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.breakdown-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gold-display-mini {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+.gold-display-mini .gold-amount {
+  font-weight: 600;
+  color: #ffc107;
+}
+
+/* Guild Tabs */
+.guild-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.guild-tab {
+  flex: 1;
+  padding: 10px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.guild-tab.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-color: var(--primary);
+  color: white;
+}
+
+.guild-tab:hover:not(.active) {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+/* Office Section */
+.office-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.office-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.office-icon {
+  font-size: 2.5rem;
+}
+
+.office-info h3 {
+  font-size: 1.1rem;
+  margin-bottom: 2px;
+}
+
+.office-level {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.office-gps {
+  margin-left: auto;
+}
+
+.gps-badge {
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.2), rgba(255, 152, 0, 0.1));
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #ffc107;
+}
+
+.office-description {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  font-style: italic;
+}
+
+.upgrade-section {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.upgrade-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.upgrade-arrow {
+  font-size: 1.2rem;
+  color: var(--primary);
+}
+
+.next-office {
+  display: flex;
+  flex-direction: column;
+}
+
+.next-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.next-gps {
+  font-size: 0.8rem;
+  color: #ffc107;
+}
+
+.upgrade-cost {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+}
+
+.cost-label {
+  color: var(--text-secondary);
+}
+
+.cost-value {
+  font-weight: 600;
+  color: #ffc107;
+}
+
+.cost-value.insufficient {
+  color: var(--danger);
+}
+
+.discount-badge {
+  background: var(--success);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.btn-upgrade-office {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-upgrade-office:hover:not(.disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px var(--primary-glow);
+}
+
+.btn-upgrade-office.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rank-lock-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.max-level-notice {
+  text-align: center;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.1), rgba(255, 152, 0, 0.05));
+  border-radius: 10px;
+  color: #ffc107;
+  font-weight: 600;
+}
+
+/* Synergy Card */
+.synergy-card h4 {
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}
+
+.synergy-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.rank-limits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rank-limit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.rank-limit.current {
+  opacity: 1;
+  background: linear-gradient(135deg, var(--primary-glow), transparent);
+  border: 1px solid var(--primary);
+}
+
+.rank-badge {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.8rem;
+  background: var(--bg-card);
+}
+
+.rank-badge.rank-e { background: rgba(156, 163, 175, 0.2); color: #9ca3af; }
+.rank-badge.rank-d { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.rank-badge.rank-c { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.rank-badge.rank-b { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+.rank-badge.rank-a { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.rank-badge.rank-s { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+.current-rank-info {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Dispatch Section */
+.hired-hunters-card .card-header,
+.available-hunters-card .card-header,
+.materials-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.hired-hunters-card .card-header h4,
+.available-hunters-card .card-header h4,
+.materials-card .card-header h4 {
+  font-size: 0.95rem;
+}
+
+.slot-info {
+  font-size: 0.8rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.empty-dispatch {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-secondary);
+}
+
+.empty-dispatch .empty-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.empty-dispatch .empty-hint {
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
+.hired-hunters-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hired-hunter-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.hired-hunter-card .hunter-avatar {
+  font-size: 1.8rem;
+  width: 40px;
+  text-align: center;
+}
+
+.hired-hunter-card .hunter-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.hired-hunter-card .hunter-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.hired-hunter-card .hunter-rank {
+  font-size: 0.75rem;
+}
+
+.hired-hunter-card .hunter-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.hired-hunter-card .hunter-gps {
+  font-size: 0.8rem;
+  color: #ffc107;
+  font-weight: 600;
+}
+
+.hired-hunter-card .hunter-earned {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.btn-dismiss {
+  padding: 6px 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: var(--danger);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-dismiss:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Available Hunters */
+.hunter-rank-section {
+  margin-bottom: 16px;
+}
+
+.hunter-rank-section:last-child {
+  margin-bottom: 0;
+}
+
+.rank-header {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.available-hunters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.available-hunter-card {
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.available-hunter-card:not(.disabled):hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+
+.available-hunter-card.disabled {
+  opacity: 0.5;
+}
+
+.available-hunter-card .hunter-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.available-hunter-card .hunter-avatar {
+  font-size: 1.5rem;
+}
+
+.available-hunter-card .hunter-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.available-hunter-card .hunter-specialty {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.available-hunter-card .hunter-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.available-hunter-card .hunter-gps {
+  font-size: 0.75rem;
+  color: #ffc107;
+  font-weight: 600;
+}
+
+.btn-hire {
+  padding: 4px 8px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-hire:hover:not(.disabled) {
+  transform: scale(1.05);
+}
+
+.btn-hire.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Materials Card */
+.materials-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.empty-materials {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 16px;
+}
+
+.material-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.material-icon {
+  font-size: 1rem;
+}
+
+.material-name {
+  color: var(--text);
+}
+
+.material-count {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* Research Section */
+.current-research-card {
+  background: linear-gradient(135deg, var(--bg-card), rgba(139, 92, 246, 0.05));
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.research-progress .research-name {
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.research-progress .research-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.progress-bar-container {
+  height: 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--secondary), var(--primary));
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.research-time {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.research-percent {
+  color: var(--secondary);
+  font-weight: 600;
+}
+
+.btn-ad-skip {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-ad-skip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+}
+
+/* Bonuses Card */
+.bonuses-card .bonuses-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.no-bonuses {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 12px;
+}
+
+.bonus-item {
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  border-left: 3px solid var(--success);
+}
+
+/* Research Category Cards */
+.research-category-card .card-header {
+  margin-bottom: 12px;
+}
+
+.research-category-card .card-header h4 {
+  font-size: 0.95rem;
+}
+
+.research-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.research-item {
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.research-item:not(.locked):not(.completed):not(.in-progress):not(.rank-locked):not(.insufficient):hover {
+  border-color: var(--primary);
+}
+
+.research-item.completed {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), transparent);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.research-item.in-progress {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), transparent);
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+.research-item.locked {
+  opacity: 0.5;
+}
+
+.research-item.rank-locked {
+  opacity: 0.6;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.research-item.insufficient {
+  opacity: 0.7;
+}
+
+.research-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.research-item .research-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.completed-badge {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.research-item .research-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.research-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.research-item .research-time {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 0;
+}
+
+.btn-research {
+  padding: 6px 12px;
+  background: linear-gradient(135deg, var(--secondary), #7c3aed);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-research:hover:not(.disabled) {
+  transform: scale(1.05);
+}
+
+.btn-research.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rank-req {
+  font-size: 0.7rem;
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Responsive adjustments for guild */
+@media (max-width: 400px) {
+  .available-hunters-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .guild-tabs {
+    flex-wrap: wrap;
+  }
+
+  .guild-tab {
+    min-width: 80px;
+  }
+}

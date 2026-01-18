@@ -1,7 +1,11 @@
-// The Hunter System - 상태 관리자 (v6.1)
+// The Hunter System - 상태 관리자 (v6.3 Guild Management System)
 // v6.1: Progress Refining System, Hunter ID Card, Costume Synergy, Code Stability
+// v6.2: Guild Dispatch System - 길드원 고용 및 파견
+// v6.3: Guild Management - Office, Research Center, Hunter Dispatch, GPS HUD
 import { GAME_CONSTANTS, getRequiredExp, calculateIdleGold, getAutoBattleCritRate, calculateRefineCost, getUnlocksAtLevel, UNLOCK_DETAILS } from '../config/constants.js';
 import { getCostumeById, getCostumeStatBonus, canEquipCostume } from '../config/costumes.js';
+import { getGuildHunterById, getDispatchSlotsByPlayerRank, getRandomDispatchMessage, GUILD_HUNTERS } from '../config/guildHunters.js';
+import { getOfficeLevelInfo, getNextOfficeLevelInfo, getMaxOfficeLevelForRank, getResearchById, canStartResearch, calculateResearchBonuses, getDispatchMaterials, GUILD_OFFICE_LEVELS } from '../config/guildConfig.js';
 
 const STORAGE_KEY = GAME_CONSTANTS.STORAGE_KEY;
 const STORAGE_BACKUP_KEY = STORAGE_KEY + '_backup';
@@ -95,6 +99,16 @@ export class StateManager {
         theme: 'dark',
         soundEnabled: true,
         notifications: true
+      },
+
+      // v6.3: Guild Management System
+      guild: {
+        officeLevel: 1,
+        hiredHunters: [], // { hunterId, hiredAt, totalGoldProduced }
+        completedResearch: [],
+        currentResearch: null, // { researchId, startedAt, endsAt }
+        materials: {}, // { materialId: count }
+        totalGpsEarned: 0
       }
     };
   }
@@ -233,6 +247,25 @@ export class StateManager {
           delete this.state.daily.essenceFromQuests;
           delete this.state.daily.condenserEarned;
           delete this.state.daily.restQuestCountedForRealHunter;
+        }
+
+        // ========== Guild Data Migration (v6.3) ==========
+        if (!this.state.guild) {
+          this.state.guild = {
+            officeLevel: 1,
+            hiredHunters: [],
+            completedResearch: [],
+            currentResearch: null,
+            materials: {},
+            totalGpsEarned: 0
+          };
+        } else {
+          // Ensure all guild fields exist
+          if (!this.state.guild.officeLevel) this.state.guild.officeLevel = 1;
+          if (!this.state.guild.hiredHunters) this.state.guild.hiredHunters = [];
+          if (!this.state.guild.completedResearch) this.state.guild.completedResearch = [];
+          if (!this.state.guild.materials) this.state.guild.materials = {};
+          if (typeof this.state.guild.totalGpsEarned === 'undefined') this.state.guild.totalGpsEarned = 0;
         }
 
         // Save migrated data
@@ -1136,9 +1169,27 @@ export class StateManager {
         }
       }
 
+      // v6.3: Add Guild GPS production
+      const guildGold = this.updateGuildGoldProduction(elapsedSeconds);
+      goldEarned += Math.floor(guildGold);
+
+      // v6.3: Apply research gold bonus
+      const researchBonuses = this.getResearchBonuses();
+      if (researchBonuses.goldMult > 0) {
+        goldEarned = Math.floor(goldEarned * (1 + researchBonuses.goldMult));
+      }
+
       if (goldEarned > 0) {
         hunter.gold += goldEarned;
         this.state.idle.totalGoldEarned += goldEarned;
+      }
+
+      // v6.3: Check research completion
+      this.checkResearchCompletion();
+
+      // v6.3: Process material drops (every tick, low chance)
+      if (Math.random() < 0.1) { // 10% chance per tick to check materials
+        this.processDispatchMaterials();
       }
 
       // --- ESSENCE CONDENSER (v5.0) ---
@@ -1287,6 +1338,364 @@ export class StateManager {
     this.state.daily.adWatched.stamina++;
     this.save();
     return true;
+  }
+
+  // ========== v6.3: Guild Management System ==========
+
+  /**
+   * Get total GPS (Gold Per Second) from all sources
+   * - Guild Office GPS
+   * - Hired Hunters GPS
+   * - Research bonuses
+   */
+  getTotalGuildGps() {
+    const guild = this.state.guild;
+    if (!guild) return 0;
+
+    const researchBonuses = calculateResearchBonuses(guild.completedResearch || []);
+
+    // Office GPS
+    const officeInfo = getOfficeLevelInfo(guild.officeLevel);
+    let officeGps = officeInfo ? officeInfo.gps : 0;
+
+    // Hired Hunters GPS
+    let hunterGps = 0;
+    for (const hired of (guild.hiredHunters || [])) {
+      const hunter = getGuildHunterById(hired.hunterId);
+      if (hunter) {
+        hunterGps += hunter.gps;
+      }
+    }
+
+    // Apply research bonus to hunter GPS
+    hunterGps *= (1 + (researchBonuses.dispatchGpsMult || 0));
+
+    return officeGps + hunterGps;
+  }
+
+  /**
+   * Get max dispatch slots (rank-based + research bonus)
+   */
+  getMaxDispatchSlots() {
+    const hunter = this.state.hunter;
+    if (!hunter) return 1;
+
+    const guild = this.state.guild;
+    const baseSlots = getDispatchSlotsByPlayerRank(hunter.rank);
+    const researchBonuses = calculateResearchBonuses(guild?.completedResearch || []);
+
+    return baseSlots + (researchBonuses.extraDispatchSlots || 0);
+  }
+
+  /**
+   * Hire a guild hunter
+   * @param {string} hunterId - ID of hunter to hire
+   * @returns {{ success: boolean, error?: string }}
+   */
+  hireGuildHunter(hunterId) {
+    const hunter = this.state.hunter;
+    if (!hunter) return { success: false, error: '헌터 정보가 없습니다' };
+
+    const guild = this.state.guild;
+    const guildHunter = getGuildHunterById(hunterId);
+    if (!guildHunter) return { success: false, error: '존재하지 않는 길드 헌터입니다' };
+
+    // Check if already hired
+    if (guild.hiredHunters.some(h => h.hunterId === hunterId)) {
+      return { success: false, error: '이미 고용된 헌터입니다' };
+    }
+
+    // Check slot availability
+    const maxSlots = this.getMaxDispatchSlots();
+    if (guild.hiredHunters.length >= maxSlots) {
+      return { success: false, error: `파견 슬롯이 가득 찼습니다 (최대 ${maxSlots}명)` };
+    }
+
+    // Check gold
+    if (hunter.gold < guildHunter.hireCost) {
+      return { success: false, error: '골드가 부족합니다' };
+    }
+
+    // Deduct gold and hire
+    hunter.gold -= guildHunter.hireCost;
+    guild.hiredHunters.push({
+      hunterId,
+      hiredAt: Date.now(),
+      totalGoldProduced: 0
+    });
+
+    this.save();
+    this.notify('hunter', hunter);
+    this.notify('guild', guild);
+
+    return { success: true };
+  }
+
+  /**
+   * Dismiss a hired guild hunter
+   * @param {string} hunterId - ID of hunter to dismiss
+   * @returns {{ success: boolean, error?: string }}
+   */
+  dismissGuildHunter(hunterId) {
+    const guild = this.state.guild;
+    const index = guild.hiredHunters.findIndex(h => h.hunterId === hunterId);
+
+    if (index === -1) {
+      return { success: false, error: '고용되지 않은 헌터입니다' };
+    }
+
+    guild.hiredHunters.splice(index, 1);
+    this.save();
+    this.notify('guild', guild);
+
+    return { success: true };
+  }
+
+  /**
+   * Upgrade guild office
+   * @returns {{ success: boolean, error?: string, newLevel?: number }}
+   */
+  upgradeGuildOffice() {
+    const hunter = this.state.hunter;
+    if (!hunter) return { success: false, error: '헌터 정보가 없습니다' };
+
+    const guild = this.state.guild;
+    const nextLevel = getNextOfficeLevelInfo(guild.officeLevel);
+
+    if (!nextLevel) {
+      return { success: false, error: '최대 레벨입니다' };
+    }
+
+    // Check rank requirement
+    const maxForRank = getMaxOfficeLevelForRank(hunter.rank);
+    if (nextLevel.level > maxForRank) {
+      return { success: false, error: `${nextLevel.requiredRank}랭크 이상 필요합니다` };
+    }
+
+    // Apply research discount
+    const researchBonuses = calculateResearchBonuses(guild.completedResearch || []);
+    const discount = researchBonuses.officeUpgradeDiscount || 0;
+    const finalCost = Math.floor(nextLevel.upgradeCost * (1 - discount));
+
+    // Check gold
+    if (hunter.gold < finalCost) {
+      return { success: false, error: '골드가 부족합니다' };
+    }
+
+    // Deduct gold and upgrade
+    hunter.gold -= finalCost;
+    guild.officeLevel = nextLevel.level;
+
+    this.save();
+    this.notify('hunter', hunter);
+    this.notify('guild', guild);
+
+    return { success: true, newLevel: nextLevel.level };
+  }
+
+  /**
+   * Start research
+   * @param {string} researchId - ID of research to start
+   * @returns {{ success: boolean, error?: string }}
+   */
+  startResearch(researchId) {
+    const hunter = this.state.hunter;
+    if (!hunter) return { success: false, error: '헌터 정보가 없습니다' };
+
+    const guild = this.state.guild;
+
+    // Check if already researching
+    if (guild.currentResearch) {
+      return { success: false, error: '이미 연구 중입니다' };
+    }
+
+    // Check if already completed
+    if (guild.completedResearch.includes(researchId)) {
+      return { success: false, error: '이미 완료된 연구입니다' };
+    }
+
+    const research = getResearchById(researchId);
+    if (!research) return { success: false, error: '존재하지 않는 연구입니다' };
+
+    // Check rank requirement
+    const rankOrder = { 'E': 1, 'D': 2, 'C': 3, 'B': 4, 'A': 5, 'S': 6 };
+    if (rankOrder[research.requiredRank] > rankOrder[hunter.rank]) {
+      return { success: false, error: `${research.requiredRank}랭크 이상 필요합니다` };
+    }
+
+    // Check prerequisites
+    if (!canStartResearch(researchId, guild.completedResearch)) {
+      return { success: false, error: '선행 연구가 필요합니다' };
+    }
+
+    // Check gold cost
+    if (hunter.gold < research.cost) {
+      return { success: false, error: '골드가 부족합니다' };
+    }
+
+    // Deduct gold and start research
+    hunter.gold -= research.cost;
+    const now = Date.now();
+    guild.currentResearch = {
+      researchId,
+      startedAt: now,
+      endsAt: now + (research.researchTime * 1000)
+    };
+
+    this.save();
+    this.notify('hunter', hunter);
+    this.notify('guild', guild);
+
+    return { success: true };
+  }
+
+  /**
+   * Complete research (called automatically or via ad skip)
+   * @param {boolean} skipWithAd - Whether to skip with ad
+   * @returns {{ success: boolean, error?: string, completed?: string }}
+   */
+  completeResearch(skipWithAd = false) {
+    const guild = this.state.guild;
+
+    if (!guild.currentResearch) {
+      return { success: false, error: '진행 중인 연구가 없습니다' };
+    }
+
+    const now = Date.now();
+    const isComplete = now >= guild.currentResearch.endsAt;
+
+    if (!isComplete && !skipWithAd) {
+      return { success: false, error: '연구가 아직 완료되지 않았습니다' };
+    }
+
+    // Complete the research
+    const researchId = guild.currentResearch.researchId;
+    guild.completedResearch.push(researchId);
+    guild.currentResearch = null;
+
+    this.save();
+    this.notify('guild', guild);
+
+    return { success: true, completed: researchId };
+  }
+
+  /**
+   * Check and auto-complete research if time has passed
+   */
+  checkResearchCompletion() {
+    const guild = this.state.guild;
+    if (!guild.currentResearch) return null;
+
+    const now = Date.now();
+    if (now >= guild.currentResearch.endsAt) {
+      return this.completeResearch();
+    }
+    return null;
+  }
+
+  /**
+   * Get research progress
+   * @returns {{ inProgress: boolean, research?: object, remainingSeconds?: number, percent?: number }}
+   */
+  getResearchProgress() {
+    const guild = this.state.guild;
+    if (!guild.currentResearch) {
+      return { inProgress: false };
+    }
+
+    const research = getResearchById(guild.currentResearch.researchId);
+    const now = Date.now();
+    const remainingMs = Math.max(0, guild.currentResearch.endsAt - now);
+    const remainingSeconds = Math.ceil(remainingMs / 1000);
+    const totalSeconds = research.researchTime;
+    const elapsedSeconds = totalSeconds - remainingSeconds;
+    const percent = Math.min(100, (elapsedSeconds / totalSeconds) * 100);
+
+    return {
+      inProgress: true,
+      research,
+      remainingSeconds,
+      percent
+    };
+  }
+
+  /**
+   * Get all research bonuses
+   */
+  getResearchBonuses() {
+    const guild = this.state.guild;
+    return calculateResearchBonuses(guild?.completedResearch || []);
+  }
+
+  /**
+   * Add material to guild inventory
+   * @param {string} materialId - Material ID
+   * @param {number} amount - Amount to add
+   */
+  addGuildMaterial(materialId, amount = 1) {
+    const guild = this.state.guild;
+    if (!guild.materials[materialId]) {
+      guild.materials[materialId] = 0;
+    }
+    guild.materials[materialId] += amount;
+    this.save();
+    this.notify('guild', guild);
+  }
+
+  /**
+   * Update guild gold production (called from idle system)
+   * @param {number} elapsedSeconds - Seconds elapsed since last update
+   * @returns {number} Gold produced by guild
+   */
+  updateGuildGoldProduction(elapsedSeconds) {
+    const guild = this.state.guild;
+    if (!guild) return 0;
+
+    const gps = this.getTotalGuildGps();
+    const goldProduced = gps * elapsedSeconds;
+
+    if (goldProduced > 0) {
+      guild.totalGpsEarned += goldProduced;
+
+      // Track individual hunter production
+      for (const hired of guild.hiredHunters) {
+        const hunter = getGuildHunterById(hired.hunterId);
+        if (hunter) {
+          hired.totalGoldProduced += hunter.gps * elapsedSeconds;
+        }
+      }
+    }
+
+    return goldProduced;
+  }
+
+  /**
+   * Process material drops from hired hunters (called periodically)
+   * @returns {Array} Array of dropped materials { materialId, name, icon }
+   */
+  processDispatchMaterials() {
+    const guild = this.state.guild;
+    const drops = [];
+
+    for (const hired of guild.hiredHunters) {
+      const guildHunter = getGuildHunterById(hired.hunterId);
+      if (!guildHunter) continue;
+
+      const materials = getDispatchMaterials(guildHunter.rank);
+      for (const mat of materials) {
+        // Low chance per tick (simulating dispatch returns)
+        if (Math.random() < mat.dropRate * 0.01) { // 1% of base rate per tick
+          this.addGuildMaterial(mat.id, 1);
+          drops.push({
+            materialId: mat.id,
+            name: mat.name,
+            icon: mat.icon
+          });
+        }
+      }
+    }
+
+    return drops;
   }
 
   // ========== 변경 리스너 ==========

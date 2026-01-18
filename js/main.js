@@ -16,9 +16,10 @@ import { renderHunterGrowth } from './ui/screens/hunterGrowth.js';
 import { renderGates } from './ui/screens/gates.js';
 import { renderShop } from './ui/screens/shop.js';
 import { renderAwakening } from './ui/screens/awakening.js';
+import { renderGuild } from './ui/screens/guild.js';
 import { GAME_CONSTANTS, getNextUnlockInfo } from './config/constants.js';
 
-const APP_VERSION = '6.1.0';
+const APP_VERSION = '6.3.0';
 
 // 앱 초기화
 function initApp() {
@@ -30,6 +31,7 @@ function initApp() {
   router.register('hunter-growth', renderHunterGrowth);
   router.register('gates', renderGates);
   router.register('shop', renderShop);
+  router.register('guild', renderGuild);
   router.register('awakening', renderAwakening);
 
   // 네비게이션 바 렌더링
@@ -54,7 +56,10 @@ function initApp() {
 
   // 헌터 상태 표시 업데이트
   stateManager.subscribe('hunter', updateHunterStatus);
+  stateManager.subscribe('hunter', updateGpsDisplay);
+  stateManager.subscribe('guild', updateGpsDisplay);
   updateHunterStatus();
+  updateGpsDisplay();
 
   // 게이트 시스템 초기화
   gateSystem.init();
@@ -101,6 +106,10 @@ function renderNavbar() {
       <span class="nav-icon">&#128682;</span>
       <span class="nav-label">게이트</span>
     </a>
+    <a href="#guild" class="nav-item" data-route="guild">
+      <span class="nav-icon">&#127970;</span>
+      <span class="nav-label">길드</span>
+    </a>
     <a href="#shop" class="nav-item" data-route="shop">
       <span class="nav-icon">&#128176;</span>
       <span class="nav-label">상점</span>
@@ -135,6 +144,36 @@ function updateHunterStatus() {
 
   statusEl.innerHTML = `
     <span class="status-badge ${statusClass}">${statusText}</span>
+  `;
+}
+
+// v6.3: GPS 표시 업데이트
+function updateGpsDisplay() {
+  let gpsEl = document.getElementById('gpsDisplay');
+
+  const hunter = stateManager.get('hunter');
+  if (!hunter) {
+    if (gpsEl) gpsEl.remove();
+    return;
+  }
+
+  // Create GPS display element if it doesn't exist
+  if (!gpsEl) {
+    const headerLeft = document.querySelector('.header-left');
+    if (!headerLeft) return;
+
+    gpsEl = document.createElement('div');
+    gpsEl.id = 'gpsDisplay';
+    gpsEl.className = 'gps-hud-display';
+    headerLeft.appendChild(gpsEl);
+  }
+
+  // Calculate total GPS
+  const totalGps = stateManager.getTotalGuildGps();
+
+  gpsEl.innerHTML = `
+    <span class="gps-icon">💰</span>
+    <span class="gps-value">+${totalGps.toFixed(1)}/s</span>
   `;
 }
 
