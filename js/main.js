@@ -1,8 +1,10 @@
-// The Hunter System - 메인 앱 (v6.1)
-// v6.1 Features:
-// - Progress Refining: 게이지 기반 스탯 연마 시스템
-// - Hunter ID Card: 헌터 자격증 UI (랭크/칭호 실시간 반영)
-// - Costume Synergy: 코스튬 장착 시 외형 변화 + 골드 x2
+// The Hunter System - 메인 앱 (v6.5)
+// v6.5 Features:
+// - Enhanced Guild System: 랜덤 헌터 소환 (확률 기반 F~S급)
+// - Hunter Card UI: 등급별 배경색/이펙트, S급 화려한 파티클
+// - Real-time GPS HUD: 실시간 Gold Per Second 표시
+// - Passive Skills: A/S급 헌터의 패시브 스킬 (연마비용 감소, 퀘스트 보상 증가 등)
+// - Guild Refactoring: 등급순 정렬, 방출(Dismiss) 기능 + 골드 환급
 // - Dual Economy: Gold(스탯 연마) / Essence(코스튬 구매) 완전 분리
 // - Code Stability: en-CA 로캘, localStorage 백업
 import { router } from './ui/router.js';
@@ -19,7 +21,7 @@ import { renderAwakening } from './ui/screens/awakening.js';
 import { renderGuild } from './ui/screens/guild.js';
 import { GAME_CONSTANTS, getNextUnlockInfo } from './config/constants.js';
 
-const APP_VERSION = '6.3.0';
+const APP_VERSION = '6.5.0';
 
 // 앱 초기화
 function initApp() {

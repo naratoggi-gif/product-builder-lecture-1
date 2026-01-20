@@ -212,6 +212,10 @@ export const RESEARCH_TREE = {
  * Based on hunter rank
  */
 export const DISPATCH_MATERIALS = {
+  'F': [
+    { id: 'trash_mana_stone', name: '찌꺼기 마나석', dropRate: 0.9, icon: '🪨' },
+    { id: 'goblin_tooth', name: '고블린 이빨', dropRate: 0.7, icon: '🦷' }
+  ],
   'E': [
     { id: 'low_mana_stone', name: '저급 마나석', dropRate: 0.8, icon: '💎' },
     { id: 'monster_bone', name: '마물 뼈', dropRate: 0.5, icon: '🦴' }
@@ -225,6 +229,21 @@ export const DISPATCH_MATERIALS = {
     { id: 'high_mana_stone', name: '고급 마나석', dropRate: 0.4, icon: '🌟' },
     { id: 'boss_fragment', name: '보스 파편', dropRate: 0.2, icon: '⚡' },
     { id: 'enchant_crystal', name: '강화 결정', dropRate: 0.3, icon: '✨' }
+  ],
+  'B': [
+    { id: 'elite_mana_stone', name: '정예 마나석', dropRate: 0.35, icon: '💫' },
+    { id: 'dragon_scale', name: '용린 조각', dropRate: 0.15, icon: '🐉' },
+    { id: 'magic_essence', name: '마력 정수', dropRate: 0.25, icon: '🔮' }
+  ],
+  'A': [
+    { id: 'legendary_mana_stone', name: '전설 마나석', dropRate: 0.25, icon: '👑' },
+    { id: 'dragon_heart', name: '용의 심장', dropRate: 0.08, icon: '❤️‍🔥' },
+    { id: 'void_crystal', name: '공허의 결정', dropRate: 0.12, icon: '🌑' }
+  ],
+  'S': [
+    { id: 'mythic_mana_stone', name: '신화급 마나석', dropRate: 0.15, icon: '🌈' },
+    { id: 'world_tree_fragment', name: '세계수 파편', dropRate: 0.05, icon: '🌳' },
+    { id: 'shadow_monarch_essence', name: '군주의 정수', dropRate: 0.03, icon: '👤' }
   ]
 };
 

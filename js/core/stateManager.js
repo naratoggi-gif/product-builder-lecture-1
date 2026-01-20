@@ -4,7 +4,7 @@
 // v6.3: Guild Management - Office, Research Center, Hunter Dispatch, GPS HUD
 import { GAME_CONSTANTS, getRequiredExp, calculateIdleGold, getAutoBattleCritRate, calculateRefineCost, getUnlocksAtLevel, UNLOCK_DETAILS } from '../config/constants.js';
 import { getCostumeById, getCostumeStatBonus, canEquipCostume } from '../config/costumes.js';
-import { getGuildHunterById, getDispatchSlotsByPlayerRank, getRandomDispatchMessage, GUILD_HUNTERS } from '../config/guildHunters.js';
+import { getGuildHunterById, getDispatchSlotsByPlayerRank, getRandomDispatchMessage, GUILD_HUNTERS, getRandomHunter, getRankOrder, getDismissRefund, PASSIVE_TYPES } from '../config/guildHunters.js';
 import { getOfficeLevelInfo, getNextOfficeLevelInfo, getMaxOfficeLevelForRank, getResearchById, canStartResearch, calculateResearchBonuses, getDispatchMaterials, GUILD_OFFICE_LEVELS } from '../config/guildConfig.js';
 
 const STORAGE_KEY = GAME_CONSTANTS.STORAGE_KEY;
@@ -454,10 +454,17 @@ export class StateManager {
     // v6.1: Gold는 스탯 연마에만 사용
     if (hunter.gold < goldAmount) return { success: false, error: '골드가 부족합니다' };
 
+    // v6.5: Apply passive refine cost reduction
+    const hunterPassives = this.getHunterPassiveBonuses();
+    const researchBonuses = this.getResearchBonuses();
+    const totalRefineCostReduction = (hunterPassives.refineCostReduction || 0) + (researchBonuses.refineCostReduction || 0);
+
     // 현재 스탯 레벨과 진행도
     const currentStatLevel = hunter.stats[statName];
     const currentProgress = hunter.statTraining[statName] || 0;
-    const requiredForLevel = calculateRefineCost(currentStatLevel);
+    const baseRequiredForLevel = calculateRefineCost(currentStatLevel);
+    // v6.5: Reduced cost
+    const requiredForLevel = Math.floor(baseRequiredForLevel * (1 - totalRefineCostReduction));
 
     // 골드 소모
     hunter.gold -= goldAmount;
@@ -465,15 +472,17 @@ export class StateManager {
     // 진행도 증가
     hunter.statTraining[statName] = currentProgress + goldAmount;
 
-    // 레벨업 체크 (100% 달성 시)
+    // 레벨업 체크 (100% 달성 시) - v6.5: with cost reduction
     let levelsGained = 0;
-    let cost = calculateRefineCost(hunter.stats[statName]);
+    let baseCost = calculateRefineCost(hunter.stats[statName]);
+    let cost = Math.floor(baseCost * (1 - totalRefineCostReduction));
 
     while (hunter.statTraining[statName] >= cost) {
       hunter.statTraining[statName] -= cost;
       hunter.stats[statName]++;
       levelsGained++;
-      cost = calculateRefineCost(hunter.stats[statName]); // 다음 레벨 비용 재계산
+      baseCost = calculateRefineCost(hunter.stats[statName]); // 다음 레벨 비용 재계산
+      cost = Math.floor(baseCost * (1 - totalRefineCostReduction));
     }
 
     // 현재 진행도 퍼센트 계산
@@ -1347,12 +1356,14 @@ export class StateManager {
    * - Guild Office GPS
    * - Hired Hunters GPS
    * - Research bonuses
+   * - v6.5: Passive GPS boost from A/S rank hunters
    */
   getTotalGuildGps() {
     const guild = this.state.guild;
     if (!guild) return 0;
 
     const researchBonuses = calculateResearchBonuses(guild.completedResearch || []);
+    const hunterPassives = this.getHunterPassiveBonuses();
 
     // Office GPS
     const officeInfo = getOfficeLevelInfo(guild.officeLevel);
@@ -1370,7 +1381,11 @@ export class StateManager {
     // Apply research bonus to hunter GPS
     hunterGps *= (1 + (researchBonuses.dispatchGpsMult || 0));
 
-    return officeGps + hunterGps;
+    // v6.5: Apply passive GPS boost from A/S rank hunters
+    const totalGps = officeGps + hunterGps;
+    const gpsBoost = hunterPassives.gpsBoost || 0;
+
+    return totalGps * (1 + gpsBoost);
   }
 
   /**
@@ -1432,11 +1447,12 @@ export class StateManager {
   }
 
   /**
-   * Dismiss a hired guild hunter
+   * Dismiss a hired guild hunter (with gold refund)
    * @param {string} hunterId - ID of hunter to dismiss
-   * @returns {{ success: boolean, error?: string }}
+   * @returns {{ success: boolean, error?: string, refund?: number }}
    */
   dismissGuildHunter(hunterId) {
+    const hunter = this.state.hunter;
     const guild = this.state.guild;
     const index = guild.hiredHunters.findIndex(h => h.hunterId === hunterId);
 
@@ -1444,11 +1460,136 @@ export class StateManager {
       return { success: false, error: '고용되지 않은 헌터입니다' };
     }
 
+    // Calculate refund (30% of hire cost)
+    const refund = getDismissRefund(hunterId);
+
     guild.hiredHunters.splice(index, 1);
+
+    // Give gold refund
+    if (hunter && refund > 0) {
+      hunter.gold += refund;
+    }
+
     this.save();
     this.notify('guild', guild);
+    this.notify('hunter', hunter);
 
-    return { success: true };
+    return { success: true, refund };
+  }
+
+  /**
+   * v6.5: 랜덤 헌터 소환 (확률 기반)
+   * @param {number} cost - 소환 비용
+   * @returns {{ success: boolean, hunter?: object, error?: string }}
+   */
+  summonRandomHunter(cost = 1000) {
+    const hunter = this.state.hunter;
+    if (!hunter) return { success: false, error: '헌터 정보가 없습니다' };
+
+    const guild = this.state.guild;
+    const maxSlots = this.getMaxDispatchSlots();
+
+    // Check slot availability
+    if (guild.hiredHunters.length >= maxSlots) {
+      return { success: false, error: `파견 슬롯이 가득 찼습니다 (최대 ${maxSlots}명)` };
+    }
+
+    // Check gold
+    if (hunter.gold < cost) {
+      return { success: false, error: '골드가 부족합니다' };
+    }
+
+    // Get random hunter
+    const randomHunter = getRandomHunter();
+
+    // Check if already hired
+    if (guild.hiredHunters.some(h => h.hunterId === randomHunter.id)) {
+      // Try again with a different hunter of same rank
+      const sameRankHunters = GUILD_HUNTERS.filter(h =>
+        h.rank === randomHunter.rank &&
+        !guild.hiredHunters.some(hired => hired.hunterId === h.id)
+      );
+
+      if (sameRankHunters.length === 0) {
+        // All hunters of this rank are hired, just refund partial
+        return { success: false, error: '해당 등급의 모든 헌터가 이미 고용되어 있습니다' };
+      }
+
+      const altHunter = sameRankHunters[Math.floor(Math.random() * sameRankHunters.length)];
+
+      // Deduct gold and hire
+      hunter.gold -= cost;
+      guild.hiredHunters.push({
+        hunterId: altHunter.id,
+        hiredAt: Date.now(),
+        totalGoldProduced: 0
+      });
+
+      this.save();
+      this.notify('hunter', hunter);
+      this.notify('guild', guild);
+
+      return { success: true, hunter: altHunter };
+    }
+
+    // Deduct gold and hire
+    hunter.gold -= cost;
+    guild.hiredHunters.push({
+      hunterId: randomHunter.id,
+      hiredAt: Date.now(),
+      totalGoldProduced: 0
+    });
+
+    this.save();
+    this.notify('hunter', hunter);
+    this.notify('guild', guild);
+
+    return { success: true, hunter: randomHunter };
+  }
+
+  /**
+   * v6.5: 고용된 헌터들의 패시브 보너스 계산
+   * @returns {Object} 패시브 보너스 합계
+   */
+  getHunterPassiveBonuses() {
+    const guild = this.state.guild;
+    const bonuses = {
+      refineCostReduction: 0,
+      questRewardBoost: 0,
+      gpsBoost: 0,
+      expBoost: 0,
+      critRateBoost: 0,
+      essenceBoost: 0
+    };
+
+    for (const hired of (guild?.hiredHunters || [])) {
+      const guildHunter = getGuildHunterById(hired.hunterId);
+      if (guildHunter?.passive) {
+        const { type, value } = guildHunter.passive;
+        if (bonuses.hasOwnProperty(type)) {
+          bonuses[type] += value;
+        }
+      }
+    }
+
+    return bonuses;
+  }
+
+  /**
+   * v6.5: 정렬된 헌터 리스트 반환 (등급 높은 순)
+   * @returns {Array} 정렬된 헌터 리스트
+   */
+  getSortedHiredHunters() {
+    const guild = this.state.guild;
+    if (!guild?.hiredHunters) return [];
+
+    return [...guild.hiredHunters]
+      .map(hired => {
+        const hunterInfo = getGuildHunterById(hired.hunterId);
+        return { ...hired, info: hunterInfo };
+      })
+      .filter(h => h.info)
+      .sort((a, b) => getRankOrder(b.info.rank) - getRankOrder(a.info.rank));
   }
 
   /**

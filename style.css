@@ -6048,3 +6048,1400 @@ body {
     min-width: 80px;
   }
 }
+
+/* ========== v6.5: Enhanced Guild System Styles ========== */
+
+/* GPS Animated Display */
+.gps-animated {
+  animation: gpsGlow 2s ease-in-out infinite;
+}
+
+@keyframes gpsGlow {
+  0%, 100% {
+    text-shadow: 0 0 5px rgba(0, 212, 255, 0.3);
+  }
+  50% {
+    text-shadow: 0 0 15px rgba(0, 212, 255, 0.6), 0 0 25px rgba(0, 212, 255, 0.4);
+  }
+}
+
+/* Passive Bonuses Display */
+.passive-bonuses-display {
+  margin-top: 12px;
+  padding: 10px;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(0, 212, 255, 0.1));
+  border-radius: 8px;
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+.passive-title {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--secondary);
+  margin-bottom: 8px;
+}
+
+.passive-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.passive-item {
+  padding: 4px 8px;
+  background: rgba(168, 85, 247, 0.15);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: var(--secondary);
+  font-weight: 600;
+}
+
+/* Summon Card */
+.summon-card {
+  background: linear-gradient(135deg, var(--bg-card), rgba(168, 85, 247, 0.05));
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.summon-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.summon-header h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.summon-cost {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.summon-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.summon-rates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.summon-rates .rate {
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.rate-f { background: #4a4a4a; color: #9ca3af; }
+.rate-e { background: #374151; color: #9ca3af; }
+.rate-d { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.rate-c { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.rate-b { background: rgba(139, 92, 246, 0.2); color: #a855f7; }
+.rate-a { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.rate-s { background: rgba(239, 68, 68, 0.2); color: #ef4444; animation: sRateGlow 1.5s ease-in-out infinite; }
+
+@keyframes sRateGlow {
+  0%, 100% { box-shadow: 0 0 5px rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); }
+}
+
+.btn-summon {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--secondary), #7c3aed);
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-summon:hover:not(.disabled) {
+  transform: scale(1.02);
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+}
+
+.btn-summon.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.slot-full-notice {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: var(--danger);
+  text-align: center;
+}
+
+/* Hired Hunters List (v6.5) */
+.hired-hunters-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hired-hunter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.hired-hunter-row:hover {
+  background: rgba(168, 85, 247, 0.05);
+}
+
+.hunter-avatar-container {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hunter-avatar-container .hunter-avatar {
+  font-size: 1.8rem;
+}
+
+.hunter-rank-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.hired-hunter-row .hunter-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hunter-name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hired-hunter-row .hunter-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.hired-hunter-row .hunter-gps {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.hired-hunter-row .hunter-specialty {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.hired-hunter-row .hunter-passive {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  padding: 4px 8px;
+  background: rgba(168, 85, 247, 0.1);
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+.hunter-passive .passive-icon {
+  font-size: 0.75rem;
+}
+
+.hunter-passive .passive-name {
+  font-weight: 600;
+}
+
+.hunter-passive .passive-desc {
+  color: var(--text-secondary);
+}
+
+.hunter-stats-row {
+  display: flex;
+  gap: 8px;
+}
+
+.hired-hunter-row .hunter-earned {
+  font-size: 0.7rem;
+  color: var(--warning);
+}
+
+.btn-dismiss {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: var(--danger);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-dismiss:hover {
+  background: rgba(239, 68, 68, 0.2);
+  transform: scale(1.05);
+}
+
+.dismiss-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.dismiss-refund {
+  font-size: 0.65rem;
+  color: var(--warning);
+}
+
+/* ========== Hunter Card Modal (v6.5) ========== */
+.hunter-card-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.hunter-card-modal.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hunter-card-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.hunter-card-content {
+  position: relative;
+  width: 300px;
+  max-height: 90vh;
+  background: var(--bg-card);
+  border-radius: 20px;
+  border: 3px solid;
+  overflow: hidden;
+  transform: scale(0.8) translateY(20px);
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.hunter-card-modal.show .hunter-card-content {
+  transform: scale(1) translateY(0);
+}
+
+/* S-Rank Special Effects */
+.hunter-card-modal.s-rank .hunter-card-content {
+  animation: sRankCardGlow 2s ease-in-out infinite;
+}
+
+@keyframes sRankCardGlow {
+  0%, 100% {
+    box-shadow: 0 0 30px rgba(239, 68, 68, 0.5), 0 0 60px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 50px rgba(239, 68, 68, 0.8), 0 0 100px rgba(239, 68, 68, 0.5);
+  }
+}
+
+.s-rank-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.s-rank-particle {
+  position: absolute;
+  bottom: -10px;
+  width: 8px;
+  height: 8px;
+  background: linear-gradient(135deg, #ef4444, #fbbf24);
+  border-radius: 50%;
+  animation: particleRise 3s ease-out infinite;
+}
+
+@keyframes particleRise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-400px) scale(0);
+    opacity: 0;
+  }
+}
+
+.card-rank-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  color: white;
+}
+
+.card-rank {
+  font-size: 1.8rem;
+  font-weight: 900;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.card-rank-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.card-avatar-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+}
+
+.card-avatar-section .card-avatar {
+  font-size: 5rem;
+  filter: drop-shadow(0 4px 20px rgba(0, 0, 0, 0.3));
+}
+
+.card-info-section {
+  padding: 20px;
+  text-align: center;
+}
+
+.card-info-section .card-name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.card-specialty {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.card-description {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 16px;
+  font-style: italic;
+}
+
+.card-stats {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  margin-bottom: 16px;
+}
+
+.card-stat {
+  text-align: center;
+}
+
+.card-stat .stat-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.card-stat .stat-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.card-passive {
+  padding: 12px;
+  border: 2px solid;
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.card-passive .passive-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: white;
+  font-size: 0.6rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.card-passive .passive-name {
+  display: block;
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+
+.card-passive .passive-effect {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.btn-card-confirm {
+  width: calc(100% - 40px);
+  margin: 0 20px 20px;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  color: white;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-card-confirm:hover {
+  transform: scale(1.02);
+  filter: brightness(1.1);
+}
+
+/* GPS HUD Display */
+.gps-hud-display {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(0, 212, 255, 0.1));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  font-size: 0.75rem;
+}
+
+.gps-hud-display .gps-icon {
+  font-size: 0.8rem;
+}
+
+.gps-hud-display .gps-value {
+  font-weight: 700;
+  color: var(--success);
+}
+
+/* F Rank Styling */
+.rank-f { background: #4a4a4a; border-color: #6b6b6b; color: #9ca3af; }
+
+/* Empty dispatch state */
+.empty-dispatch {
+  text-align: center;
+  padding: 30px;
+}
+
+.empty-dispatch .empty-icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.empty-dispatch p {
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.empty-dispatch .empty-hint {
+  font-size: 0.85rem;
+  color: var(--primary);
+}
+
+/* ========== v6.7.2 Hunter ID Card - Mobile RPG HUD Style ========== */
+
+/* 추가 CSS 변수 (테마 일관성) */
+:root, .dark-theme {
+  --panel: var(--bg-card);
+  --accent: #00ff88;
+  --gold: #fbbf24;
+  --essence: #a78bfa;
+}
+
+.light-theme {
+  --panel: var(--bg-card);
+  --accent: #10b981;
+  --gold: #d97706;
+  --essence: #7c3aed;
+}
+
+/* 헌터 자격증 카드 - 메인 컨테이너 */
+.hunter-id-card {
+  position: relative;
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 2px solid var(--border);
+  overflow: hidden;
+  animation: cardBounceIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes cardBounceIn {
+  0% { opacity: 0; transform: scale(0.9) translateY(-10px); }
+  50% { transform: scale(1.02) translateY(2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 랭크별 테마 색상 */
+.hunter-id-card.rank-e {
+  border-color: #6b7280;
+  background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+}
+
+.hunter-id-card.rank-d {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #064e3b 0%, #111827 100%);
+}
+
+.hunter-id-card.rank-c {
+  border-color: #3b82f6;
+  background: linear-gradient(135deg, #1e3a8a 0%, #111827 100%);
+}
+
+.hunter-id-card.rank-b {
+  border-color: #8b5cf6;
+  background: linear-gradient(135deg, #4c1d95 0%, #111827 100%);
+}
+
+.hunter-id-card.rank-a {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #78350f 0%, #1f2937 100%);
+}
+
+.hunter-id-card.rank-s {
+  border-color: #ef4444;
+  background: linear-gradient(135deg, #7f1d1d 0%, #1f2937 100%);
+}
+
+/* A/S 랭크 오로라 광택 효과 */
+.hunter-id-card.high-rank .aurora-overlay {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 200%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.05) 75%,
+    transparent 100%
+  );
+  animation: auroraShimmer 1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes auroraShimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+/* A/S 랭크 격자 패턴 */
+.hunter-id-card.high-rank::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255,255,255,0.02) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.02) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.02) 75%);
+  background-size: 8px 8px;
+  pointer-events: none;
+}
+
+/* 카드 내부 2열 레이아웃 */
+.id-card-inner {
+  position: relative;
+  display: flex;
+  gap: 16px;
+  z-index: 1;
+}
+
+/* 좌측 아바타 영역 */
+.id-card-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.id-card-avatar .avatar-frame {
+  width: 76px;
+  height: 76px;
+  border-radius: 12px;
+  border: 3px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  position: relative;
+  animation: avatarPulse 2s ease-in-out infinite;
+}
+
+@keyframes avatarPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.1); }
+  50% { box-shadow: 0 0 12px 2px rgba(255,255,255,0.15); }
+}
+
+.id-card-avatar .avatar-frame.rank-e { border-color: #6b7280; }
+.id-card-avatar .avatar-frame.rank-d { border-color: #10b981; }
+.id-card-avatar .avatar-frame.rank-c { border-color: #3b82f6; }
+.id-card-avatar .avatar-frame.rank-b { border-color: #8b5cf6; }
+.id-card-avatar .avatar-frame.rank-a { border-color: #f59e0b; box-shadow: 0 0 15px rgba(245, 158, 11, 0.3); }
+.id-card-avatar .avatar-frame.rank-s { border-color: #ef4444; box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); }
+
+.id-card-avatar .avatar-icon {
+  font-size: 2.5rem;
+}
+
+/* 랭크 엠블럼 */
+.id-card-avatar .rank-emblem {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 1rem;
+  border: 2px solid;
+  animation: emblembounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes emblembounce {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+.rank-emblem.rank-e { background: #374151; border-color: #6b7280; color: white; }
+.rank-emblem.rank-d { background: #047857; border-color: #10b981; color: white; }
+.rank-emblem.rank-c { background: #1d4ed8; border-color: #3b82f6; color: white; }
+.rank-emblem.rank-b { background: #7c3aed; border-color: #8b5cf6; color: white; }
+.rank-emblem.rank-a { background: #b45309; border-color: #f59e0b; color: white; }
+.rank-emblem.rank-s { background: #dc2626; border-color: #ef4444; color: white; }
+
+/* 우측 정보 영역 */
+.id-card-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.id-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.id-card-header .hunter-name {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.id-card-header .hunter-title-badge {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  background: rgba(168, 85, 247, 0.2);
+  color: var(--secondary);
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* 레벨 + EXP 바 */
+.id-card-level {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.id-card-level .level-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.id-card-level .level-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--primary);
+  min-width: 24px;
+}
+
+.id-card-level .exp-mini-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+  max-width: 100px;
+}
+
+.id-card-level .exp-mini-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  transition: width 0.3s ease;
+}
+
+/* 미니 스탯 표시 */
+.id-card-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.id-card-stats .mini-stat {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+}
+
+.id-card-stats .mini-stat-icon {
+  font-size: 0.75rem;
+}
+
+.id-card-stats .mini-stat-value {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* 자원 표시 */
+.id-card-resources {
+  display: flex;
+  gap: 12px;
+  font-size: 0.8rem;
+}
+
+.id-card-resources .resource {
+  font-weight: 600;
+}
+
+.id-card-resources .resource.gold {
+  color: #fbbf24;
+}
+
+.id-card-resources .resource.essence {
+  color: #a78bfa;
+}
+
+/* ========== 연마 패널 (Refine Panel) ========== */
+
+.refine-panel {
+  background: var(--bg-card);
+}
+
+.refine-panel .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.refine-panel .refine-hint {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.refine-stats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.refine-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.refine-stat-row:active {
+  transform: scale(0.98);
+}
+
+/* 스탯 레벨업 피드백 */
+.refine-stat-row.stat-level-up {
+  animation: statShake 0.2s ease-in-out;
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.4);
+}
+
+@keyframes statShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.stat-level-badge.pop {
+  animation: badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes badgePop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); color: var(--success); }
+  100% { transform: scale(1); }
+}
+
+.refine-stat-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 90px;
+}
+
+.refine-stat-icon {
+  font-size: 1.3rem;
+}
+
+.refine-stat-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.refine-stat-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.refine-stat-name .stat-level-badge {
+  background: var(--primary);
+  color: white;
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.refine-stat-desc {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+}
+
+/* 연마 게이지 */
+.refine-gauge-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+
+.refine-gauge {
+  height: 10px;
+  background: var(--bg);
+  border-radius: 5px;
+  overflow: hidden;
+  position: relative;
+}
+
+.refine-gauge-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  border-radius: 5px;
+  transition: width 0.15s ease;
+  position: relative;
+}
+
+.refine-gauge-glow {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 20px;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3));
+  animation: gaugeGlow 1s ease-in-out infinite;
+}
+
+@keyframes gaugeGlow {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+
+.refine-cost {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+/* 연마 버튼 */
+.refine-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 2px solid var(--primary);
+  background: linear-gradient(135deg, var(--bg-secondary), var(--bg));
+  color: var(--primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.refine-btn:hover {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.refine-btn:active,
+.refine-btn.refining {
+  transform: scale(0.92);
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 0 15px var(--primary-glow);
+}
+
+/* Sparkle 이펙트 */
+.refine-sparkle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(circle, #fff 0%, var(--primary) 50%, transparent 100%);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: sparkleAnim 0.3s ease-out forwards;
+  z-index: 10;
+}
+
+@keyframes sparkleAnim {
+  0% { opacity: 1; transform: scale(0.5); }
+  100% { opacity: 0; transform: scale(1.5) translateY(-10px); }
+}
+
+/* ========== Compact 카드 스타일 ========== */
+
+.card.compact {
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.card.compact h3 {
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
+
+/* Focus 효과 compact */
+.focus-card.compact .focus-effects {
+  display: flex;
+  gap: 10px;
+}
+
+.focus-card.compact .focus-effect {
+  flex: 1;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.focus-card.compact .effect-label {
+  font-size: 0.7rem;
+  display: block;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.focus-card.compact .effect-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+/* 전투 스탯 compact */
+.combat-stats-grid.compact {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.combat-stats-grid.compact .combat-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.combat-stats-grid.compact .cs-icon {
+  font-size: 1rem;
+}
+
+.combat-stats-grid.compact .cs-val {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.combat-stats-grid.compact .cs-label {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+}
+
+/* 통계 compact */
+.statistics-panel.compact .statistics-list .stat-item {
+  padding: 6px 0;
+  font-size: 0.85rem;
+}
+
+/* ========== 카이로소프트 스타일 추가 애니메이션 ========== */
+
+/* 카드 등장 애니메이션 */
+.hunter-screen .card {
+  animation: cardSlideUp 0.3s ease-out;
+  animation-fill-mode: backwards;
+}
+
+.hunter-screen .card:nth-child(2) { animation-delay: 0.1s; }
+.hunter-screen .card:nth-child(3) { animation-delay: 0.15s; }
+.hunter-screen .card:nth-child(4) { animation-delay: 0.2s; }
+.hunter-screen .card:nth-child(5) { animation-delay: 0.25s; }
+
+@keyframes cardSlideUp {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* 숫자 카운트 애니메이션 (레벨, 스탯) */
+.level-value,
+.mini-stat-value,
+.cs-val {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 호버 시 통통한 bounce */
+.mini-stat:hover .mini-stat-value,
+.combat-stat:hover .cs-val {
+  transform: scale(1.15);
+}
+
+/* ========== S랭크 홀로그램 효과 ========== */
+
+.hunter-id-card.s-rank-holo {
+  position: relative;
+  transition: transform 0.1s ease-out;
+  will-change: transform;
+}
+
+.hunter-id-card.s-rank-holo .hologram-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 14px;
+  pointer-events: none;
+  z-index: 2;
+  transition: background 0.15s ease-out;
+}
+
+/* S랭크 특수 테두리 효과 */
+.hunter-id-card.rank-s {
+  border-width: 3px;
+  box-shadow:
+    0 0 20px rgba(239, 68, 68, 0.4),
+    0 0 40px rgba(239, 68, 68, 0.2),
+    inset 0 0 20px rgba(239, 68, 68, 0.1);
+}
+
+/* S랭크 레인보우 보더 애니메이션 */
+.hunter-id-card.rank-s::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(
+    45deg,
+    #ef4444, #f59e0b, #84cc16, #22d3ee, #8b5cf6, #ec4899, #ef4444
+  );
+  background-size: 400% 400%;
+  border-radius: 18px;
+  z-index: -1;
+  animation: rainbowBorder 3s linear infinite;
+  opacity: 0.7;
+}
+
+@keyframes rainbowBorder {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ========== 동적 대표 액션 버튼 (CTA) ========== */
+
+.main-cta-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 16px 24px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border: 2px solid var(--primary);
+  border-radius: 14px;
+  color: white;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 4px 15px var(--primary-glow);
+  animation: ctaBounceIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s backwards;
+
+  /* safe-area-inset 대응 */
+  padding-left: max(24px, env(safe-area-inset-left));
+  padding-right: max(24px, env(safe-area-inset-right));
+}
+
+@keyframes ctaBounceIn {
+  0% { opacity: 0; transform: scale(0.9) translateY(10px); }
+  60% { transform: scale(1.05); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.main-cta-btn:hover {
+  transform: scale(1.03) translateY(-2px);
+  box-shadow: 0 6px 25px var(--primary-glow);
+}
+
+.main-cta-btn:active {
+  transform: scale(0.98);
+  box-shadow: 0 2px 10px var(--primary-glow);
+}
+
+.main-cta-btn .cta-icon {
+  font-size: 1.3rem;
+}
+
+.main-cta-btn .cta-label {
+  letter-spacing: 0.5px;
+}
+
+/* CTA 버튼 액션별 테마 */
+.main-cta-btn[data-action="add-quest"] {
+  background: linear-gradient(135deg, var(--success), #059669);
+  border-color: var(--success);
+  box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+}
+
+.main-cta-btn[data-action="refine"] {
+  background: linear-gradient(135deg, var(--secondary), #6d28d9);
+  border-color: var(--secondary);
+  box-shadow: 0 4px 15px var(--secondary-glow);
+}
+
+.main-cta-btn[data-action="gate"] {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  border-color: #ef4444;
+  box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+}
+
+.main-cta-btn[data-action="complete-quest"] {
+  background: linear-gradient(135deg, #fbbf24, #d97706);
+  border-color: #fbbf24;
+  box-shadow: 0 4px 15px rgba(251, 191, 36, 0.3);
+}
+
+/* 포커스 스타일 (접근성) */
+.main-cta-btn:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.refine-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ========== 접근성: prefers-reduced-motion 대응 ========== */
+
+@media (prefers-reduced-motion: reduce) {
+  .hunter-id-card,
+  .hunter-screen .card,
+  .main-cta-btn,
+  .rank-emblem,
+  .aurora-overlay,
+  .refine-sparkle,
+  .refine-gauge-glow,
+  .stat-level-badge.pop,
+  .refine-stat-row.stat-level-up {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .hunter-id-card.s-rank-holo {
+    transform: none !important;
+  }
+
+  .hunter-id-card.rank-s::after {
+    animation: none;
+    opacity: 0.5;
+  }
+
+  .aurora-overlay {
+    display: none;
+  }
+
+  .refine-gauge-glow {
+    display: none;
+  }
+
+  /* 레이아웃 전환만 허용 */
+  .refine-gauge-fill {
+    transition: width 0.3s ease;
+  }
+}
+
+/* ========== 모바일 safe-area-inset 대응 ========== */
+
+.hunter-screen {
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+/* ========== 반응형 조정 ========== */
+
+@media (max-width: 380px) {
+  .id-card-inner {
+    gap: 12px;
+  }
+
+  .id-card-avatar .avatar-frame {
+    width: 64px;
+    height: 64px;
+  }
+
+  .id-card-avatar .avatar-icon {
+    font-size: 2rem;
+  }
+
+  .id-card-header .hunter-name {
+    font-size: 1rem;
+  }
+
+  .id-card-stats .mini-stat {
+    padding: 2px 4px;
+    font-size: 0.75rem;
+  }
+
+  .refine-stat-info {
+    min-width: 70px;
+  }
+
+  .refine-stat-icon {
+    font-size: 1.1rem;
+  }
+
+  .refine-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* ========== 다크/라이트 테마별 자원 색상 ========== */
+
+.dark-theme .id-card-resources .resource.gold {
+  color: var(--gold);
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
+}
+
+.dark-theme .id-card-resources .resource.essence {
+  color: var(--essence);
+  text-shadow: 0 0 8px rgba(167, 139, 250, 0.3);
+}
+
+.light-theme .id-card-resources .resource.gold {
+  color: var(--gold);
+}
+
+.light-theme .id-card-resources .resource.essence {
+  color: var(--essence);
+}
+
+/* 라이트 테마 ID 카드 조정 */
+.light-theme .hunter-id-card {
+  background: var(--bg-card);
+  border-color: var(--border);
+}
+
+.light-theme .hunter-id-card.rank-e { background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%); border-color: #9ca3af; }
+.light-theme .hunter-id-card.rank-d { background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); border-color: #10b981; }
+.light-theme .hunter-id-card.rank-c { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); border-color: #3b82f6; }
+.light-theme .hunter-id-card.rank-b { background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%); border-color: #8b5cf6; }
+.light-theme .hunter-id-card.rank-a { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border-color: #f59e0b; }
+.light-theme .hunter-id-card.rank-s { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); border-color: #ef4444; }
+
+.light-theme .id-card-avatar .avatar-frame {
+  background: white;
+}
+
+.light-theme .id-card-stats .mini-stat {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.light-theme .main-cta-btn {
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
