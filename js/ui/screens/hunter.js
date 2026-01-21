@@ -1,5 +1,6 @@
 // The Hunter System - 헌터 화면 (v6.7.2 Mobile RPG HUD Style)
 // 헌터 자격증 카드 중심 UI, 카이로소프트 스타일 애니메이션
+console.log('[Hunter v6.7.2] Module loaded - RPG HUD Style');
 import { stateManager } from '../../core/stateManager.js';
 import { getRequiredExp, calculateCombatStats, getQuestWaitTime, calculateRefineCost } from '../../config/constants.js';
 
@@ -138,6 +139,7 @@ function triggerStatUpFeedback(statRow, statName, newValue) {
 }
 
 export function renderHunter() {
+  console.log('[Hunter v6.7.2] renderHunter called - NEW UI');
   const app = document.getElementById('app');
   const hunter = stateManager.get('hunter');
 
