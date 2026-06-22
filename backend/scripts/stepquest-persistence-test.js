@@ -24,6 +24,7 @@ const controller = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.cont
 const service = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.service.ts'), 'utf8');
 const devtoolsController = fs.readFileSync(path.join(root, 'src/devtools/devtools.controller.ts'), 'utf8');
 const healthController = fs.readFileSync(path.join(root, 'src/health/health.controller.ts'), 'utf8');
+const authController = fs.readFileSync(path.join(root, 'src/auth/auth.controller.ts'), 'utf8');
 const appVersionSource = fs.readFileSync(path.join(root, 'src/shared/app-version.ts'), 'utf8');
 const mainTs = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf8');
 const stateModule = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.state.ts'), 'utf8');
@@ -152,6 +153,10 @@ assert.ok(appModule.includes('StepQuestModule'), 'StepQuestModule is not registe
 assert.ok(appModule.includes('HealthModule'), 'HealthModule is not registered');
 assert.ok(appModule.includes('ThrottlerModule.forRoot'), 'rate limiting module is not registered');
 assert.ok(appModule.includes('EventsModule'), 'product events module is not registered');
+assert.ok(authController.includes("@Throttle({ default: { ttl: 600_000, limit: 5 } })\r\n  @Post('signup')")
+  || authController.includes("@Throttle({ default: { ttl: 600_000, limit: 5 } })\n  @Post('signup')"), 'signup must be rate-limited to 5 attempts per 10 minutes');
+assert.ok(authController.includes("@Throttle({ default: { ttl: 60_000, limit: 5 } })\r\n  @Post('login')")
+  || authController.includes("@Throttle({ default: { ttl: 60_000, limit: 5 } })\n  @Post('login')"), 'login must be rate-limited to 5 attempts per minute');
 assert.ok(mainTs.includes('helmet('), 'helmet must be applied at bootstrap');
 assert.ok(mainTs.includes('safeRequestLogger'), 'safe structured request logger must be applied at bootstrap');
 assert.ok(mainTs.includes("app.set('trust proxy', 1)"), 'reverse proxy trust setting must be available');
