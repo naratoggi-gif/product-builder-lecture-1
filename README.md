@@ -119,6 +119,7 @@ STAGING_URL=https://your-stepquest-staging-url npm run smoke:staging
 See `STAGING_RUNBOOK.md` for the full deployment and closed alpha checklist.
 On Render, `/health` uses the platform-provided `RENDER_GIT_COMMIT` value for the commit field. If the database is unavailable, `/health` returns HTTP 503 so the platform health check fails the deploy.
 The same smoke test can also be run from GitHub Actions with the `StepQuest Staging Smoke` workflow.
+After smoke passes, use `CLOSED_ALPHA_TEST_PLAN.md` for tester recruitment and `npm run analytics:report` to inspect product events.
 
 ## CI
 

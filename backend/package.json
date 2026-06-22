@@ -5,6 +5,7 @@
   "scripts": {
     "audit:reports": "node scripts/generate-audit-reports.js",
     "audit:ci": "node scripts/audit-ci.js",
+    "analytics:report": "node scripts/product-event-report.js",
     "db:init": "node scripts/db-init.js",
     "seed:super": "node scripts/seed-super-user.js",
     "smoke:test": "node scripts/smoke-test.js",

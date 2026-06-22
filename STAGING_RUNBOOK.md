@@ -95,6 +95,17 @@ Closed alpha can start only when:
 - The public URL is reachable from a mobile network.
 - Production super mode is blocked by UI, script, login, and direct QA costume checks.
 
+## Alpha Monitoring
+
+After testers begin using the staging URL, pull the product event report:
+
+```bash
+cd backend
+DATABASE_URL=postgresql://... DATABASE_SSL=true npm run analytics:report
+```
+
+Use `CLOSED_ALPHA_TEST_PLAN.md` for participant instructions, follow-up questions, and stop conditions.
+
 ## Security Notes
 
 - Do not run `seed:super` in production.
