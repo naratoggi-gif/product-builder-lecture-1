@@ -1,0 +1,36 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - security
+    groups:
+      nest-runtime:
+        dependency-type: production
+        patterns:
+          - "@nestjs/*"
+      test-tooling:
+        dependency-type: development
+        patterns:
+          - "@playwright/*"
+          - "@types/*"
+          - typescript
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:30"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci

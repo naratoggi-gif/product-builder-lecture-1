@@ -18,6 +18,8 @@ const alphaTestPlan = fs.readFileSync(path.join(root, '../CLOSED_ALPHA_TEST_PLAN
 const renderBlueprint = fs.readFileSync(path.join(root, '../render.yaml'), 'utf8');
 const ciWorkflow = fs.readFileSync(path.join(root, '../.github/workflows/ci.yml'), 'utf8');
 const stagingSmokeWorkflow = fs.readFileSync(path.join(root, '../.github/workflows/staging-smoke.yml'), 'utf8');
+const dependabotConfig = fs.readFileSync(path.join(root, '../.github/dependabot.yml'), 'utf8');
+const securityAudit = fs.readFileSync(path.join(root, '../SECURITY_AUDIT.md'), 'utf8');
 const controller = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.controller.ts'), 'utf8');
 const service = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.service.ts'), 'utf8');
 const devtoolsController = fs.readFileSync(path.join(root, 'src/devtools/devtools.controller.ts'), 'utf8');
@@ -99,6 +101,11 @@ assert.ok(renderBlueprint.includes('rootDir: backend'), 'Render blueprint must d
 assert.ok(stagingSmokeWorkflow.includes('workflow_dispatch'), 'staging smoke workflow must be manually runnable');
 assert.ok(stagingSmokeWorkflow.includes('staging_url'), 'staging smoke workflow must accept a staging URL input');
 assert.ok(stagingSmokeWorkflow.includes('npm run smoke:staging'), 'staging smoke workflow must run the staging smoke script');
+assert.ok(dependabotConfig.includes('package-ecosystem: npm'), 'Dependabot must watch backend npm dependencies');
+assert.ok(dependabotConfig.includes('directory: /backend'), 'Dependabot npm updates must target backend');
+assert.ok(dependabotConfig.includes('package-ecosystem: github-actions'), 'Dependabot must watch GitHub Actions');
+assert.ok(securityAudit.includes('Enable Dependabot alerts'), 'security audit must document the repository-level Dependabot alerts step');
+assert.ok(securityAudit.includes('Critical or High production alert'), 'security audit must define the production alert release gate');
 assert.ok(stagingSmoke.includes('/health'), 'staging smoke test must check health');
 assert.ok(stagingSmoke.includes('/dev/super-mode.js?v=0.1.1-alpha'), 'staging smoke test must check production super mode');
 assert.ok(stagingSmoke.includes('/events/track'), 'staging smoke test must check product event ingestion');
