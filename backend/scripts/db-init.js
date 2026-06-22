@@ -2,6 +2,22 @@
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
+const { setTimeout: sleep } = require('timers/promises');
+
+async function connectWithRetry(client) {
+  let lastError;
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    try {
+      await client.connect();
+      return;
+    } catch (error) {
+      lastError = error;
+      process.stdout.write(`Waiting for database (${attempt}/20): ${error.message}\n`);
+      await sleep(1000);
+    }
+  }
+  throw lastError;
+}
 
 async function run() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -25,7 +41,7 @@ async function run() {
     ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
   });
 
-  await client.connect();
+  await connectWithRetry(client);
   try {
     await client.query(`
       CREATE TABLE IF NOT EXISTS codex_migrations (
