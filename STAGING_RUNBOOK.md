@@ -46,6 +46,15 @@ cd backend
 STAGING_URL=https://your-stepquest-staging-url npm run smoke:staging
 ```
 
+Optional smoke settings:
+
+```bash
+SMOKE_TIMEOUT_MS=20000
+ALLOW_INSECURE_STAGING_SMOKE=true
+```
+
+`ALLOW_INSECURE_STAGING_SMOKE=true` is only for a local dry run. The real staging URL must use HTTPS.
+
 Or run the same check from GitHub:
 
 ```text
@@ -57,6 +66,7 @@ expected_app_version: 0.1.1-alpha
 The smoke test checks:
 
 - `/health` returns HTTP 200, DB connected, version `0.1.1-alpha`, and a non-local commit SHA.
+- The supplied staging URL uses HTTPS, unless a local dry run explicitly opts into insecure mode.
 - `goals.html` loads and references `v=0.1.1-alpha` assets.
 - Helmet CSP is present.
 - `/dev/super-mode.js` returns only the disabled production stub.
@@ -67,6 +77,7 @@ The smoke test checks:
 - Disposable `example.com` staging users can sign up and load default `Asia/Seoul` settings.
 - Authenticated users can create a StepQuest goal, complete the first Step, retry the same completion idempotently, and undo the reward.
 - Guest progress import is idempotent when the same `migrationId` is submitted twice.
+- Failed smoke HTTP checks include status and a short response snippet for diagnosis without printing tokens.
 
 ## Manual Closed Alpha Smoke
 

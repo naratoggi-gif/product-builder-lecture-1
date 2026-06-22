@@ -1,18 +1,49 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict');
 
-const baseUrl = (process.env.STAGING_URL || process.argv[2] || '').replace(/\/$/, '');
+const rawBaseUrl = (process.env.STAGING_URL || process.argv[2] || '').trim();
+const baseUrl = rawBaseUrl.replace(/\/$/, '');
 const expectedVersion = process.env.EXPECTED_APP_VERSION || '0.1.1-alpha';
+const requestTimeoutMs = Number(process.env.SMOKE_TIMEOUT_MS || 15_000);
 
 if (!baseUrl) {
   console.error('STAGING_URL is required. Example: STAGING_URL=https://stepquest-staging.onrender.com npm run smoke:staging');
   process.exit(1);
 }
 
+try {
+  const url = new URL(baseUrl);
+  if (url.protocol !== 'https:' && process.env.ALLOW_INSECURE_STAGING_SMOKE !== 'true') {
+    throw new Error('STAGING_URL must use HTTPS. Set ALLOW_INSECURE_STAGING_SMOKE=true only for a local dry run.');
+  }
+} catch (error) {
+  console.error(`Invalid STAGING_URL: ${error.message}`);
+  process.exit(1);
+}
+
+function snippet(text) {
+  return (text || '').replace(/\s+/g, ' ').slice(0, 240);
+}
+
+function assertStatus(result, statuses, message) {
+  const allowed = Array.isArray(statuses) ? statuses : [statuses];
+  assert.ok(
+    allowed.includes(result.response.status),
+    `${message}; received HTTP ${result.response.status}: ${snippet(result.text)}`,
+  );
+}
+
 async function read(path, options = {}) {
-  const response = await fetch(`${baseUrl}${path}`, options);
-  const text = await response.text();
-  return { response, text };
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...options,
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
+    const text = await response.text();
+    return { response, text };
+  } catch (error) {
+    throw new Error(`${path} request failed: ${error.message}`);
+  }
 }
 
 async function readJson(path, options = {}) {
@@ -21,9 +52,9 @@ async function readJson(path, options = {}) {
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error(`${path} did not return JSON: ${text.slice(0, 160)}`);
+    throw new Error(`${path} did not return JSON over HTTP ${response.status}: ${snippet(text)}`);
   }
-  return { response, data };
+  return { response, text, data };
 }
 
 function jsonOptions(method, body, token) {
@@ -55,21 +86,21 @@ async function signupSmokeUser(prefix) {
     password: `Smoke-${unique}-password-12345`,
     nickname: `${prefix.slice(0, 16)}-${unique.slice(-8)}`,
   });
-  assert.ok([200, 201].includes(signup.response.status), `${prefix} signup must succeed`);
+  assertStatus(signup, [200, 201], `${prefix} signup must succeed`);
   assert.ok(signup.data.accessToken, `${prefix} signup must return an access token`);
   return { email, token: signup.data.accessToken };
 }
 
 async function main() {
   const health = await readJson('/health');
-  assert.equal(health.response.status, 200, '/health must return HTTP 200');
+  assertStatus(health, 200, '/health must return HTTP 200');
   assert.equal(health.data.status, 'ok', '/health status must be ok');
   assert.equal(health.data.database, 'connected', '/health database must be connected');
   assert.equal(health.data.version, expectedVersion, '/health must report the deployed app version');
   assert.ok(health.data.commit && health.data.commit !== 'local', '/health must expose the deployed commit SHA');
 
   const goals = await read('/goals.html');
-  assert.equal(goals.response.status, 200, '/goals.html must load');
+  assertStatus(goals, 200, '/goals.html must load');
   assert.ok(goals.text.includes('v=0.1.1-alpha'), 'goals shell must reference versioned assets');
   assert.ok(!goals.text.includes('super@stepquest.local'), 'production shell must not expose super credentials');
   assert.ok(!goals.text.includes('stepquest-super-1234'), 'production shell must not expose super password');
@@ -80,7 +111,7 @@ async function main() {
   assert.ok(csp.includes('fonts.googleapis.com'), 'CSP must allow Google Fonts styles');
 
   const superScript = await read('/dev/super-mode.js?v=0.1.1-alpha');
-  assert.equal(superScript.response.status, 200, 'super hook should return a disabled stub in production');
+  assertStatus(superScript, 200, 'super hook should return a disabled stub in production');
   assert.ok(superScript.text.includes('window.StepQuestSuperMode=undefined'), 'production super hook must be disabled');
   assert.ok(!superScript.text.includes('stepquest-super-1234'), 'disabled super hook must not expose credentials');
 
@@ -93,10 +124,10 @@ async function main() {
   assert.notEqual(login.response.status, 201, 'production super login must not create a session');
 
   const qaCostume = await read('/stepquest/costumes/one_punch_hero/equip', { method: 'POST' });
-  assert.ok([401, 403, 404].includes(qaCostume.response.status), 'direct QA costume access must be rejected');
+  assertStatus(qaCostume, [401, 403, 404], 'direct QA costume access must be rejected');
 
   const serviceWorker = await read('/sw.js');
-  assert.equal(serviceWorker.response.status, 200, '/sw.js must load');
+  assertStatus(serviceWorker, 200, '/sw.js must load');
   assert.ok(serviceWorker.text.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must match the app version');
 
   const event = await readJson('/events/track', {
@@ -110,12 +141,12 @@ async function main() {
       estimatedSeconds: 5,
     }),
   });
-  assert.ok([200, 201].includes(event.response.status), 'product event endpoint must accept smoke events');
+  assertStatus(event, [200, 201], 'product event endpoint must accept smoke events');
   assert.deepEqual(event.data, { ok: true }, 'product event endpoint must return ok');
 
   const account = await signupSmokeUser('staging-smoke');
   const settings = await getJson('/stepquest/settings', account.token);
-  assert.equal(settings.response.status, 200, 'authenticated settings must load');
+  assertStatus(settings, 200, 'authenticated settings must load');
   assert.equal(settings.data.timezone, 'Asia/Seoul', 'new staging users must default to Asia/Seoul');
 
   const goal = await postJson('/stepquest/goals', {
@@ -126,18 +157,18 @@ async function main() {
     availableMinutes: 5,
     obstacle: 'too_big',
   }, account.token);
-  assert.ok([200, 201].includes(goal.response.status), 'authenticated goal creation must succeed');
+  assertStatus(goal, [200, 201], 'authenticated goal creation must succeed');
   assert.ok(goal.data.firstStep?.id, 'created goal must return the first micro step');
 
   const currentBefore = await getJson('/stepquest/current', account.token);
-  assert.equal(currentBefore.response.status, 200, 'current StepQuest state must load');
+  assertStatus(currentBefore, 200, 'current StepQuest state must load');
   assert.equal(currentBefore.data.currentStep?.stepId, goal.data.firstStep.id, 'current state must expose the first step');
   const beforeXp = currentBefore.data.user?.xp ?? 0;
   const beforeGoalCoin = currentBefore.data.user?.goalCoin ?? 0;
   const completeKey = `staging-smoke-${Date.now()}-complete`;
 
   const completed = await postJson(`/stepquest/steps/${goal.data.firstStep.id}/complete?idempotencyKey=${encodeURIComponent(completeKey)}`, {}, account.token);
-  assert.ok([200, 201].includes(completed.response.status), 'step completion must succeed');
+  assertStatus(completed, [200, 201], 'step completion must succeed');
   assert.ok(completed.data.reward?.xp > 0, 'step completion must grant XP');
 
   const afterComplete = await getJson('/stepquest/current', account.token);
@@ -145,7 +176,7 @@ async function main() {
   assert.ok((afterComplete.data.user?.goalCoin ?? 0) > beforeGoalCoin, 'completion must increase goal coins');
 
   const duplicateComplete = await postJson(`/stepquest/steps/${goal.data.firstStep.id}/complete?idempotencyKey=${encodeURIComponent(completeKey)}`, {}, account.token);
-  assert.ok([200, 201].includes(duplicateComplete.response.status), 'duplicate completion request must return a stable response');
+  assertStatus(duplicateComplete, [200, 201], 'duplicate completion request must return a stable response');
   assert.equal(duplicateComplete.data.duplicate, true, 'duplicate completion must be marked as duplicate');
 
   const afterDuplicate = await getJson('/stepquest/current', account.token);
@@ -153,7 +184,7 @@ async function main() {
   assert.equal(afterDuplicate.data.user?.goalCoin, afterComplete.data.user?.goalCoin, 'duplicate completion must not grant extra goal coins');
 
   const undone = await postJson(`/stepquest/steps/${goal.data.firstStep.id}/undo`, {}, account.token);
-  assert.ok([200, 201].includes(undone.response.status), 'completion undo must succeed');
+  assertStatus(undone, [200, 201], 'completion undo must succeed');
   assert.ok(undone.data.reversedReward?.xp > 0, 'undo must report reversed XP');
 
   const afterUndo = await getJson('/stepquest/current', account.token);
@@ -189,12 +220,12 @@ async function main() {
   };
 
   const imported = await postJson('/stepquest/guest/import', { migrationId, guestState }, importAccount.token);
-  assert.ok([200, 201].includes(imported.response.status), 'guest import must succeed for an empty account');
+  assertStatus(imported, [200, 201], 'guest import must succeed for an empty account');
   assert.equal(imported.data.status, 'imported', 'guest import must report imported status');
   assert.equal(imported.data.importedStepCount, 1, 'guest import must import the completed step');
 
   const duplicateImport = await postJson('/stepquest/guest/import', { migrationId, guestState }, importAccount.token);
-  assert.ok([200, 201].includes(duplicateImport.response.status), 'duplicate guest import request must return a stable response');
+  assertStatus(duplicateImport, [200, 201], 'duplicate guest import request must return a stable response');
   assert.equal(duplicateImport.data.duplicate, true, 'duplicate guest import must be marked duplicate');
   assert.equal(duplicateImport.data.importedStepCount, imported.data.importedStepCount, 'duplicate guest import must not import extra steps');
 

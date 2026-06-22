@@ -115,7 +115,12 @@ assert.ok(stagingSmoke.includes('/auth/signup'), 'staging smoke test must create
 assert.ok(stagingSmoke.includes('/stepquest/goals'), 'staging smoke test must create a real StepQuest goal');
 assert.ok(stagingSmoke.includes('idempotencyKey'), 'staging smoke test must verify duplicate completion idempotency');
 assert.ok(stagingSmoke.includes('/stepquest/guest/import'), 'staging smoke test must verify guest import idempotency');
+assert.ok(stagingSmoke.includes('ALLOW_INSECURE_STAGING_SMOKE'), 'staging smoke test must require HTTPS unless explicitly bypassed for local dry runs');
+assert.ok(stagingSmoke.includes('AbortSignal.timeout'), 'staging smoke test must fail hung requests with a timeout');
+assert.ok(stagingSmoke.includes('received HTTP'), 'staging smoke test must include response status diagnostics');
 assert.ok(stagingRunbook.includes('Disposable `example.com` staging users'), 'staging runbook must explain smoke-test user creation');
+assert.ok(stagingRunbook.includes('SMOKE_TIMEOUT_MS'), 'staging runbook must document smoke request timeout tuning');
+assert.ok(stagingRunbook.includes('real staging URL must use HTTPS'), 'staging runbook must document HTTPS enforcement');
 assert.ok(productEventReport.includes('goalToFirstCompletionPct'), 'product event report must expose goal-to-completion conversion');
 assert.ok(productEventReport.includes('shrinkToCompletionPct'), 'product event report must expose shrink-to-completion conversion');
 assert.ok(productEventReport.includes('returnOfferToStartPct'), 'product event report must expose return-start conversion');
