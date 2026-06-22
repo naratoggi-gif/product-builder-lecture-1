@@ -61,7 +61,7 @@ async function run() {
         continue;
       }
 
-      const sql = fs.readFileSync(file.path, 'utf8');
+      const sql = fs.readFileSync(file.path, 'utf8').replace(/^\uFEFF/, '');
       process.stdout.write(`Applying: ${file.name}\n`);
       try {
         await client.query(sql);
