@@ -12,5 +12,9 @@ backend/server.err.log
 backend/server.out.log
 backend/server.pid
 
+firebase-debug.log
+.idx/
+.vscode/
+
 .DS_Store
 Thumbs.db

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>The Hunter System - 목표관리 RPG</title>
+    <link rel="stylesheet" href="style.css?v=6.7.2">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="description" content="실생활 목표를 달성하고 진정한 헌터가 되세요">
+</head>
+<body class="dark-theme">
+    <!-- 헤더 -->
+    <header class="app-header">
+        <div class="header-left">
+            <h1 class="app-title">The Hunter System</h1>
+            <div id="gateIndicator"></div>
+        </div>
+        <div class="header-right">
+            <div class="hunter-status" id="hunterStatus"></div>
+            <button class="theme-toggle" onclick="toggleTheme()">
+                <span class="theme-icon">&#127769;</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- 메인 콘텐츠 -->
+    <main id="app">
+        <!-- 화면이 여기에 렌더링됨 -->
+    </main>
+
+    <!-- 하단 네비게이션 -->
+    <nav id="navbar" class="bottom-nav">
+        <!-- 네비게이션 아이템이 여기에 렌더링됨 -->
+    </nav>
+
+    <!-- 알림 컨테이너 -->
+    <div id="notification-container"></div>
+
+    <!-- 스크립트 -->
+    <script type="module" src="js/main.js?v=6.7.2"></script>
+</body>
+</html>
