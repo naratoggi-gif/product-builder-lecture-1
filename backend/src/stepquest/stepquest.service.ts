@@ -2,9 +2,12 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PoolClient } from 'pg';
 import { DatabaseService, SqlExecutor } from '../shared/database.service';
 import {
+  BurdenLevel,
   EnergyLevel,
   FailureReason,
+  QuestGrade,
   QuestCategory,
+  StepPhase,
   calculateStepReward,
   difficultyForSeconds,
   gradeForSeconds,
@@ -12,6 +15,7 @@ import {
 } from './stepquest.domain';
 import { createStepQuestDecomposer } from './stepquest.decomposer';
 import { CreateStepQuestGoalDto } from './dto/create-stepquest-goal.dto';
+import { ImportGuestProgressDto } from './dto/import-guest-progress.dto';
 import { ReminderActionDto } from './dto/reminder-action.dto';
 import { SaveReminderDto } from './dto/save-reminder.dto';
 
@@ -44,6 +48,45 @@ interface CurrentStepRow {
   deferredAt?: string | null;
 }
 
+interface GuestImportGoal {
+  sourceId: string;
+  title: string;
+  category: QuestCategory;
+  burdenLevel: BurdenLevel;
+  status: 'active' | 'paused' | 'completed' | 'archived';
+  createdAt?: string | null;
+  completedAt?: string | null;
+}
+
+interface GuestImportStep {
+  sourceId: string;
+  sourceGoalId: string;
+  title: string;
+  successCriterion: string;
+  category: QuestCategory;
+  phase: StepPhase;
+  orderIndex: number;
+  estimatedSeconds: number;
+  grade: QuestGrade;
+  status: 'pending' | 'active' | 'completed' | 'deferred' | 'skipped' | 'replaced';
+  activatedAt?: string | null;
+  completedAt?: string | null;
+}
+
+interface GuestImportAttempt {
+  sourceStepId: string;
+  action: 'complete' | 'shrink' | 'defer' | 'skip' | 'undo' | 'costume_active';
+  reason?: string | null;
+}
+
+interface NormalizedGuestImport {
+  goals: GuestImportGoal[];
+  steps: GuestImportStep[];
+  attempts: GuestImportAttempt[];
+  equippedCostumeId: string;
+  returnMarks: number;
+}
+
 const RETURN_MESSAGE = '\uB3CC\uC544\uC654\uB2E4. \uAE30\uB85D\uC740 \uB0A8\uC544 \uC788\uB2E4.';
 const ONE_ACTION_MESSAGE = '\uC9C0\uAE08 \uD560 \uC77C\uC740 \uD558\uB098\uB2E4.';
 const PROGRESS_KEPT_MESSAGE = '\uC9C4\uD589\uD55C \uAC83\uC740 \uC0AC\uB77C\uC9C0\uC9C0 \uC54A\uB294\uB2E4.';
@@ -52,6 +95,10 @@ const STOP_MESSAGE = '\uC5EC\uAE30\uC11C \uBA48\uCDB0\uB3C4 \uC9C4\uD589\uD55C \
 const RETURN_STEP_TITLE = '\uC9C0\uB09C \uBAA9\uD45C \uC81C\uBAA9 \uD55C \uBC88 \uBCF4\uAE30';
 const RETURN_STEP_SUCCESS = '\uC81C\uBAA9 \uD655\uC778 \uC644\uB8CC';
 const COSTUME_ACTIVE_RECHARGE_STEPS = 3;
+
+function isSuperModeAllowed(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.ENABLE_SUPER_MODE === 'true';
+}
 
 const FACILITY_BY_CATEGORY: Record<QuestCategory, FacilityKey> = {
   study: 'knowledge_tower',
@@ -187,6 +234,16 @@ const COSTUMES: StepQuestCostumeDefinition[] = [
     category: 'wake',
     target: 5,
   },
+  {
+    id: 'one_punch_hero',
+    name: '\uC6D0\uD380\uCE58 \uD14C\uC2A4\uD2B8 \uD788\uC5B4\uB85C',
+    role: '\uC288\uD37C QA',
+    passiveAbility: '\uBAA8\uB4E0 Step \uBCF4\uC0C1 x3',
+    activeAbility: '\uB300\uCDA9 \uD55C \uBC88: \uD604\uC7AC Step \uC55E\uC5D0 5\uCD08 \uD14C\uC2A4\uD2B8 Step \uC0DD\uC131',
+    unlockText: '\uC288\uD37C \uACC4\uC815 \uC804\uC6A9',
+    metric: 'total_completed',
+    target: 1,
+  },
 ];
 
 @Injectable()
@@ -294,6 +351,92 @@ export class StepQuestService {
         firstStep: steps[0],
         message: output.message,
       };
+    });
+  }
+
+  async importGuestProgress(userId: number, body: ImportGuestProgressDto) {
+    const migrationId = body.migrationId?.trim();
+    if (!migrationId) {
+      throw new BadRequestException('migrationId is required.');
+    }
+
+    const guest = this.normalizeGuestImport(body.guestState);
+    if (!guest.goals.length && !guest.steps.length) {
+      return {
+        status: 'no_guest_data',
+        migratedAt: null,
+        message: '옮길 게스트 진행도가 없습니다.',
+      };
+    }
+
+    return this.db.withTransaction(async (client) => {
+      await this.ensureUserState(client, userId);
+
+      const existingMigration = await client.query<{
+        status: string;
+        importedGoalCount: number;
+        importedStepCount: number;
+        migratedAt: string;
+      }>(
+        `SELECT
+           status,
+           imported_goal_count AS "importedGoalCount",
+           imported_step_count AS "importedStepCount",
+           migrated_at AS "migratedAt"
+         FROM stepquest_guest_migrations
+         WHERE user_id = $1 AND migration_id = $2`,
+        [userId, migrationId],
+      );
+      if (existingMigration.rowCount) {
+        return {
+          status: existingMigration.rows[0].status,
+          duplicate: true,
+          migratedAt: existingMigration.rows[0].migratedAt,
+          importedGoalCount: existingMigration.rows[0].importedGoalCount,
+          importedStepCount: existingMigration.rows[0].importedStepCount,
+          message: '이미 처리한 게스트 진행도입니다.',
+        };
+      }
+
+      const hasAccountData = await this.hasAccountStepQuestData(client, userId);
+      if (hasAccountData && !body.choice) {
+        return {
+          status: 'needs_choice',
+          options: ['import_guest', 'keep_account', 'merge'],
+          mergeSupported: false,
+          message: '계정 진행도가 이미 있습니다. 알파에서는 자동 병합하지 않습니다.',
+        };
+      }
+
+      if (body.choice === 'merge') {
+        return {
+          status: 'needs_choice',
+          options: ['import_guest', 'keep_account'],
+          mergeSupported: false,
+          message: '알파에서는 자동 병합을 막고 있습니다. 게스트 진행도 가져오기 또는 계정 진행도 사용을 선택해 주세요.',
+        };
+      }
+
+      if (hasAccountData && body.choice === 'keep_account') {
+        const skipped = await client.query<{ migratedAt: string }>(
+          `INSERT INTO stepquest_guest_migrations
+             (user_id, migration_id, status, imported_goal_count, imported_step_count)
+           VALUES ($1, $2, 'skipped', 0, 0)
+           RETURNING migrated_at AS "migratedAt"`,
+          [userId, migrationId],
+        );
+        return {
+          status: 'skipped',
+          migratedAt: skipped.rows[0].migratedAt,
+          importedGoalCount: 0,
+          importedStepCount: 0,
+          message: '계정 진행도를 유지했습니다.',
+        };
+      }
+
+      const imported = await this.importGuestSnapshot(client, userId, migrationId, guest);
+      await this.updateConsistency(client, userId);
+      return imported;
     });
   }
 
@@ -758,7 +901,7 @@ export class StepQuestService {
       this.getCostumeProgress(userId),
     ]);
     const costumes = [];
-    for (const costume of COSTUMES) {
+    for (const costume of this.availableCostumes()) {
       costumes.push(this.mapCostume(
         costume,
         user?.equippedCostumeId || 'starter_mage',
@@ -771,7 +914,7 @@ export class StepQuestService {
 
   async equipCostume(userId: number, costumeId: string) {
     await this.ensureUserState(this.db, userId);
-    const costume = COSTUMES.find((item) => item.id === costumeId);
+    const costume = this.availableCostumes().find((item) => item.id === costumeId);
     if (!costume) throw new NotFoundException('STEPQUEST \uCF54\uC2A4\uD2AC\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.');
 
     const progress = await this.getCostumeProgress(userId);
@@ -797,13 +940,13 @@ export class StepQuestService {
     return {
       user: updated.rows[0],
       equippedCostume: this.mapCostume(costume, costumeId, progress),
-      costumes: COSTUMES.map((item) => this.mapCostume(item, costumeId, progress)),
+      costumes: this.availableCostumes().map((item) => this.mapCostume(item, costumeId, progress)),
     };
   }
 
   async activateCostume(userId: number, costumeId: string) {
     await this.ensureUserState(this.db, userId);
-    const costume = COSTUMES.find((item) => item.id === costumeId);
+    const costume = this.availableCostumes().find((item) => item.id === costumeId);
     if (!costume) throw new NotFoundException('STEPQUEST \uCF54\uC2A4\uD2AC\uC744 \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.');
 
     const progress = await this.getCostumeProgress(userId);
@@ -1028,7 +1171,29 @@ export class StepQuestService {
   async undoStepCompletion(userId: number, stepId: number) {
     return this.db.withTransaction(async (client) => {
       await this.ensureUserState(client, userId);
-      const step = await this.lockCompletedStep(client, userId, stepId);
+      const step = await this.lockStepForStatuses(client, userId, stepId, ['completed', 'active']);
+      if (step.status !== 'completed') {
+        const alreadyUndone = await client.query(
+          `SELECT id
+           FROM stepquest_step_attempts
+           WHERE step_id = $1
+             AND user_id = $2
+             AND action = 'undo'
+           LIMIT 1`,
+          [stepId, userId],
+        );
+        if (alreadyUndone.rowCount) {
+          return {
+            stepId,
+            duplicate: true,
+            reversedReward: { xp: 0, facilityXp: 0, comboBonus: 0 },
+            currentStep: await this.findCurrentStep(client, userId),
+            consistency: await this.getConsistencyState(userId, client),
+            message: PROGRESS_KEPT_MESSAGE,
+          };
+        }
+        throw new BadRequestException('\uC644\uB8CC\uB41C STEPQUEST \uD589\uB3D9\uB9CC \uB418\uB3CC\uB9B4 \uC218 \uC788\uC2B5\uB2C8\uB2E4.');
+      }
 
       const laterProgress = await client.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count
@@ -1347,6 +1512,7 @@ export class StepQuestService {
   }
 
   private costumeAbilitySteps(costumeId: string): CostumeAbilityStepTemplate[] {
+    if (costumeId === 'one_punch_hero' && !isSuperModeAllowed()) return [];
     const sets: Record<string, CostumeAbilityStepTemplate[]> = {
       focus_archer: [
         { title: '\uBC29\uD574 \uC694\uC18C \uD558\uB098 \uBCF4\uAE30', seconds: 10, phase: 'orient' },
@@ -1366,6 +1532,9 @@ export class StepQuestService {
       dawn_knight: [
         { title: '\uD55C\uCABD \uB2E4\uB9AC\uB97C \uC774\uBD88 \uBC16\uC73C\uB85C \uBE7C\uAE30', seconds: 8, phase: 'orient' },
         { title: '\uBC1C\uBC14\uB2E5\uC744 \uBC14\uB2E5\uC5D0 \uBD99\uC774\uAE30', seconds: 10, phase: 'start' },
+      ],
+      one_punch_hero: [
+        { title: '\uC8FC\uBA39 \uD55C \uBC88 \uC950\uAE30', seconds: 5, phase: 'start' },
       ],
     };
     return sets[costumeId] || [];
@@ -1455,6 +1624,339 @@ export class StepQuestService {
         message: RETURN_MESSAGE,
       };
     });
+  }
+
+  private async hasAccountStepQuestData(client: PoolClient, userId: number): Promise<boolean> {
+    const result = await client.query<{ hasData: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM stepquest_goals WHERE user_id = $1 LIMIT 1
+       ) AS "hasData"`,
+      [userId],
+    );
+    return Boolean(result.rows[0]?.hasData);
+  }
+
+  private async importGuestSnapshot(
+    client: PoolClient,
+    userId: number,
+    migrationId: string,
+    guest: NormalizedGuestImport,
+  ) {
+    const goalIdMap = new Map<string, number>();
+    const chainIdMap = new Map<string, number>();
+    const stepIdMap = new Map<string, number>();
+    let importedGoalCount = 0;
+    let importedStepCount = 0;
+    let completedRewardIndex = 0;
+
+    for (const goal of guest.goals) {
+      const insertedGoal = await client.query<{ id: number }>(
+        `INSERT INTO stepquest_goals
+           (user_id, title, normalized_title, category, burden_level, status, created_at, completed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()), $8::timestamptz)
+         RETURNING id`,
+        [
+          userId,
+          goal.title,
+          goal.title.trim().toLowerCase(),
+          goal.category,
+          goal.burdenLevel,
+          goal.status,
+          goal.createdAt,
+          goal.completedAt,
+        ],
+      );
+      const goalId = insertedGoal.rows[0].id;
+      goalIdMap.set(goal.sourceId, goalId);
+      importedGoalCount += 1;
+
+      const insertedChain = await client.query<{ id: number }>(
+        `INSERT INTO stepquest_chains (goal_id, revision, source, status)
+         VALUES ($1, 1, 'manual', $2)
+         RETURNING id`,
+        [goalId, goal.status === 'completed' ? 'completed' : 'active'],
+      );
+      chainIdMap.set(goal.sourceId, insertedChain.rows[0].id);
+    }
+
+    for (const step of guest.steps) {
+      const chainId = chainIdMap.get(step.sourceGoalId);
+      if (!chainId) continue;
+      const reward = calculateStepReward({ grade: step.grade, sessionCombo: 0 });
+      const insertedStep = await client.query<{ id: number }>(
+        `INSERT INTO stepquest_micro_steps
+           (chain_id, title, success_criterion, phase, order_index, estimated_seconds, grade, status, xp_reward, facility_reward, activated_at, completed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::timestamptz, $12::timestamptz)
+         RETURNING id`,
+        [
+          chainId,
+          step.title,
+          step.successCriterion,
+          step.phase,
+          step.orderIndex,
+          step.estimatedSeconds,
+          step.grade,
+          step.status,
+          reward.xp,
+          reward.facilityXp,
+          step.activatedAt,
+          step.completedAt,
+        ],
+      );
+      const stepId = insertedStep.rows[0].id;
+      stepIdMap.set(step.sourceId, stepId);
+      importedStepCount += 1;
+
+      if (step.status === 'completed') {
+        completedRewardIndex += 1;
+        const key = `guest:${migrationId}:step:${step.sourceId}:complete`;
+        const rewardWithCombo = calculateStepReward({ grade: step.grade, sessionCombo: completedRewardIndex });
+        await this.grantReward(client, userId, 'step', stepId, 'xp', rewardWithCombo.xp, key);
+        await this.grantReward(client, userId, 'step', stepId, 'facility_xp', rewardWithCombo.facilityXp, `${key}:facility`);
+        await this.growVillage(client, userId, step.category || 'study', rewardWithCombo.facilityXp);
+      }
+    }
+
+    for (const [sourceGoalId, chainId] of chainIdMap.entries()) {
+      const hasOpen = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+         FROM stepquest_micro_steps
+         WHERE chain_id = $1 AND status IN ('active', 'deferred')`,
+        [chainId],
+      );
+      if (Number(hasOpen.rows[0]?.count || 0) === 0) {
+        await client.query(
+          `UPDATE stepquest_micro_steps
+           SET status = 'active', activated_at = NOW()
+           WHERE id = (
+             SELECT id
+             FROM stepquest_micro_steps
+             WHERE chain_id = $1 AND status = 'pending'
+             ORDER BY order_index ASC, id ASC
+             LIMIT 1
+           )`,
+          [chainId],
+        );
+      }
+
+      const anyActive = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+         FROM stepquest_micro_steps
+         WHERE chain_id = $1 AND status IN ('active', 'deferred', 'pending')`,
+        [chainId],
+      );
+      if (Number(anyActive.rows[0]?.count || 0) > 0) {
+        const goalId = goalIdMap.get(sourceGoalId);
+        if (goalId) {
+          await client.query(
+            `UPDATE stepquest_goals
+             SET status = 'active', completed_at = NULL, updated_at = NOW()
+             WHERE id = $1 AND status = 'completed'`,
+            [goalId],
+          );
+          await client.query(`UPDATE stepquest_chains SET status = 'active' WHERE id = $1 AND status = 'completed'`, [chainId]);
+        }
+      }
+    }
+
+    for (const attempt of guest.attempts) {
+      const stepId = stepIdMap.get(attempt.sourceStepId);
+      if (!stepId) continue;
+      await client.query(
+        `INSERT INTO stepquest_step_attempts (step_id, user_id, action, reason)
+         VALUES ($1, $2, $3, $4)`,
+        [stepId, userId, attempt.action, attempt.reason],
+      );
+    }
+
+    await client.query(
+      `UPDATE stepquest_user_states
+       SET
+         return_marks = GREATEST(return_marks, $2),
+         equipped_costume_id = $3,
+         updated_at = NOW()
+       WHERE user_id = $1`,
+      [userId, guest.returnMarks, guest.equippedCostumeId],
+    );
+
+    const migration = await client.query<{ migratedAt: string }>(
+      `INSERT INTO stepquest_guest_migrations
+         (user_id, migration_id, status, imported_goal_count, imported_step_count)
+       VALUES ($1, $2, 'imported', $3, $4)
+       RETURNING migrated_at AS "migratedAt"`,
+      [userId, migrationId, importedGoalCount, importedStepCount],
+    );
+
+    await this.touchUser(client, userId);
+    return {
+      status: 'imported',
+      migratedAt: migration.rows[0].migratedAt,
+      importedGoalCount,
+      importedStepCount,
+      message: '게스트 진행도를 계정으로 옮겼습니다.',
+    };
+  }
+
+  private normalizeGuestImport(raw: Record<string, unknown>): NormalizedGuestImport {
+    const guest = this.asRecord(raw);
+    const goals = this.asArray(guest.weekly).map((item, index) => this.normalizeGuestGoal(item, index));
+    if (!goals.length) {
+      goals.push({
+        sourceId: 'guest-goal',
+        title: '게스트 목표',
+        category: 'study',
+        burdenLevel: 2,
+        status: 'active',
+      });
+    }
+
+    const goalIds = new Set(goals.map((goal) => goal.sourceId));
+    const fallbackGoalId = goals[0].sourceId;
+    const goalById = new Map(goals.map((goal) => [goal.sourceId, goal]));
+    const steps = this.asArray(guest.micro)
+      .map((item, index) => this.normalizeGuestStep(item, index, goalIds, fallbackGoalId, goalById))
+      .filter((step): step is GuestImportStep => Boolean(step));
+    const attempts = this.asArray(guest.attempts)
+      .map((item) => this.normalizeGuestAttempt(item))
+      .filter((attempt): attempt is GuestImportAttempt => Boolean(attempt));
+    const player = this.asRecord(guest.player);
+    const requestedCostumeId = this.readString(guest.equippedCostumeId)
+      || this.readString(player.equippedCostumeId)
+      || 'starter_mage';
+
+    return {
+      goals,
+      steps,
+      attempts,
+      equippedCostumeId: this.safeCostumeId(requestedCostumeId),
+      returnMarks: Math.max(0, this.readNumber(player.returnMarks, 0)),
+    };
+  }
+
+  private normalizeGuestGoal(raw: unknown, index: number): GuestImportGoal {
+    const item = this.asRecord(raw);
+    const status = this.readString(item.status);
+    return {
+      sourceId: this.readString(item.id) || `guest-goal-${index + 1}`,
+      title: this.readString(item.title)?.slice(0, 140) || '게스트 목표',
+      category: this.normalizeCategory(this.readString(item.category)),
+      burdenLevel: this.normalizeBurdenLevel(this.readNumber(item.burdenLevel, 2)),
+      status: status === 'DONE' || status === 'completed'
+        ? 'completed'
+        : status === 'ARCHIVED' || status === 'archived'
+          ? 'archived'
+          : status === 'PAUSED' || status === 'paused'
+            ? 'paused'
+            : 'active',
+      createdAt: this.normalizeIsoString(item.createdAt),
+      completedAt: this.normalizeIsoString(item.completedAt),
+    };
+  }
+
+  private normalizeGuestStep(
+    raw: unknown,
+    index: number,
+    goalIds: Set<string>,
+    fallbackGoalId: string,
+    goalById: Map<string, GuestImportGoal>,
+  ): GuestImportStep | null {
+    const item = this.asRecord(raw);
+    const title = this.readString(item.title)?.slice(0, 160);
+    if (!title) return null;
+    const sourceGoalId = this.readString(item.weeklyMissionId) || fallbackGoalId;
+    const resolvedGoalId = goalIds.has(sourceGoalId) ? sourceGoalId : fallbackGoalId;
+    const seconds = Math.max(1, Math.min(1800, this.readNumber(item.estimatedSeconds, 30)));
+    const grade = this.normalizeGrade(this.readString(item.grade), seconds);
+    return {
+      sourceId: this.readString(item.id) || `guest-step-${index + 1}`,
+      sourceGoalId: resolvedGoalId,
+      title,
+      successCriterion: this.readString(item.successCriterion)?.slice(0, 180) || `${title} 완료`,
+      category: this.normalizeCategory(this.readString(item.category) || goalById.get(resolvedGoalId)?.category),
+      phase: this.normalizePhase(this.readString(item.phase)),
+      orderIndex: Math.max(0, this.readNumber(item.orderIndex, index)),
+      estimatedSeconds: seconds,
+      grade,
+      status: this.normalizeGuestStepStatus(this.readString(item.status)),
+      activatedAt: this.normalizeIsoString(item.activatedAt),
+      completedAt: this.normalizeIsoString(item.completedAt),
+    };
+  }
+
+  private normalizeGuestAttempt(raw: unknown): GuestImportAttempt | null {
+    const item = this.asRecord(raw);
+    const sourceStepId = this.readString(item.stepId);
+    const action = this.normalizeAttemptAction(this.readString(item.action));
+    if (!sourceStepId || !action) return null;
+    return {
+      sourceStepId,
+      action,
+      reason: this.readString(item.reason)?.slice(0, 40) || null,
+    };
+  }
+
+  private normalizeGuestStepStatus(value?: string): GuestImportStep['status'] {
+    if (value === 'DONE' || value === 'completed') return 'completed';
+    if (value === 'OPEN' || value === 'active') return 'active';
+    if (value === 'DEFERRED' || value === 'deferred') return 'deferred';
+    if (value === 'SKIPPED' || value === 'skipped') return 'skipped';
+    if (value === 'REPLACED' || value === 'replaced') return 'replaced';
+    return 'pending';
+  }
+
+  private normalizeAttemptAction(value?: string): GuestImportAttempt['action'] | null {
+    if (value === 'complete' || value === 'shrink' || value === 'defer' || value === 'skip' || value === 'undo' || value === 'costume_active') {
+      return value;
+    }
+    return null;
+  }
+
+  private normalizeCategory(value?: string): QuestCategory {
+    const categories: QuestCategory[] = ['study', 'work', 'writing', 'cleaning', 'exercise', 'wake', 'sleep', 'life_admin', 'relationship'];
+    return categories.includes(value as QuestCategory) ? value as QuestCategory : 'study';
+  }
+
+  private normalizePhase(value?: string): StepPhase {
+    const phases: StepPhase[] = ['orient', 'prepare', 'open', 'start', 'continue', 'close'];
+    return phases.includes(value as StepPhase) ? value as StepPhase : 'start';
+  }
+
+  private normalizeGrade(value: string | undefined, seconds: number): QuestGrade {
+    const grades: QuestGrade[] = ['F', 'E', 'D', 'C', 'B', 'A', 'S'];
+    return grades.includes(value as QuestGrade) ? value as QuestGrade : gradeForSeconds(seconds);
+  }
+
+  private normalizeBurdenLevel(value: number): BurdenLevel {
+    if (value === 1 || value === 2 || value === 3 || value === 4) return value;
+    return 2;
+  }
+
+  private safeCostumeId(costumeId: string): string {
+    if (costumeId === 'one_punch_hero' && !isSuperModeAllowed()) return 'starter_mage';
+    return this.availableCostumes().some((costume) => costume.id === costumeId) ? costumeId : 'starter_mage';
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  }
+
+  private asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
+  }
+
+  private readString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+
+  private readNumber(value: unknown, fallback: number): number {
+    return Number.isFinite(Number(value)) ? Number(value) : fallback;
+  }
+
+  private normalizeIsoString(value: unknown): string | null {
+    const text = this.readString(value);
+    if (!text) return null;
+    const date = new Date(text);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
 
   private async ensureUserState(executor: SqlExecutor, userId: number): Promise<void> {
@@ -1749,6 +2251,12 @@ export class StepQuestService {
     };
   }
 
+  private availableCostumes(): StepQuestCostumeDefinition[] {
+    return isSuperModeAllowed()
+      ? COSTUMES
+      : COSTUMES.filter((costume) => costume.id !== 'one_punch_hero');
+  }
+
   private async getCostumeActiveCharge(executor: SqlExecutor, userId: number, costumeId: string): Promise<CostumeActiveCharge> {
     const latest = await executor.query<{ lastUsedAt: string }>(
       `SELECT created_at AS "lastUsedAt"
@@ -1831,12 +2339,14 @@ export class StepQuestService {
   }
 
   private costumeRewardMultiplier(costumeId: string, category: QuestCategory, sessionCombo: number, isReturnStep: boolean): number {
+    if (costumeId === 'one_punch_hero' && !isSuperModeAllowed()) return 1;
     if (costumeId === 'starter_mage' && sessionCombo <= 1) return 1.2;
     if (costumeId === 'focus_archer' && category === 'study') return 1.15;
     if (costumeId === 'return_paladin' && isReturnStep) return 1.3;
     if (costumeId === 'tidy_rogue' && category === 'cleaning') return 1.2;
     if (costumeId === 'blank_scribe' && category === 'writing') return 1.2;
     if (costumeId === 'dawn_knight' && category === 'wake') return 1.2;
+    if (costumeId === 'one_punch_hero') return 3;
     return 1;
   }
 

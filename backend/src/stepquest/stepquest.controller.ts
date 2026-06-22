@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { CurrentUserId } from '../shared/current-user-id.decorator';
 import { CreateStepQuestGoalDto } from './dto/create-stepquest-goal.dto';
+import { ImportGuestProgressDto } from './dto/import-guest-progress.dto';
 import { ReminderActionDto } from './dto/reminder-action.dto';
 import { RegenerateChainDto } from './dto/regenerate-chain.dto';
 import { SaveReminderDto } from './dto/save-reminder.dto';
@@ -14,6 +15,11 @@ export class StepQuestController {
   @Post('goals')
   createGoal(@CurrentUserId() userId: number, @Body() body: CreateStepQuestGoalDto): Promise<unknown> {
     return this.stepQuestService.createGoal(userId, body);
+  }
+
+  @Post('guest/import')
+  importGuestProgress(@CurrentUserId() userId: number, @Body() body: ImportGuestProgressDto): Promise<unknown> {
+    return this.stepQuestService.importGuestProgress(userId, body);
   }
 
   @Get('current')

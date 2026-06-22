@@ -11,6 +11,8 @@ backend/.env
 backend/server.err.log
 backend/server.out.log
 backend/server.pid
+backend/test-results/
+backend/playwright-report/
 
 firebase-debug.log
 .idx/

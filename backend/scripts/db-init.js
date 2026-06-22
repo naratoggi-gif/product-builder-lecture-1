@@ -16,6 +16,7 @@ async function run() {
     { name: '0004_battle_stages', path: path.resolve(__dirname, '../db/migrations/0004_battle_stages.sql') },
     { name: '0005_stepquest_core', path: path.resolve(__dirname, '../db/migrations/0005_stepquest_core.sql') },
     { name: '0006_stepquest_costume_active', path: path.resolve(__dirname, '../db/migrations/0006_stepquest_costume_active.sql') },
+    { name: '0007_stepquest_guest_migrations', path: path.resolve(__dirname, '../db/migrations/0007_stepquest_guest_migrations.sql') },
     { name: 'seed', path: path.resolve(__dirname, '../db/seed.sql') },
   ];
 

@@ -503,10 +503,330 @@ input, select {
   gap: 12px;
 }
 
+.village-scene {
+  position: relative;
+  overflow: hidden;
+  min-height: 360px;
+  margin: 4px 0 16px;
+  border: 2px solid #6f854e;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(115, 184, 202, .48) 0 20%, transparent 20%),
+    linear-gradient(180deg, #9acb72, #6fa85c 58%, #5c8e54);
+  box-shadow:
+    inset 0 0 0 3px rgba(255,255,255,.14),
+    inset 0 -20px 0 rgba(52, 93, 48, .22);
+}
+
+.village-sky {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 34%;
+  pointer-events: none;
+}
+
+.village-sky i {
+  position: absolute;
+  width: 48px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.76);
+  box-shadow: 22px 2px 0 rgba(255,255,255,.62), 10px -7px 0 rgba(255,255,255,.74);
+  animation: cloud-drift 16s linear infinite;
+}
+
+.village-sky i:nth-child(1) { left: 8%; top: 22%; }
+.village-sky i:nth-child(2) { left: 42%; top: 12%; animation-duration: 21s; animation-delay: -6s; }
+.village-sky i:nth-child(3) { left: 76%; top: 28%; animation-duration: 18s; animation-delay: -10s; }
+
+.village-board {
+  position: absolute;
+  left: 3%;
+  right: 3%;
+  bottom: 5%;
+  height: 76%;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255,255,255,.06) 1px, transparent 1px),
+    linear-gradient(135deg, #82bd63, #6ba958);
+  background-size: 48px 48px, 48px 48px, auto;
+  transform: perspective(900px) rotateX(2deg);
+  box-shadow: inset 0 0 0 2px rgba(39, 79, 44, .35);
+}
+
+.village-board::before {
+  content: "";
+  position: absolute;
+  inset: 10% 8%;
+  border-radius: 999px;
+  border: 14px solid rgba(230, 189, 111, .56);
+  transform: rotate(-8deg);
+}
+
+.village-river {
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  top: 48%;
+  height: 36px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.28) 0 18px, transparent 18px 42px),
+    linear-gradient(180deg, #6cc7dd, #3b92bd);
+  transform: rotate(-12deg);
+  box-shadow: 0 5px 0 rgba(24, 75, 100, .26);
+}
+
+.village-path {
+  position: absolute;
+  background: #d2a860;
+  box-shadow: inset 0 3px 0 rgba(255,255,255,.24), inset 0 -3px 0 rgba(113, 78, 37, .2);
+}
+
+.path-a {
+  left: 47%;
+  top: 3%;
+  width: 36px;
+  height: 88%;
+  transform: rotate(12deg);
+}
+
+.path-b {
+  left: 10%;
+  top: 47%;
+  width: 78%;
+  height: 32px;
+  transform: rotate(-6deg);
+}
+
+.village-tile {
+  position: absolute;
+  width: 18px;
+  height: 12px;
+  border-radius: 2px;
+  background: rgba(242, 220, 140, .56);
+  box-shadow: 0 2px 0 rgba(69, 112, 54, .22);
+}
+
+.village-tile:nth-of-type(1) { left: 9%; top: 69%; }
+.village-tile:nth-of-type(2) { left: 18%; top: 32%; }
+.village-tile:nth-of-type(3) { left: 31%; top: 61%; }
+.village-tile:nth-of-type(4) { left: 44%; top: 25%; }
+.village-tile:nth-of-type(5) { left: 53%; top: 77%; }
+.village-tile:nth-of-type(6) { left: 69%; top: 28%; }
+.village-tile:nth-of-type(7) { left: 82%; top: 59%; }
+.village-tile:nth-of-type(8) { left: 74%; top: 79%; }
+
+.village-building {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 78px;
+  height: calc(66px + (var(--rank) * 4px));
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #2a1f21;
+  background: transparent;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 9px 0 rgba(48, 58, 42, .28));
+  z-index: calc(10 + var(--rank));
+}
+
+.village-building .body {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 9px;
+  height: calc(38px + (var(--rank) * 3px));
+  border: 3px solid #513d32;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.22) 0 45%, transparent 45%),
+    #e7c27b;
+}
+
+.village-building .roof {
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  bottom: calc(41px + (var(--rank) * 3px));
+  height: 24px;
+  border: 3px solid #513d32;
+  background: #d85d4a;
+  clip-path: polygon(50% 0, 100% 78%, 92% 100%, 8% 100%, 0 78%);
+  z-index: 2;
+}
+
+.village-building .door {
+  position: absolute;
+  left: 34px;
+  bottom: 10px;
+  width: 13px;
+  height: 22px;
+  border: 2px solid #513d32;
+  background: #6d4a36;
+}
+
+.village-building small {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  min-width: 34px;
+  padding: 2px 4px;
+  border: 2px solid #513d32;
+  border-radius: 4px;
+  background: #fff0b2;
+  color: #513d32;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.village-building.active {
+  animation: building-bob 2.8s ease-in-out infinite;
+}
+
+.village-building.tower .body {
+  left: 24px;
+  right: 24px;
+  height: calc(54px + (var(--rank) * 5px));
+  background: #d7d6c5;
+}
+
+.village-building.tower .roof {
+  bottom: calc(57px + (var(--rank) * 5px));
+  background: #5578b8;
+}
+
+.village-building.forge .body { background: #c98d62; }
+.village-building.forge .roof { background: #6b5b54; }
+.village-building.scribe .body { background: #c9b07c; }
+.village-building.scribe .roof { background: #815da6; }
+.village-building.training .body { background: #c78258; }
+.village-building.training .roof { background: #7a8d51; }
+.village-building.inn .body { background: #e1a769; }
+.village-building.inn .roof { background: #cf5d70; }
+.village-building.hall .body { background: #d2c183; }
+.village-building.hall .roof { background: #4f9272; }
+.village-building.garden .body {
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 28% 42%, #f7d05f 0 9px, transparent 10px),
+    radial-gradient(circle at 64% 34%, #e56b6f 0 8px, transparent 9px),
+    #78b760;
+}
+.village-building.garden .roof { display: none; }
+
+.player-character,
+.villager,
+.tiny-monster {
+  position: absolute;
+  width: 24px;
+  height: 28px;
+  z-index: 60;
+}
+
+.player-character i,
+.villager i,
+.tiny-monster i {
+  position: absolute;
+  inset: 0;
+  border: 3px solid #422f2c;
+  box-shadow: inset 5px 0 rgba(255,255,255,.18), 0 4px 0 rgba(41, 61, 38, .25);
+}
+
+.player-character {
+  left: 46%;
+  top: 59%;
+  z-index: 72;
+  animation: player-patrol 7s ease-in-out infinite;
+}
+
+.player-character i {
+  border-radius: 9px 9px 5px 5px;
+  background:
+    radial-gradient(circle at 32% 28%, #382824 0 2px, transparent 3px),
+    radial-gradient(circle at 68% 28%, #382824 0 2px, transparent 3px),
+    linear-gradient(#f1c48b 0 42%, #f2c166 42% 72%, #8f5db8 72%);
+}
+
+.villager i {
+  border-radius: 9px 9px 5px 5px;
+  background:
+    radial-gradient(circle at 32% 30%, #422f2c 0 2px, transparent 3px),
+    radial-gradient(circle at 68% 30%, #422f2c 0 2px, transparent 3px),
+    linear-gradient(#f6c98b 0 45%, #5aa6c8 45%);
+}
+
+.villager-a {
+  left: 17%;
+  top: 58%;
+  animation: walk-a 9s ease-in-out infinite;
+}
+
+.villager-b {
+  left: 69%;
+  top: 57%;
+  animation: walk-b 11s ease-in-out infinite;
+}
+
+.villager-b i {
+  background:
+    radial-gradient(circle at 32% 30%, #422f2c 0 2px, transparent 3px),
+    radial-gradient(circle at 68% 30%, #422f2c 0 2px, transparent 3px),
+    linear-gradient(#f1b783 0 45%, #9d73c9 45%);
+}
+
+.tiny-monster {
+  left: 81%;
+  top: 74%;
+  animation: monster-hop 3.4s ease-in-out infinite;
+}
+
+.tiny-monster i {
+  border-radius: 50% 50% 42% 42%;
+  background:
+    radial-gradient(circle at 36% 38%, #19373a 0 2px, transparent 3px),
+    radial-gradient(circle at 64% 38%, #19373a 0 2px, transparent 3px),
+    #6fd0a0;
+}
+
+@keyframes cloud-drift {
+  from { transform: translateX(-18px); }
+  to { transform: translateX(34px); }
+}
+
+@keyframes building-bob {
+  0%, 100% { transform: translate(-50%, -50%); }
+  50% { transform: translate(-50%, calc(-50% - 3px)); }
+}
+
+@keyframes player-patrol {
+  0%, 100% { transform: translate(0, 0); }
+  40% { transform: translate(96px, -24px); }
+  72% { transform: translate(-72px, 18px) scaleX(-1); }
+}
+
+@keyframes walk-a {
+  0%, 100% { transform: translate(0, 0); }
+  35% { transform: translate(150px, -28px); }
+  70% { transform: translate(260px, 36px); }
+}
+
+@keyframes walk-b {
+  0%, 100% { transform: translate(0, 0) scaleX(-1); }
+  45% { transform: translate(-180px, 34px) scaleX(-1); }
+  78% { transform: translate(-310px, -10px) scaleX(-1); }
+}
+
+@keyframes monster-hop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-9px) scale(1.05, .94); }
+}
+
 .village-facility {
   min-width: 0;
   border: 1px solid #35507b;
-  border-radius: 16px;
+  border-radius: 8px;
   padding: 14px;
   background: var(--card-2);
 }
@@ -1065,6 +1385,44 @@ input, select {
   }
   .step-runner { min-height: 280px; }
   .step-runner h2 { font-size: 34px; }
+  .village-scene { min-height: 300px; }
+  .village-building {
+    width: 58px;
+    height: calc(52px + (var(--rank) * 3px));
+  }
+  .village-building .body {
+    left: 10px;
+    right: 10px;
+    bottom: 7px;
+    height: calc(30px + (var(--rank) * 2px));
+  }
+  .village-building .roof {
+    left: 5px;
+    right: 5px;
+    bottom: calc(32px + (var(--rank) * 2px));
+    height: 20px;
+  }
+  .village-building .door {
+    left: 25px;
+    bottom: 8px;
+    width: 10px;
+    height: 17px;
+  }
+  .village-building.tower .body {
+    left: 18px;
+    right: 18px;
+    height: calc(42px + (var(--rank) * 3px));
+  }
+  .village-building.tower .roof {
+    bottom: calc(44px + (var(--rank) * 3px));
+  }
+  .village-building small { font-size: 10px; min-width: 28px; }
+  .player-character,
+  .villager,
+  .tiny-monster {
+    width: 19px;
+    height: 22px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

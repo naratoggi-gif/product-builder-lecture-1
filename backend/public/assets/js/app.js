@@ -45,11 +45,15 @@
     reducedMotion: '\uBAA8\uC158 \uC904\uC774\uAE30',
     motionOn: '\uBAA8\uC158\uC744 \uC904\uC600\uC2B5\uB2C8\uB2E4.',
     motionOff: '\uBAA8\uC158\uC744 \uB2E4\uC2DC \uD45C\uC2DC\uD569\uB2C8\uB2E4.',
+    guestImported: '\uAC8C\uC2A4\uD2B8 \uC9C4\uD589\uB3C4\uB97C \uACC4\uC815\uC73C\uB85C \uC62E\uACBC\uC2B5\uB2C8\uB2E4.',
+    guestKeptAccount: '\uACC4\uC815 \uC9C4\uD589\uB3C4\uB97C \uC720\uC9C0\uD588\uC2B5\uB2C8\uB2E4.',
+    guestImportChoice: '\uACC4\uC815 \uC9C4\uD589\uB3C4\uAC00 \uC774\uBBF8 \uC788\uC2B5\uB2C8\uB2E4. \uD655\uC778\uC744 \uB204\uB974\uBA74 \uAC8C\uC2A4\uD2B8 \uC9C4\uD589\uB3C4\uB97C \uC774\uC5B4\uBC1B\uACE0, \uCDE8\uC18C\uB97C \uB204\uB974\uBA74 \uACC4\uC815 \uC9C4\uD589\uB3C4\uB97C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.',
   };
 
   const state = {
     token: localStorage.getItem(tokenStorageKey) || '',
     user: parseJson(localStorage.getItem(userStorageKey), null),
+    localSuper: Boolean(window.StepQuestSuperMode?.isActive?.()),
     player: null,
     consistency: null,
     vision: [],
@@ -291,6 +295,7 @@
       target: 5,
     },
   ];
+  window.StepQuestSuperMode?.extendCostumes?.(basicCostumes);
 
   function parseJson(raw, fallback) {
     try {
@@ -479,6 +484,8 @@
   }
 
   function costumeRewardMultiplier(costumeId, step, combo = 0, isReturnStep = false) {
+    const superMultiplier = window.StepQuestSuperMode?.costumeRewardMultiplier?.(costumeId, step, combo, isReturnStep);
+    if (Number(superMultiplier || 0) > 0) return Number(superMultiplier);
     const category = step?.category || 'study';
     if (costumeId === 'starter_mage' && Number(combo || 0) <= 1) return 1.2;
     if (costumeId === 'focus_archer' && category === 'study') return 1.15;
@@ -719,6 +726,44 @@
 
   function saveGuest(guest) {
     localStorage.setItem(guestStorageKey, JSON.stringify(guest));
+  }
+
+  function hasGuestProgress(guest) {
+    return Boolean(
+      (guest.weekly || []).length
+      || (guest.micro || []).length
+      || (guest.attempts || []).length
+      || Number(guest.player?.totalExp || 0) > 0
+      || Number(guest.player?.goalCoin || 0) > 0,
+    );
+  }
+
+  function guestMigrationId(guest) {
+    if (guest.migrationId) return guest.migrationId;
+    const randomId = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    guest.migrationId = `guest-${randomId}`;
+    saveGuest(guest);
+    return guest.migrationId;
+  }
+
+  async function maybeImportGuestProgress() {
+    if (!state.token) return null;
+    const guest = loadGuest();
+    if (!hasGuestProgress(guest) || guest.migratedAt) return null;
+
+    const migrationId = guestMigrationId(guest);
+    let result = await api('POST', '/stepquest/guest/import', { migrationId, guestState: guest });
+    if (result.status === 'needs_choice') {
+      const choice = window.confirm(t.guestImportChoice) ? 'import_guest' : 'keep_account';
+      result = await api('POST', '/stepquest/guest/import', { migrationId, guestState: guest, choice });
+    }
+
+    if (result.status === 'imported' || result.status === 'skipped') {
+      guest.migratedAt = result.migratedAt || new Date().toISOString();
+      saveGuest(guest);
+      toast(result.status === 'imported' ? t.guestImported : t.guestKeptAccount);
+    }
+    return result;
   }
 
   function syncGuest(guest = loadGuest()) {
@@ -1706,6 +1751,8 @@
         ['\uBC1C\uBC14\uB2E5\uC744 \uBC14\uB2E5\uC5D0 \uBD99\uC774\uAE30', 10],
       ],
     };
+    const superSteps = window.StepQuestSuperMode?.costumeActiveSteps?.(costumeId);
+    if (Array.isArray(superSteps) && superSteps.length) return superSteps;
     return sets[costumeId] || [];
   }
 
@@ -1861,7 +1908,7 @@
           <aside class="sidebar">
             <div class="user-card">
               <strong id="user-name">${h(state.player?.nickname || t.guestRunner)}</strong>
-              <span>${state.token ? h(state.user?.email || t.waiting) : t.guestMode}</span>
+              <span>${state.localSuper ? h(window.StepQuestSuperMode?.label || t.guestMode) : state.token ? h(state.user?.email || t.waiting) : t.guestMode}</span>
             </div>
             <nav class="nav-list">
               ${routes.map(([href, label], index) => `<a class="nav-link ${index === 0 ? 'active' : ''}" href="${href}">${h(label)}</a>`).join('')}
@@ -1916,8 +1963,9 @@
         state.token = result.accessToken;
         state.user = result.user;
         persistAuth();
+        const migration = await maybeImportGuestProgress();
         await refresh();
-        toast(t.login);
+        if (!migration) toast(t.login);
         window.dispatchEvent(new CustomEvent('stepquest:refresh'));
       } catch (error) {
         toast(error.message, true);
@@ -1925,25 +1973,61 @@
     });
 
     document.getElementById('btn-login')?.addEventListener('click', async () => {
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
       try {
-        const email = document.getElementById('auth-email').value.trim();
-        const password = document.getElementById('auth-password').value;
         const result = await api('POST', '/auth/login', { email, password }, true);
         state.token = result.accessToken;
         state.user = result.user;
+        state.localSuper = false;
+        window.StepQuestSuperMode?.clear?.();
         persistAuth();
+        const migration = await maybeImportGuestProgress();
         await refresh();
-        toast(t.login);
+        if (!migration) toast(t.login);
         window.dispatchEvent(new CustomEvent('stepquest:refresh'));
       } catch (error) {
+        const superMode = window.StepQuestSuperMode;
+        if (superMode?.canLogin?.(email, password)) {
+          superMode.activate({
+            state,
+            persistAuth,
+            saveGuest,
+            syncGuest,
+            guestDefault,
+            buildCostumes,
+            normalizeVillage,
+            makeGuestVillage,
+          }, email);
+          state.localSuper = Boolean(superMode.isActive?.());
+          toast(superMode.label || t.guestMode);
+          window.dispatchEvent(new CustomEvent('stepquest:refresh'));
+          return;
+        }
         toast(error.message, true);
       }
     });
 
     document.getElementById('btn-logout')?.addEventListener('click', () => {
+      const wasLocalSuper = state.localSuper;
       state.token = '';
       state.user = null;
+      state.localSuper = false;
+      window.StepQuestSuperMode?.clear?.();
       persistAuth();
+      if (wasLocalSuper) {
+        const superMode = window.StepQuestSuperMode;
+        if (superMode?.logout) {
+          superMode.logout({ state, persistAuth, saveGuest, syncGuest, guestDefault });
+        } else {
+          const guest = guestDefault();
+          saveGuest(guest);
+          syncGuest(guest);
+        }
+        toast(t.logout);
+        window.dispatchEvent(new CustomEvent('stepquest:refresh'));
+        return;
+      }
       refresh().then(() => {
         toast(t.logout);
         window.dispatchEvent(new CustomEvent('stepquest:refresh'));

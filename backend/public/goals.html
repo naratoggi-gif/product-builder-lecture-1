@@ -10,11 +10,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/assets/icons/stepquest.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=46" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=52" />
 </head>
 <body>
   <div id="app"></div>
-  <script src="/assets/js/app.js?v=46"></script>
+  <script src="/dev/super-mode.js?v=52"></script>
+  <script src="/assets/js/app.js?v=52"></script>
   <script>
     const App = window.StepQuestApp;
     const ko = {
@@ -968,12 +969,80 @@
       `;
     }
 
+    const villageSlots = [
+      { key: 'knowledge_tower', x: 12, y: 18 },
+      { key: 'guild_office', x: 36, y: 14 },
+      { key: 'archive', x: 61, y: 18 },
+      { key: 'workshop', x: 22, y: 44 },
+      { key: 'training_ground', x: 48, y: 43 },
+      { key: 'inn', x: 73, y: 41 },
+      { key: 'kitchen', x: 35, y: 69 },
+      { key: 'garden', x: 63, y: 68 },
+    ];
+
+    function buildingClass(facilityKey) {
+      const classes = {
+        knowledge_tower: 'tower',
+        guild_office: 'hall',
+        archive: 'scribe',
+        training_ground: 'training',
+        inn: 'inn',
+        kitchen: 'house',
+        garden: 'garden',
+        workshop: 'forge',
+      };
+      return classes[facilityKey] || 'house';
+    }
+
+    function renderVillageScene(village) {
+      const equippedCostume = String(App.state.player?.equippedCostumeId || 'starter_mage').replace(/[^a-z0-9_-]/gi, '');
+      const facilities = villageSlots.map((slot) => {
+        const facility = village.find((item) => item.facilityKey === slot.key) || {};
+        const info = App.facilityInfo(slot.key);
+        const level = Number(facility.level || 1);
+        const isActive = Number(facility.xp || 0) > 0 || level > 1;
+        return `
+          <button
+            class="village-building ${buildingClass(slot.key)} ${isActive ? 'active' : ''}"
+            style="--x:${slot.x}%; --y:${slot.y}%; --rank:${Math.min(level, 5)}"
+            title="${h(facility.label || info.label)} Lv.${h(level)}"
+            aria-label="${h(facility.label || info.label)} Lv.${h(level)}"
+          >
+            <span class="roof"></span>
+            <span class="body"></span>
+            <span class="door"></span>
+            <small>Lv.${h(level)}</small>
+          </button>
+        `;
+      }).join('');
+
+      return `
+        <div class="village-scene" aria-label="${ko.village}">
+          <div class="village-sky">
+            <i></i><i></i><i></i>
+          </div>
+          <div class="village-board">
+            <div class="village-river"></div>
+            <div class="village-path path-a"></div>
+            <div class="village-path path-b"></div>
+            ${Array.from({ length: 8 }).map((_, index) => `<span class="village-tile tile-${index % 5}"></span>`).join('')}
+            ${facilities}
+            <span class="player-character player-${h(equippedCostume)}" title="${h(App.state.player?.equippedCostumeName || '')}"><i></i></span>
+            <span class="villager villager-a"><i></i></span>
+            <span class="villager villager-b"><i></i></span>
+            <span class="tiny-monster"><i></i></span>
+          </div>
+        </div>
+      `;
+    }
+
     function renderVillage() {
       const village = App.state.village || [];
       return `
         <section class="panel" id="village">
           <h2>${ko.village}</h2>
           ${village.length ? `
+            ${renderVillageScene(village)}
             <div class="village-grid">
               ${village.map((facility) => {
                 const xp = Number(facility.xp || 0);

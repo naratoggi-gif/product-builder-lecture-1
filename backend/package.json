@@ -1,11 +1,15 @@
-﻿{
+{
   "name": "stepquest-backend",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha",
   "private": true,
   "scripts": {
     "db:init": "node scripts/db-init.js",
+    "seed:super": "node scripts/seed-super-user.js",
     "smoke:test": "node scripts/smoke-test.js",
-    "test:domain": "npm.cmd run build && node scripts/stepquest-domain-test.js && node scripts/stepquest-state-test.js && node scripts/stepquest-persistence-test.js",
+    "test": "npm run test:domain",
+    "test:ci": "npm run build && npm run test:domain && npm run test:e2e",
+    "test:domain": "npm run build && node scripts/stepquest-domain-test.js && node scripts/stepquest-state-test.js && node scripts/stepquest-persistence-test.js",
+    "test:e2e": "node scripts/run-playwright.js",
     "start:dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js"
@@ -26,6 +30,7 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.0",
+    "@playwright/test": "^1.61.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.1",
     "@types/pg": "^8.11.10",
