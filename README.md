@@ -2,7 +2,7 @@
 
 StepQuest is an ADHD-friendly execution helper that turns a large goal into one tiny visible action. The product focus is not planning more, but helping a user start, shrink a blocked step, pause safely, and return later.
 
-Current version: `v0.1.0-alpha`
+Current version: `v0.1.1-alpha`
 
 ## Alpha Goal
 
@@ -24,6 +24,8 @@ cd product-builder-lecture-1/backend
 npm ci
 npm run build
 npm run test:domain
+npm run audit:ci
+npm run test:e2e
 npm start
 ```
 
@@ -63,6 +65,9 @@ npm run db:init
 ```bash
 npm run build
 npm run test:domain
+npm run audit:ci
+npm run test:e2e
+npm run smoke:staging
 npm test
 npm run db:init
 npm start
@@ -88,10 +93,30 @@ Example:
 {
   "status": "ok",
   "database": "connected",
-  "version": "0.1.0-alpha",
+  "version": "0.1.1-alpha",
   "commit": "local"
 }
 ```
+
+## Staging
+
+The repository includes a Render blueprint at `render.yaml`.
+
+```text
+Root Directory: backend
+Build Command: npm ci && npm run build
+Start Command: npm start
+Health Check Path: /health
+```
+
+After the HTTPS staging URL exists, run:
+
+```bash
+cd backend
+STAGING_URL=https://your-stepquest-staging-url npm run smoke:staging
+```
+
+See `STAGING_RUNBOOK.md` for the full deployment and closed alpha checklist.
 
 ## CI
 
@@ -101,7 +126,9 @@ GitHub Actions runs on `main` pushes and pull requests:
 npm ci
 npm run build
 npm run db:init
+npm run audit:ci
 npm run test:domain
+npm run test:e2e
 ```
 
 The CI job uses PostgreSQL 16 and disables super mode.
@@ -115,7 +142,7 @@ The CI job uses PostgreSQL 16 and disables super mode.
 
 ## Next Stabilization Priorities
 
-- Complete/undo idempotency and reward ledger hardening
-- Guest-to-account migration
-- PWA/mobile E2E tests
-- Staging deployment with PostgreSQL, HTTPS, health check, logs, and backups
+- Create the public HTTPS staging service from `render.yaml`.
+- Run `npm run smoke:staging` against the staging URL.
+- Verify one week of guest/account persistence on managed PostgreSQL.
+- Recruit 5-10 closed alpha testers.

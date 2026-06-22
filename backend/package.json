@@ -8,6 +8,7 @@
     "db:init": "node scripts/db-init.js",
     "seed:super": "node scripts/seed-super-user.js",
     "smoke:test": "node scripts/smoke-test.js",
+    "smoke:staging": "node scripts/staging-smoke-test.js",
     "test": "npm run test:domain",
     "test:ci": "npm run build && npm run test:domain && npm run test:e2e",
     "test:domain": "npm run build && node scripts/stepquest-domain-test.js && node scripts/stepquest-state-test.js && node scripts/stepquest-persistence-test.js",

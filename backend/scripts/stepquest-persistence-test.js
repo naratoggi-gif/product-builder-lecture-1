@@ -12,6 +12,8 @@ const dbInit = fs.readFileSync(path.join(root, 'scripts/db-init.js'), 'utf8');
 const superSeed = fs.readFileSync(path.join(root, 'scripts/seed-super-user.js'), 'utf8');
 const packageJson = fs.readFileSync(path.join(root, 'package.json'), 'utf8');
 const rootReadme = fs.readFileSync(path.join(root, '../README.md'), 'utf8');
+const stagingRunbook = fs.readFileSync(path.join(root, '../STAGING_RUNBOOK.md'), 'utf8');
+const renderBlueprint = fs.readFileSync(path.join(root, '../render.yaml'), 'utf8');
 const ciWorkflow = fs.readFileSync(path.join(root, '../.github/workflows/ci.yml'), 'utf8');
 const controller = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.controller.ts'), 'utf8');
 const service = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.service.ts'), 'utf8');
@@ -24,6 +26,7 @@ const goalsHtml = fs.readFileSync(path.join(root, 'public/goals.html'), 'utf8');
 const appCss = fs.readFileSync(path.join(root, 'public/assets/css/app.css'), 'utf8');
 const manifest = fs.readFileSync(path.join(root, 'public/manifest.webmanifest'), 'utf8');
 const serviceWorker = fs.readFileSync(path.join(root, 'public/sw.js'), 'utf8');
+const stagingSmoke = fs.readFileSync(path.join(root, 'scripts/staging-smoke-test.js'), 'utf8');
 const appModule = fs.readFileSync(path.join(root, 'src/app.module.ts'), 'utf8');
 const redirectPages = ['index.html', 'dashboard.html', 'play.html', 'skills.html', 'character.html', 'costumes.html', 'battle.html']
   .reduce((memo, file) => {
@@ -64,7 +67,18 @@ assert.ok(packageJson.includes('"test:domain": "npm run build &&'), 'domain test
 assert.ok(packageJson.includes('"seed:super"'), 'seed:super script must be present');
 assert.ok(packageJson.includes('"test:e2e"'), 'Playwright E2E script must be present');
 assert.ok(packageJson.includes('"audit:ci"'), 'production audit CI script must be present');
+assert.ok(packageJson.includes('"smoke:staging"'), 'staging smoke script must be present');
 assert.ok(rootReadme.includes('StepQuest'), 'root README must describe StepQuest');
+assert.ok(rootReadme.includes('v0.1.1-alpha'), 'root README must show the current alpha version');
+assert.ok(rootReadme.includes('STAGING_RUNBOOK.md'), 'root README must point to the staging runbook');
+assert.ok(stagingRunbook.includes('STAGING_URL='), 'staging runbook must document the smoke test command');
+assert.ok(stagingRunbook.includes('ENABLE_SUPER_MODE=false'), 'staging runbook must forbid super mode');
+assert.ok(renderBlueprint.includes('healthCheckPath: /health'), 'Render blueprint must use the health endpoint');
+assert.ok(renderBlueprint.includes('rootDir: backend'), 'Render blueprint must deploy the backend directory');
+assert.ok(stagingSmoke.includes('/health'), 'staging smoke test must check health');
+assert.ok(stagingSmoke.includes('/dev/super-mode.js?v=0.1.1-alpha'), 'staging smoke test must check production super mode');
+assert.ok(stagingSmoke.includes('/events/track'), 'staging smoke test must check product event ingestion');
+assert.ok(stagingSmoke.includes('/stepquest/costumes/one_punch_hero/equip'), 'staging smoke test must reject direct QA costume access');
 assert.ok(ciWorkflow.includes('postgres:16'), 'CI must run with a PostgreSQL service container');
 assert.ok(ciWorkflow.includes('npm run test:domain'), 'CI must run the domain tests');
 assert.ok(ciWorkflow.includes('npm run test:e2e'), 'CI must run the Playwright E2E tests');
