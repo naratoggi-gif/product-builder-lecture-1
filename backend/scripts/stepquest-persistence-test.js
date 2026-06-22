@@ -111,6 +111,11 @@ assert.ok(stagingSmoke.includes('/health'), 'staging smoke test must check healt
 assert.ok(stagingSmoke.includes('/dev/super-mode.js?v=0.1.1-alpha'), 'staging smoke test must check production super mode');
 assert.ok(stagingSmoke.includes('/events/track'), 'staging smoke test must check product event ingestion');
 assert.ok(stagingSmoke.includes('/stepquest/costumes/one_punch_hero/equip'), 'staging smoke test must reject direct QA costume access');
+assert.ok(stagingSmoke.includes('/auth/signup'), 'staging smoke test must create disposable authenticated users');
+assert.ok(stagingSmoke.includes('/stepquest/goals'), 'staging smoke test must create a real StepQuest goal');
+assert.ok(stagingSmoke.includes('idempotencyKey'), 'staging smoke test must verify duplicate completion idempotency');
+assert.ok(stagingSmoke.includes('/stepquest/guest/import'), 'staging smoke test must verify guest import idempotency');
+assert.ok(stagingRunbook.includes('Disposable `example.com` staging users'), 'staging runbook must explain smoke-test user creation');
 assert.ok(productEventReport.includes('goalToFirstCompletionPct'), 'product event report must expose goal-to-completion conversion');
 assert.ok(productEventReport.includes('shrinkToCompletionPct'), 'product event report must expose shrink-to-completion conversion');
 assert.ok(productEventReport.includes('returnOfferToStartPct'), 'product event report must expose return-start conversion');

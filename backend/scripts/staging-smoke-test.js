@@ -26,6 +26,40 @@ async function readJson(path, options = {}) {
   return { response, data };
 }
 
+function jsonOptions(method, body, token) {
+  return {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  };
+}
+
+async function postJson(path, body, token) {
+  return readJson(path, jsonOptions('POST', body, token));
+}
+
+async function getJson(path, token) {
+  return readJson(path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+}
+
+async function signupSmokeUser(prefix) {
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const email = `${prefix}+${unique}@example.com`;
+  const signup = await postJson('/auth/signup', {
+    email,
+    password: `Smoke-${unique}-password-12345`,
+    nickname: `${prefix.slice(0, 16)}-${unique.slice(-8)}`,
+  });
+  assert.ok([200, 201].includes(signup.response.status), `${prefix} signup must succeed`);
+  assert.ok(signup.data.accessToken, `${prefix} signup must return an access token`);
+  return { email, token: signup.data.accessToken };
+}
+
 async function main() {
   const health = await readJson('/health');
   assert.equal(health.response.status, 200, '/health must return HTTP 200');
@@ -79,12 +113,99 @@ async function main() {
   assert.ok([200, 201].includes(event.response.status), 'product event endpoint must accept smoke events');
   assert.deepEqual(event.data, { ok: true }, 'product event endpoint must return ok');
 
+  const account = await signupSmokeUser('staging-smoke');
+  const settings = await getJson('/stepquest/settings', account.token);
+  assert.equal(settings.response.status, 200, 'authenticated settings must load');
+  assert.equal(settings.data.timezone, 'Asia/Seoul', 'new staging users must default to Asia/Seoul');
+
+  const goal = await postJson('/stepquest/goals', {
+    title: 'staging smoke tiny action',
+    category: 'study',
+    burdenLevel: 2,
+    energyLevel: 'low',
+    availableMinutes: 5,
+    obstacle: 'too_big',
+  }, account.token);
+  assert.ok([200, 201].includes(goal.response.status), 'authenticated goal creation must succeed');
+  assert.ok(goal.data.firstStep?.id, 'created goal must return the first micro step');
+
+  const currentBefore = await getJson('/stepquest/current', account.token);
+  assert.equal(currentBefore.response.status, 200, 'current StepQuest state must load');
+  assert.equal(currentBefore.data.currentStep?.stepId, goal.data.firstStep.id, 'current state must expose the first step');
+  const beforeXp = currentBefore.data.user?.xp ?? 0;
+  const beforeGoalCoin = currentBefore.data.user?.goalCoin ?? 0;
+  const completeKey = `staging-smoke-${Date.now()}-complete`;
+
+  const completed = await postJson(`/stepquest/steps/${goal.data.firstStep.id}/complete?idempotencyKey=${encodeURIComponent(completeKey)}`, {}, account.token);
+  assert.ok([200, 201].includes(completed.response.status), 'step completion must succeed');
+  assert.ok(completed.data.reward?.xp > 0, 'step completion must grant XP');
+
+  const afterComplete = await getJson('/stepquest/current', account.token);
+  assert.ok((afterComplete.data.user?.xp ?? 0) > beforeXp, 'completion must increase XP');
+  assert.ok((afterComplete.data.user?.goalCoin ?? 0) > beforeGoalCoin, 'completion must increase goal coins');
+
+  const duplicateComplete = await postJson(`/stepquest/steps/${goal.data.firstStep.id}/complete?idempotencyKey=${encodeURIComponent(completeKey)}`, {}, account.token);
+  assert.ok([200, 201].includes(duplicateComplete.response.status), 'duplicate completion request must return a stable response');
+  assert.equal(duplicateComplete.data.duplicate, true, 'duplicate completion must be marked as duplicate');
+
+  const afterDuplicate = await getJson('/stepquest/current', account.token);
+  assert.equal(afterDuplicate.data.user?.xp, afterComplete.data.user?.xp, 'duplicate completion must not grant extra XP');
+  assert.equal(afterDuplicate.data.user?.goalCoin, afterComplete.data.user?.goalCoin, 'duplicate completion must not grant extra goal coins');
+
+  const undone = await postJson(`/stepquest/steps/${goal.data.firstStep.id}/undo`, {}, account.token);
+  assert.ok([200, 201].includes(undone.response.status), 'completion undo must succeed');
+  assert.ok(undone.data.reversedReward?.xp > 0, 'undo must report reversed XP');
+
+  const afterUndo = await getJson('/stepquest/current', account.token);
+  assert.equal(afterUndo.data.currentStep?.stepId, goal.data.firstStep.id, 'undo must restore the completed step as current');
+  assert.equal(afterUndo.data.user?.xp, beforeXp, 'undo must restore XP');
+  assert.equal(afterUndo.data.user?.goalCoin, beforeGoalCoin, 'undo must restore goal coins');
+
+  const importAccount = await signupSmokeUser('staging-smoke-import');
+  const migrationId = `staging-smoke-migration-${Date.now()}`;
+  const guestState = {
+    weekly: [{
+      id: 'guest-goal-1',
+      title: 'guest smoke goal',
+      category: 'study',
+      burdenLevel: 2,
+      status: 'active',
+    }],
+    micro: [{
+      id: 'guest-step-1',
+      weeklyMissionId: 'guest-goal-1',
+      title: 'read one line',
+      successCriterion: 'read one line complete',
+      category: 'study',
+      phase: 'start',
+      orderIndex: 0,
+      estimatedSeconds: 10,
+      grade: 'F',
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+    }],
+    attempts: [{ stepId: 'guest-step-1', action: 'complete' }],
+    equippedCostumeId: 'one_punch_hero',
+  };
+
+  const imported = await postJson('/stepquest/guest/import', { migrationId, guestState }, importAccount.token);
+  assert.ok([200, 201].includes(imported.response.status), 'guest import must succeed for an empty account');
+  assert.equal(imported.data.status, 'imported', 'guest import must report imported status');
+  assert.equal(imported.data.importedStepCount, 1, 'guest import must import the completed step');
+
+  const duplicateImport = await postJson('/stepquest/guest/import', { migrationId, guestState }, importAccount.token);
+  assert.ok([200, 201].includes(duplicateImport.response.status), 'duplicate guest import request must return a stable response');
+  assert.equal(duplicateImport.data.duplicate, true, 'duplicate guest import must be marked duplicate');
+  assert.equal(duplicateImport.data.importedStepCount, imported.data.importedStepCount, 'duplicate guest import must not import extra steps');
+
   console.log(JSON.stringify({
     ok: true,
     checked: 'stepquest-staging-smoke',
     url: baseUrl,
     version: health.data.version,
     commit: health.data.commit,
+    accountFlow: 'goal-complete-duplicate-undo',
+    guestImport: 'idempotent',
   }, null, 2));
 }
 

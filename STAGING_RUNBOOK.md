@@ -64,6 +64,9 @@ The smoke test checks:
 - Direct QA costume access is rejected.
 - Service worker cache version is `stepquest-v0.1.1-alpha`.
 - `POST /events/track` accepts a product event without collecting goal text.
+- Disposable `example.com` staging users can sign up and load default `Asia/Seoul` settings.
+- Authenticated users can create a StepQuest goal, complete the first Step, retry the same completion idempotently, and undo the reward.
+- Guest progress import is idempotent when the same `migrationId` is submitted twice.
 
 ## Manual Closed Alpha Smoke
 
