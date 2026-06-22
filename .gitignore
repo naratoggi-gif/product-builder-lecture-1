@@ -13,6 +13,9 @@ backend/server.out.log
 backend/server.pid
 backend/test-results/
 backend/playwright-report/
+backend/audit-all.json
+backend/audit-production.json
+backend/audit-fix-plan.json
 
 firebase-debug.log
 .idx/

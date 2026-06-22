@@ -30,7 +30,7 @@ jobs:
 
     env:
       NODE_ENV: test
-      APP_VERSION: 0.1.0-alpha
+      APP_VERSION: 0.1.1-alpha
       DATABASE_URL: postgres://stepquest:stepquest@127.0.0.1:5432/stepquest_test
       DATABASE_SSL: "false"
       JWT_SECRET: test-only-secret
@@ -48,5 +48,6 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run build
       - run: npm run db:init
+      - run: npm run audit:ci
       - run: npm run test:domain
       - run: npm run test:e2e

@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, '..');
 const migration = fs.readFileSync(path.join(root, 'db/migrations/0005_stepquest_core.sql'), 'utf8');
 const costumeActiveMigration = fs.readFileSync(path.join(root, 'db/migrations/0006_stepquest_costume_active.sql'), 'utf8');
 const guestMigration = fs.readFileSync(path.join(root, 'db/migrations/0007_stepquest_guest_migrations.sql'), 'utf8');
+const settingsMigration = fs.readFileSync(path.join(root, 'db/migrations/0008_user_settings_and_events.sql'), 'utf8');
 const dbInit = fs.readFileSync(path.join(root, 'scripts/db-init.js'), 'utf8');
 const superSeed = fs.readFileSync(path.join(root, 'scripts/seed-super-user.js'), 'utf8');
 const packageJson = fs.readFileSync(path.join(root, 'package.json'), 'utf8');
@@ -16,6 +17,7 @@ const controller = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.cont
 const service = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.service.ts'), 'utf8');
 const devtoolsController = fs.readFileSync(path.join(root, 'src/devtools/devtools.controller.ts'), 'utf8');
 const healthController = fs.readFileSync(path.join(root, 'src/health/health.controller.ts'), 'utf8');
+const mainTs = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf8');
 const stateModule = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.state.ts'), 'utf8');
 const browserApp = fs.readFileSync(path.join(root, 'public/assets/js/app.js'), 'utf8');
 const goalsHtml = fs.readFileSync(path.join(root, 'public/goals.html'), 'utf8');
@@ -50,21 +52,29 @@ assert.ok(migration.includes("status IN ('pending', 'active', 'completed', 'defe
 assert.ok(costumeActiveMigration.includes("'costume_active'"), 'costume active attempt action migration is missing');
 assert.ok(guestMigration.includes('stepquest_guest_migrations'), 'guest migration ledger table is missing');
 assert.ok(guestMigration.includes('UNIQUE (user_id, migration_id)'), 'guest migration must be idempotent per user and migrationId');
+assert.ok(settingsMigration.includes('user_settings'), 'user timezone settings table is missing');
+assert.ok(settingsMigration.includes("DEFAULT 'Asia/Seoul'"), 'user timezone default must be Asia/Seoul');
+assert.ok(settingsMigration.includes('product_events'), 'product event table is missing');
 assert.ok(dbInit.includes('0005_stepquest_core'), 'db-init does not apply STEPQUEST migration');
 assert.ok(dbInit.includes('0006_stepquest_costume_active'), 'db-init does not apply STEPQUEST costume active migration');
 assert.ok(dbInit.includes('0007_stepquest_guest_migrations'), 'db-init does not apply STEPQUEST guest migration ledger');
-assert.ok(packageJson.includes('"version": "0.1.0-alpha"'), 'backend version must be 0.1.0-alpha');
+assert.ok(dbInit.includes('0008_user_settings_and_events'), 'db-init does not apply user settings and product events migration');
+assert.ok(packageJson.includes('"version": "0.1.1-alpha"'), 'backend version must be 0.1.1-alpha');
 assert.ok(packageJson.includes('"test:domain": "npm run build &&'), 'domain tests must use cross-platform npm, not npm.cmd');
 assert.ok(packageJson.includes('"seed:super"'), 'seed:super script must be present');
 assert.ok(packageJson.includes('"test:e2e"'), 'Playwright E2E script must be present');
+assert.ok(packageJson.includes('"audit:ci"'), 'production audit CI script must be present');
 assert.ok(rootReadme.includes('StepQuest'), 'root README must describe StepQuest');
 assert.ok(ciWorkflow.includes('postgres:16'), 'CI must run with a PostgreSQL service container');
 assert.ok(ciWorkflow.includes('npm run test:domain'), 'CI must run the domain tests');
 assert.ok(ciWorkflow.includes('npm run test:e2e'), 'CI must run the Playwright E2E tests');
+assert.ok(ciWorkflow.includes('npm run audit:ci'), 'CI must run the production audit gate');
 
 [
   "@Post('goals')",
   "@Get('current')",
+  "@Get('settings')",
+  "@Post('settings')",
   "@Post('guest/import')",
   "@Get('stats')",
   "@Get('dungeons')",
@@ -90,11 +100,18 @@ assert.ok(ciWorkflow.includes('npm run test:e2e'), 'CI must run the Playwright E
 
 assert.ok(appModule.includes('StepQuestModule'), 'StepQuestModule is not registered');
 assert.ok(appModule.includes('HealthModule'), 'HealthModule is not registered');
+assert.ok(appModule.includes('ThrottlerModule.forRoot'), 'rate limiting module is not registered');
+assert.ok(appModule.includes('EventsModule'), 'product events module is not registered');
+assert.ok(mainTs.includes('helmet('), 'helmet must be applied at bootstrap');
+assert.ok(mainTs.includes('safeRequestLogger'), 'safe structured request logger must be applied at bootstrap');
+assert.ok(mainTs.includes("app.set('trust proxy', 1)"), 'reverse proxy trust setting must be available');
 assert.ok(healthController.includes('@Get()'), 'health endpoint route is missing');
-assert.ok(healthController.includes("const APP_VERSION = '0.1.0-alpha'"), 'health endpoint must define the alpha app version');
-assert.ok(healthController.includes('version: process.env.APP_VERSION || APP_VERSION'), 'health endpoint must expose the app version');
+assert.ok(healthController.includes('appVersion()'), 'health endpoint must expose the app version');
 assert.ok(service.includes('`reminder:${stepId}:complete`'), 'reminder completion must use a stable reward idempotency key');
 assert.ok(service.includes('importGuestProgress'), 'guest progress import API is missing');
+assert.ok(service.includes('getSettings'), 'user timezone settings API is missing');
+assert.ok(service.includes('dateKeyInTimezone'), 'consistency must calculate dates with the user timezone');
+assert.ok(service.includes("INSERT INTO user_settings"), 'StepQuest user bootstrap must create timezone settings');
 assert.ok(service.includes('stepquest_guest_migrations'), 'guest import must record migration IDs');
 assert.ok(service.includes("status: 'needs_choice'"), 'guest import must return a choice state when account data exists');
 assert.ok(service.includes("body.choice === 'merge'"), 'guest import must explicitly block unsafe automatic merge in alpha');
@@ -147,7 +164,7 @@ assert.ok(!browserApp.includes('super@stepquest.local'), 'browser production bun
 assert.ok(devtoolsController.includes("process.env.NODE_ENV !== 'production'"), 'super mode script must be disabled in production');
 assert.ok(devtoolsController.includes("process.env.ENABLE_SUPER_MODE === 'true'"), 'super mode script must require ENABLE_SUPER_MODE=true');
 assert.ok(devtoolsController.includes("super@stepquest.local"), 'dev-only super script must provide a local default email');
-assert.ok(goalsHtml.includes('/dev/super-mode.js?v=52'), 'HTML shell must request the dev-only super mode hook before app.js');
+assert.ok(goalsHtml.includes('/dev/super-mode.js?v=0.1.1-alpha'), 'HTML shell must request the dev-only super mode hook before app.js');
 assert.ok(superSeed.includes("super@stepquest.local"), 'super account seed script must provide a local default email');
 assert.ok(superSeed.includes("NODE_ENV === 'production'"), 'super account seed script must fail in production');
 assert.ok(superSeed.includes('INSERT INTO user_skills'), 'super account seed script must unlock all skills');
@@ -222,8 +239,8 @@ assert.ok(goalsHtml.includes('undo-pulse'), 'undo feedback must show what change
 assert.ok(goalsHtml.includes('btn-regenerate-dungeon'), 'dungeon cards must offer chain regeneration');
 assert.ok(goalsHtml.includes('returnCompleted'), 'completion feedback must acknowledge return completion');
 assert.ok(goalsHtml.includes('recent-trace'), 'stats panel must render recent attempts');
-assert.ok(goalsHtml.includes('v=52'), 'shell asset cache version must be bumped');
-assert.ok(serviceWorker.includes("stepquest-shell-v52"), 'service worker cache name must be bumped after guest migration changes');
+assert.ok(goalsHtml.includes('v=0.1.1-alpha'), 'shell asset cache version must be bumped');
+assert.ok(serviceWorker.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must follow the app version');
 assert.ok(serviceWorker.includes('notificationclick'), 'service worker must handle reminder notification clicks');
 assert.ok(serviceWorker.includes('/goals.html?reminder=1#today'), 'notification click must return to the action screen');
 assert.ok(manifest.includes('큰 목표를 지금 할 수 있는 작은 행동'), 'manifest description must be localized and readable');
@@ -260,6 +277,9 @@ assert.ok(browserApp.includes('localStorage.setItem(logsStorageKey'), 'today tra
 assert.ok(browserApp.includes('maybeImportGuestProgress'), 'login/signup must attempt guest progress import');
 assert.ok(browserApp.includes("'/stepquest/guest/import'"), 'browser app must call the guest import endpoint');
 assert.ok(browserApp.includes('guest.migratedAt'), 'browser app must mark guest data after migration');
+assert.ok(browserApp.includes("trackProductEvent('app_opened'"), 'browser app must track app_opened');
+assert.ok(browserApp.includes("trackProductEvent('goal_created'"), 'browser app must track goal_created');
+assert.ok(browserApp.includes("trackProductEvent('step_completed'"), 'browser app must track step_completed');
 assert.ok(browserApp.includes("const motionStorageKey = 'stepquest_reduced_motion'"), 'reduced motion preference must persist');
 assert.ok(browserApp.includes('function setReducedMotion'), 'reduced motion toggle behavior is missing');
 assert.ok(appCss.includes('.settings-toggle'), 'reduced motion toggle styles are missing');

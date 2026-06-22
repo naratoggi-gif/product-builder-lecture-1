@@ -50,7 +50,7 @@ test('guest complete then undo keeps rewards reversible', async ({ page }) => {
 });
 
 test('production mode does not expose local super mode', async ({ page, request }) => {
-  const superScript = await request.get('/dev/super-mode.js?v=52');
+  const superScript = await request.get('/dev/super-mode.js?v=0.1.1-alpha');
   expect(await superScript.text()).toContain('window.StepQuestSuperMode=undefined');
 
   const html = await page.content();

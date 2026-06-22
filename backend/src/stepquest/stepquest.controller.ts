@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUserId } from '../shared/current-user-id.decorator';
 import { CreateStepQuestGoalDto } from './dto/create-stepquest-goal.dto';
 import { ImportGuestProgressDto } from './dto/import-guest-progress.dto';
@@ -6,6 +7,7 @@ import { ReminderActionDto } from './dto/reminder-action.dto';
 import { RegenerateChainDto } from './dto/regenerate-chain.dto';
 import { SaveReminderDto } from './dto/save-reminder.dto';
 import { ShrinkStepDto } from './dto/shrink-step.dto';
+import { UpdateUserSettingsDto } from './dto/update-user-settings.dto';
 import { StepQuestService } from './stepquest.service';
 
 @Controller('stepquest')
@@ -13,11 +15,13 @@ export class StepQuestController {
   constructor(private readonly stepQuestService: StepQuestService) {}
 
   @Post('goals')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   createGoal(@CurrentUserId() userId: number, @Body() body: CreateStepQuestGoalDto): Promise<unknown> {
     return this.stepQuestService.createGoal(userId, body);
   }
 
   @Post('guest/import')
+  @Throttle({ default: { ttl: 600_000, limit: 5 } })
   importGuestProgress(@CurrentUserId() userId: number, @Body() body: ImportGuestProgressDto): Promise<unknown> {
     return this.stepQuestService.importGuestProgress(userId, body);
   }
@@ -25,6 +29,16 @@ export class StepQuestController {
   @Get('current')
   getCurrent(@CurrentUserId() userId: number): Promise<unknown> {
     return this.stepQuestService.getCurrent(userId);
+  }
+
+  @Get('settings')
+  getSettings(@CurrentUserId() userId: number): Promise<unknown> {
+    return this.stepQuestService.getSettings(userId);
+  }
+
+  @Post('settings')
+  updateSettings(@CurrentUserId() userId: number, @Body() body: UpdateUserSettingsDto): Promise<unknown> {
+    return this.stepQuestService.updateSettings(userId, body);
   }
 
   @Get('stats')
@@ -87,11 +101,13 @@ export class StepQuestController {
   }
 
   @Post('costumes/:id/activate')
+  @Throttle({ default: { ttl: 60_000, limit: 120 } })
   activateCostume(@CurrentUserId() userId: number, @Param('id') id: string): Promise<unknown> {
     return this.stepQuestService.activateCostume(userId, id);
   }
 
   @Post('steps/:id/complete')
+  @Throttle({ default: { ttl: 60_000, limit: 120 } })
   completeStep(
     @CurrentUserId() userId: number,
     @Param('id', ParseIntPipe) id: number,
@@ -106,6 +122,7 @@ export class StepQuestController {
   }
 
   @Post('steps/:id/shrink')
+  @Throttle({ default: { ttl: 60_000, limit: 120 } })
   shrinkStep(
     @CurrentUserId() userId: number,
     @Param('id', ParseIntPipe) id: number,

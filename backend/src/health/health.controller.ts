@@ -1,9 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
+import { appVersion, commitSha } from '../shared/app-version';
 import { DatabaseService } from '../shared/database.service';
 import { Public } from '../shared/public.decorator';
 
-const APP_VERSION = '0.1.0-alpha';
-
+@SkipThrottle()
 @Controller('health')
 export class HealthController {
   constructor(private readonly db: DatabaseService) {}
@@ -26,8 +27,8 @@ export class HealthController {
     return {
       status: database === 'connected' ? 'ok' : 'degraded',
       database,
-      version: process.env.APP_VERSION || APP_VERSION,
-      commit: process.env.GIT_SHA || process.env.COMMIT_SHA || 'local',
+      version: appVersion(),
+      commit: commitSha(),
     };
   }
 }

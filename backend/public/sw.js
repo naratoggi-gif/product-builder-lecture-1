@@ -1,9 +1,10 @@
-const CACHE_NAME = 'stepquest-shell-v52';
+const CACHE_VERSION = 'stepquest-v0.1.1-alpha';
+const CACHE_NAME = `${CACHE_VERSION}-shell`;
 const APP_SHELL = [
   '/',
   '/goals.html',
-  '/assets/css/app.css?v=52',
-  '/assets/js/app.js?v=52',
+  '/assets/css/app.css?v=0.1.1-alpha',
+  '/assets/js/app.js?v=0.1.1-alpha',
   '/assets/icons/stepquest.svg',
   '/manifest.webmanifest',
 ];

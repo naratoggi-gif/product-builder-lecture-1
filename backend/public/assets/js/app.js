@@ -4,6 +4,8 @@
   const userStorageKey = 'stepquest_user';
   const logsStorageKey = 'stepquest_today_traces';
   const motionStorageKey = 'stepquest_reduced_motion';
+  const anonymousUserStorageKey = 'stepquest_anonymous_user_id';
+  const sessionStorageKey = 'stepquest_session_id';
   const costumeActiveRechargeSteps = 3;
 
   const t = {
@@ -396,6 +398,35 @@
     return data;
   }
 
+  function stableId(storage, key, prefix) {
+    const existing = storage.getItem(key);
+    if (existing) return existing;
+    const id = `${prefix}-${window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+    storage.setItem(key, id);
+    return id;
+  }
+
+  const anonymousUserId = stableId(localStorage, anonymousUserStorageKey, 'anon');
+  const sessionId = stableId(sessionStorage, sessionStorageKey, 'session');
+
+  function trackProductEvent(eventName, detail = {}) {
+    const payload = {
+      eventName,
+      anonymousUserId,
+      sessionId,
+      goalId: detail.goalId ? String(detail.goalId) : undefined,
+      stepId: detail.stepId ? String(detail.stepId) : undefined,
+      category: detail.category || undefined,
+      estimatedSeconds: detail.estimatedSeconds ? Number(detail.estimatedSeconds) : undefined,
+    };
+    fetch('/events/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
   function resolveCategory(title, requested) {
     if (requested && requested !== 'auto' && templates[requested]) return requested;
     const normalized = String(title || '').toLowerCase();
@@ -761,6 +792,9 @@
     if (result.status === 'imported' || result.status === 'skipped') {
       guest.migratedAt = result.migratedAt || new Date().toISOString();
       saveGuest(guest);
+      if (result.status === 'imported') {
+        trackProductEvent('guest_import_completed');
+      }
       toast(result.status === 'imported' ? t.guestImported : t.guestKeptAccount);
     }
     return result;
@@ -1110,12 +1144,30 @@
       guest.gameEvent = null;
       saveGuest(guest);
       syncGuest(guest);
+      trackProductEvent('goal_created', { goalId: made.weekly.id, category: made.weekly.category });
+      if (made.micro[0]) {
+        trackProductEvent('first_step_shown', {
+          goalId: made.weekly.id,
+          stepId: made.micro[0].id,
+          category: made.micro[0].category,
+          estimatedSeconds: made.micro[0].estimatedSeconds,
+        });
+      }
       return made;
     }
     const result = await api('POST', '/stepquest/goals', input);
     mapCurrent(result);
     state.sessionCombo = 0;
     state.gameEvent = null;
+    trackProductEvent('goal_created', { goalId: result.goal?.id, category: result.goal?.category });
+    if (result.firstStep) {
+      trackProductEvent('first_step_shown', {
+        goalId: result.goal?.id,
+        stepId: result.firstStep.id,
+        category: result.goal?.category,
+        estimatedSeconds: result.firstStep.estimatedSeconds,
+      });
+    }
     return result;
   }
 
@@ -1214,6 +1266,14 @@
       }
       saveGuest(guest);
       syncGuest(guest);
+      trackProductEvent('step_completed', {
+        goalId: step?.weeklyMissionId,
+        stepId: step?.id,
+        category: step?.category,
+        estimatedSeconds: step?.estimatedSeconds,
+      });
+      if (guest.gameEvent?.returnCompleted) trackProductEvent('return_completed', { stepId: step?.id, category: step?.category });
+      if (guest.gameEvent?.clearedGoalTitle) trackProductEvent('goal_cleared', { goalId: step?.weeklyMissionId, category: step?.category });
       return { message: t.completed, step, reward: guest.gameEvent };
     }
     const current = state.nextMicro;
@@ -1245,6 +1305,13 @@
       returnCompleted: Boolean(result.returnCompleted),
       createdAt: new Date().toISOString(),
     };
+    trackProductEvent('step_completed', {
+      stepId: id,
+      category: current?.category,
+      estimatedSeconds: current?.estimatedSeconds,
+    });
+    if (result.returnCompleted) trackProductEvent('return_completed', { stepId: id, category: current?.category });
+    if (result.clearedGoal) trackProductEvent('goal_cleared', { goalId: result.clearedGoal.id, category: result.clearedGoal.category });
     return result;
   }
 
@@ -1289,6 +1356,12 @@
       };
       saveGuest(guest);
       syncGuest(guest);
+      trackProductEvent('step_undone', {
+        goalId: step.weeklyMissionId,
+        stepId: step.id,
+        category: step.category,
+        estimatedSeconds: step.estimatedSeconds,
+      });
       return { message: t.undone, step };
     }
     const result = await api('POST', `/stepquest/steps/${id}/undo`);
@@ -1303,6 +1376,7 @@
       createdAt: new Date().toISOString(),
     };
     state.sessionCombo = Math.max(0, Number(state.sessionCombo || 0) - 1);
+    trackProductEvent('step_undone', { stepId: id });
     return result;
   }
 
@@ -1349,10 +1423,21 @@
       };
       saveGuest(guest);
       syncGuest(guest);
+      trackProductEvent('return_started', {
+        goalId: recovery.weeklyMissionId,
+        stepId: recovery.id,
+        category: recovery.category,
+        estimatedSeconds: recovery.estimatedSeconds,
+      });
       return { message: t.returned, recoveryStep: recovery };
     }
     const result = await api('POST', '/stepquest/return/start');
     await refresh();
+    trackProductEvent('return_started', {
+      goalId: result.restoredGoalId,
+      stepId: result.firstStep?.id,
+      estimatedSeconds: result.firstStep?.estimatedSeconds,
+    });
     return result;
   }
 
@@ -1491,6 +1576,14 @@
       }
       saveGuest(guest);
       syncGuest(guest);
+      const original = guest.micro[index];
+      const firstReplacement = guest.micro[index + 1];
+      trackProductEvent('step_shrunk', {
+        goalId: original?.weeklyMissionId,
+        stepId: original?.id,
+        category: firstReplacement?.category || original?.category,
+        estimatedSeconds: firstReplacement?.estimatedSeconds || original?.estimatedSeconds,
+      });
       return { message: t.shrunk, step: guest.micro[index] };
     }
     const current = state.nextMicro;
@@ -1514,6 +1607,11 @@
       chestReady: false,
       createdAt: new Date().toISOString(),
     };
+    trackProductEvent('step_shrunk', {
+      stepId: id,
+      category: firstStep?.category || current?.category,
+      estimatedSeconds: firstStep?.estimatedSeconds || current?.estimatedSeconds,
+    });
     return result;
   }
 
@@ -1555,6 +1653,12 @@
       }
       saveGuest(guest);
       syncGuest(guest);
+      trackProductEvent('step_skipped', {
+        goalId: step?.weeklyMissionId,
+        stepId: step?.id,
+        category: step?.category,
+        estimatedSeconds: step?.estimatedSeconds,
+      });
       return { message: t.skipped, step };
     }
     const current = state.nextMicro;
@@ -1570,6 +1674,11 @@
       dungeonProgress: (state.dungeons || [])[0]?.progress || 0,
       createdAt: new Date().toISOString(),
     };
+    trackProductEvent('step_skipped', {
+      stepId: id,
+      category: current?.category,
+      estimatedSeconds: current?.estimatedSeconds,
+    });
     return result;
   }
 
@@ -1587,10 +1696,17 @@
       }
       saveGuest(guest);
       syncGuest(guest);
+      trackProductEvent('session_deferred', {
+        goalId: step?.weeklyMissionId,
+        stepId: step?.id,
+        category: step?.category,
+        estimatedSeconds: step?.estimatedSeconds,
+      });
       return { message: t.deferred, step };
     }
     const result = await api('POST', `/stepquest/steps/${id}/defer`, { reason });
     await refresh();
+    trackProductEvent('session_deferred', { stepId: id });
     return result;
   }
 
@@ -2046,6 +2162,7 @@
     h,
     log,
     toast,
+    trackProductEvent,
     refresh,
     renderShell,
     requireAuthMessage,
@@ -2071,4 +2188,5 @@
     costumeInfo,
     basicCostumes,
   };
+  trackProductEvent('app_opened');
 })();

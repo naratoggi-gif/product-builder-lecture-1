@@ -1,27 +1,32 @@
 {
   "name": "stepquest-backend",
-  "version": "0.1.0-alpha",
+  "version": "0.1.1-alpha",
   "private": true,
   "scripts": {
+    "audit:reports": "node scripts/generate-audit-reports.js",
+    "audit:ci": "node scripts/audit-ci.js",
     "db:init": "node scripts/db-init.js",
     "seed:super": "node scripts/seed-super-user.js",
     "smoke:test": "node scripts/smoke-test.js",
     "test": "npm run test:domain",
     "test:ci": "npm run build && npm run test:domain && npm run test:e2e",
     "test:domain": "npm run build && node scripts/stepquest-domain-test.js && node scripts/stepquest-state-test.js && node scripts/stepquest-persistence-test.js",
-    "test:e2e": "node scripts/run-playwright.js",
+    "test:e2e": "npm run build && node scripts/run-playwright.js",
     "start:dev": "nest start --watch",
     "build": "nest build",
-    "start": "node dist/main.js"
+    "start:server": "node dist/main.js",
+    "start": "node scripts/start-production.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/jwt": "^11.0.1",
     "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/throttler": "^6.5.0",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "helmet": "^8.2.0",
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
@@ -32,6 +37,7 @@
     "@nestjs/testing": "^11.0.0",
     "@playwright/test": "^1.61.0",
     "@types/bcryptjs": "^2.4.6",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.10.1",
     "@types/pg": "^8.11.10",
     "ts-node": "^10.9.2",

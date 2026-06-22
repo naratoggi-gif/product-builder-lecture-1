@@ -24,7 +24,7 @@ export default defineConfig({
         PORT: String(port),
         NODE_ENV: 'production',
         ENABLE_SUPER_MODE: 'false',
-        APP_VERSION: '0.1.0-alpha',
+        APP_VERSION: '0.1.1-alpha',
       },
     },
   projects: [

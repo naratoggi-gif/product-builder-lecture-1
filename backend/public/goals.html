@@ -10,14 +10,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/assets/icons/stepquest.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=52" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=0.1.1-alpha" />
 </head>
 <body>
   <div id="app"></div>
-  <script src="/dev/super-mode.js?v=52"></script>
-  <script src="/assets/js/app.js?v=52"></script>
+  <script src="/dev/super-mode.js?v=0.1.1-alpha"></script>
+  <script src="/assets/js/app.js?v=0.1.1-alpha"></script>
   <script>
     const App = window.StepQuestApp;
+    const trackedReturnOffers = new Set();
     const ko = {
       pageTitle: '\uD070 \uBAA9\uD45C\uB97C 5\uCD08\uC9DC\uB9AC \uC2DC\uC791\uC73C\uB85C \uBC14\uAFC9\uB2C8\uB2E4.',
       addGoal: '\uB9C9\uD798 \uBAA9\uD45C \uB123\uAE30',
@@ -772,6 +773,11 @@
 
     function renderReturnPanel() {
       if (!App.state.returnInfo?.eligible) return '';
+      const offerKey = `${App.state.token ? 'account' : 'guest'}:${Math.floor(App.state.returnInfo.inactiveHours || 0)}`;
+      if (!trackedReturnOffers.has(offerKey)) {
+        trackedReturnOffers.add(offerKey);
+        App.trackProductEvent('return_offered', { estimatedSeconds: 5 });
+      }
       return `
         <section class="panel">
           <div class="runner-top">

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { DatabaseService, SqlExecutor } from '../shared/database.service';
+import { addDaysToDateKey, dateKeyInTimezone, normalizeTimezone } from '../shared/timezone';
 import {
   BurdenLevel,
   EnergyLevel,
@@ -18,6 +19,7 @@ import { CreateStepQuestGoalDto } from './dto/create-stepquest-goal.dto';
 import { ImportGuestProgressDto } from './dto/import-guest-progress.dto';
 import { ReminderActionDto } from './dto/reminder-action.dto';
 import { SaveReminderDto } from './dto/save-reminder.dto';
+import { UpdateUserSettingsDto } from './dto/update-user-settings.dto';
 
 type FacilityKey =
   | 'knowledge_tower'
@@ -447,6 +449,7 @@ export class StepQuestService {
     const user = await this.getUserState(userId);
     const village = await this.getVillage(userId);
     const consistency = await this.getConsistencyState(userId);
+    const settings = await this.getSettings(userId);
     const chainSnapshot = await this.getActiveChainSnapshot(userId, step?.chainId || deferredStep?.chainId);
     return {
       currentStep: step,
@@ -456,8 +459,33 @@ export class StepQuestService {
       user,
       village,
       consistency,
+      settings,
       message: step ? ONE_ACTION_MESSAGE : undefined,
     };
+  }
+
+  async getSettings(userId: number) {
+    await this.ensureUserState(this.db, userId);
+    const result = await this.db.query(
+      `SELECT user_id AS "userId", timezone, updated_at AS "updatedAt"
+       FROM user_settings
+       WHERE user_id = $1`,
+      [userId],
+    );
+    return result.rows[0] ?? { userId, timezone: 'Asia/Seoul', updatedAt: new Date().toISOString() };
+  }
+
+  async updateSettings(userId: number, body: UpdateUserSettingsDto) {
+    await this.ensureUserState(this.db, userId);
+    const timezone = normalizeTimezone(body.timezone);
+    const result = await this.db.query(
+      `UPDATE user_settings
+       SET timezone = $2, updated_at = NOW()
+       WHERE user_id = $1
+       RETURNING user_id AS "userId", timezone, updated_at AS "updatedAt"`,
+      [userId, timezone],
+    );
+    return result.rows[0];
   }
 
   async getDungeons(userId: number) {
@@ -1982,6 +2010,13 @@ export class StepQuestService {
       [userId],
     );
 
+    await executor.query(
+      `INSERT INTO user_settings (user_id, timezone)
+       VALUES ($1, 'Asia/Seoul')
+       ON CONFLICT (user_id) DO NOTHING`,
+      [userId],
+    );
+
     for (const facility of FACILITIES) {
       await executor.query(
         `INSERT INTO stepquest_village_facilities (user_id, facility_key)
@@ -2088,27 +2123,30 @@ export class StepQuestService {
   }
 
   private async updateConsistency(client: PoolClient, userId: number) {
+    const timezone = await this.getUserTimezone(userId, client);
+    const todayKey = dateKeyInTimezone(new Date(), timezone);
+    const oldestKey = addDaysToDateKey(todayKey, -13);
     const counts = await client.query<{ planned: number; done: number }>(
       `SELECT
          (
-           (SELECT COUNT(*)::int FROM micro_actions WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '14 days')
+           (SELECT COUNT(*)::int FROM micro_actions WHERE user_id = $1 AND (created_at AT TIME ZONE $2)::date >= $3::date)
            +
            (SELECT COUNT(*)::int
             FROM stepquest_micro_steps ms
             JOIN stepquest_chains c ON c.id = ms.chain_id
             JOIN stepquest_goals g ON g.id = c.goal_id
-            WHERE g.user_id = $1 AND ms.created_at >= NOW() - INTERVAL '14 days')
+            WHERE g.user_id = $1 AND (ms.created_at AT TIME ZONE $2)::date >= $3::date)
          ) AS planned,
          (
-           (SELECT COUNT(*)::int FROM micro_action_logs WHERE user_id = $1 AND result = 'DONE' AND executed_at >= NOW() - INTERVAL '14 days')
+           (SELECT COUNT(*)::int FROM micro_action_logs WHERE user_id = $1 AND result = 'DONE' AND (executed_at AT TIME ZONE $2)::date >= $3::date)
            +
            (SELECT COUNT(*)::int
             FROM stepquest_micro_steps ms
             JOIN stepquest_chains c ON c.id = ms.chain_id
             JOIN stepquest_goals g ON g.id = c.goal_id
-            WHERE g.user_id = $1 AND ms.status = 'completed' AND ms.completed_at >= NOW() - INTERVAL '14 days')
+            WHERE g.user_id = $1 AND ms.status = 'completed' AND (ms.completed_at AT TIME ZONE $2)::date >= $3::date)
          ) AS done`,
-      [userId],
+      [userId, timezone, oldestKey],
     );
 
     const planned = counts.rows[0]?.planned || 0;
@@ -2117,11 +2155,11 @@ export class StepQuestService {
     const doneDates = await client.query<{ doneDate: string }>(
       `SELECT done_date AS "doneDate"
        FROM (
-         SELECT DISTINCT (executed_at AT TIME ZONE 'UTC')::date::text AS done_date
+         SELECT DISTINCT (executed_at AT TIME ZONE $2)::date::text AS done_date
          FROM micro_action_logs
          WHERE user_id = $1 AND result = 'DONE'
          UNION
-         SELECT DISTINCT (ms.completed_at AT TIME ZONE 'UTC')::date::text AS done_date
+         SELECT DISTINCT (ms.completed_at AT TIME ZONE $2)::date::text AS done_date
          FROM stepquest_micro_steps ms
          JOIN stepquest_chains c ON c.id = ms.chain_id
          JOIN stepquest_goals g ON g.id = c.goal_id
@@ -2131,17 +2169,16 @@ export class StepQuestService {
        ) days
        ORDER BY done_date DESC
        LIMIT 30`,
-      [userId],
+      [userId, timezone],
     );
 
     const dateSet = new Set(doneDates.rows.map((row) => row.doneDate));
     let streak = 0;
-    const cursor = new Date();
+    let cursor = todayKey;
     for (let index = 0; index < 30; index += 1) {
-      const key = cursor.toISOString().slice(0, 10);
-      if (!dateSet.has(key)) break;
+      if (!dateSet.has(cursor)) break;
       streak += 1;
-      cursor.setUTCDate(cursor.getUTCDate() - 1);
+      cursor = addDaysToDateKey(cursor, -1);
     }
 
     const streakFactor = Math.min(streak / 14, 1);
@@ -2168,6 +2205,14 @@ export class StepQuestService {
     );
 
     return updated.rows[0];
+  }
+
+  private async getUserTimezone(userId: number, executor: SqlExecutor = this.db): Promise<string> {
+    const result = await executor.query<{ timezone: string }>(
+      `SELECT timezone FROM user_settings WHERE user_id = $1`,
+      [userId],
+    );
+    return normalizeTimezone(result.rows[0]?.timezone);
   }
 
   private async getVillage(userId: number) {
