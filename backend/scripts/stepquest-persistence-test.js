@@ -9,6 +9,7 @@ const costumeActiveMigration = fs.readFileSync(path.join(root, 'db/migrations/00
 const guestMigration = fs.readFileSync(path.join(root, 'db/migrations/0007_stepquest_guest_migrations.sql'), 'utf8');
 const settingsMigration = fs.readFileSync(path.join(root, 'db/migrations/0008_user_settings_and_events.sql'), 'utf8');
 const dbInit = fs.readFileSync(path.join(root, 'scripts/db-init.js'), 'utf8');
+const startProduction = fs.readFileSync(path.join(root, 'scripts/start-production.js'), 'utf8');
 const superSeed = fs.readFileSync(path.join(root, 'scripts/seed-super-user.js'), 'utf8');
 const packageJson = fs.readFileSync(path.join(root, 'package.json'), 'utf8');
 const rootReadme = fs.readFileSync(path.join(root, '../README.md'), 'utf8');
@@ -66,9 +67,13 @@ assert.ok(dbInit.includes('0005_stepquest_core'), 'db-init does not apply STEPQU
 assert.ok(dbInit.includes('0006_stepquest_costume_active'), 'db-init does not apply STEPQUEST costume active migration');
 assert.ok(dbInit.includes('0007_stepquest_guest_migrations'), 'db-init does not apply STEPQUEST guest migration ledger');
 assert.ok(dbInit.includes('0008_user_settings_and_events'), 'db-init does not apply user settings and product events migration');
+assert.ok(startProduction.includes('validateProductionEnv'), 'production start must validate deployment environment');
+assert.ok(startProduction.includes('ENABLE_SUPER_MODE must be false in production'), 'production start must block super mode');
+assert.ok(startProduction.includes('JWT_SECRET must be set to a strong random value in production'), 'production start must require a strong JWT secret');
 assert.ok(packageJson.includes('"version": "0.1.1-alpha"'), 'backend version must be 0.1.1-alpha');
 assert.ok(packageJson.includes('"test:domain": "npm run build &&'), 'domain tests must use cross-platform npm, not npm.cmd');
 assert.ok(packageJson.includes('node scripts/health-test.js'), 'domain tests must verify health check behavior');
+assert.ok(packageJson.includes('node scripts/production-env-test.js'), 'domain tests must verify production environment guards');
 assert.ok(packageJson.includes('"seed:super"'), 'seed:super script must be present');
 assert.ok(packageJson.includes('"test:e2e"'), 'Playwright E2E script must be present');
 assert.ok(packageJson.includes('"audit:ci"'), 'production audit CI script must be present');
@@ -82,6 +87,8 @@ assert.ok(rootReadme.includes('CLOSED_ALPHA_TEST_PLAN.md'), 'root README must po
 assert.ok(stagingRunbook.includes('STAGING_URL='), 'staging runbook must document the smoke test command');
 assert.ok(stagingRunbook.includes('Actions -> StepQuest Staging Smoke'), 'staging runbook must document the GitHub staging smoke workflow');
 assert.ok(stagingRunbook.includes('ENABLE_SUPER_MODE=false'), 'staging runbook must forbid super mode');
+assert.ok(stagingRunbook.includes('JWT_SECRET=<32+ character random secret>'), 'staging runbook must document strong JWT secret enforcement');
+assert.ok(stagingRunbook.includes('ENABLE_SUPER_MODE=true'), 'staging runbook must document production super-mode startup failure');
 assert.ok(stagingRunbook.includes('npm run analytics:report'), 'staging runbook must explain how to pull product event metrics');
 assert.ok(alphaTestPlan.includes('ADHD-friendly execution helper'), 'closed alpha plan must avoid medical treatment positioning');
 assert.ok(alphaTestPlan.includes('Goal created -> first step completed'), 'closed alpha plan must define the primary execution metric');

@@ -50,7 +50,7 @@ Set at least:
 
 ```text
 DATABASE_URL=postgres://USER:PASS@localhost:5432/stepquest
-JWT_SECRET=change-this-secret
+JWT_SECRET=change-this-secret-to-at-least-32-random-characters
 ENABLE_SUPER_MODE=false
 ```
 

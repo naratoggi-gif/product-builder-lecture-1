@@ -28,13 +28,13 @@ Required environment:
 NODE_ENV=production
 ENABLE_SUPER_MODE=false
 DATABASE_URL=postgresql://...
-JWT_SECRET=<long random secret>
+JWT_SECRET=<32+ character random secret>
 JWT_EXPIRES_IN=7d
 APP_VERSION=0.1.1-alpha
 TRUST_PROXY=true
 ```
 
-`npm start` runs `scripts/start-production.js`, so production startup fails if `DATABASE_URL` is missing or migrations fail.
+`npm start` runs `scripts/start-production.js`, so production startup fails if `DATABASE_URL` is missing, `JWT_SECRET` is weak, `ENABLE_SUPER_MODE=true`, or migrations fail.
 On Render, `/health` reads the deploy commit from the default `RENDER_GIT_COMMIT` environment variable.
 
 ## Smoke Test
