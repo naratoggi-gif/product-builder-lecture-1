@@ -63,7 +63,12 @@ async function run() {
 
       const sql = fs.readFileSync(file.path, 'utf8');
       process.stdout.write(`Applying: ${file.name}\n`);
-      await client.query(sql);
+      try {
+        await client.query(sql);
+      } catch (error) {
+        error.message = `While applying ${file.name}: ${error.message}`;
+        throw error;
+      }
       await client.query('INSERT INTO codex_migrations (name) VALUES ($1)', [file.name]);
     }
 
@@ -74,6 +79,8 @@ async function run() {
 }
 
 run().catch((err) => {
+  const message = String(err?.stack || err?.message || err).replace(/\r?\n/g, '%0A');
+  console.error(`::error title=DB init failed::${message}`);
   console.error('DB init failed:', err.message);
   process.exit(1);
 });
