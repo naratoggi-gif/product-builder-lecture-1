@@ -1,0 +1,1083 @@
+﻿openapi: 3.0.3
+info:
+  title: STEPQUEST Backend API
+  version: 0.2.0
+  description: API contract for the current STEPQUEST MVP backend and legacy account flow.
+servers:
+  - url: http://localhost:3000
+
+tags:
+  - name: Auth
+  - name: Player
+  - name: Goals
+  - name: Actions
+  - name: Consistency
+  - name: Prediction
+  - name: Idle
+  - name: Costumes
+  - name: StepQuest
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+  schemas:
+    SignupRequest:
+      type: object
+      required: [email, nickname, password]
+      properties:
+        email:
+          type: string
+          format: email
+        nickname:
+          type: string
+        password:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+            email:
+              type: string
+            nickname:
+              type: string
+        accessToken:
+          type: string
+    PlayerProfile:
+      type: object
+      properties:
+        userId:
+          type: integer
+        email:
+          type: string
+        nickname:
+          type: string
+        job:
+          type: string
+        level:
+          type: integer
+        exp:
+          type: integer
+        atk:
+          type: integer
+        hp:
+          type: integer
+        idleGold:
+          type: integer
+        goalCoin:
+          type: integer
+        equippedCostumeId:
+          type: integer
+          nullable: true
+        equippedCostumeName:
+          type: string
+          nullable: true
+        equippedSkillsetId:
+          type: string
+          nullable: true
+    Currency:
+      type: object
+      properties:
+        idleGold:
+          type: integer
+        goalCoin:
+          type: integer
+    CreateVisionGoalRequest:
+      type: object
+      required: [title, targetDate]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        targetDate:
+          type: string
+          format: date
+    GenerateWeeklyPlanRequest:
+      type: object
+      properties:
+        weeks:
+          type: integer
+        targetCount:
+          type: integer
+    GenerateMicroActionsRequest:
+      type: object
+      properties:
+        count:
+          type: integer
+    VisionGoal:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        targetDate:
+          type: string
+          format: date
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          nullable: true
+    WeeklyMission:
+      type: object
+      properties:
+        id:
+          type: integer
+        visionGoalId:
+          type: integer
+        userId:
+          type: integer
+        title:
+          type: string
+        weekStartDate:
+          type: string
+        weekEndDate:
+          type: string
+        targetCount:
+          type: integer
+        completedCount:
+          type: integer
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          nullable: true
+    MicroAction:
+      type: object
+      properties:
+        id:
+          type: integer
+        weeklyMissionId:
+          type: integer
+        userId:
+          type: integer
+        title:
+          type: string
+        estimatedSeconds:
+          type: integer
+        difficulty:
+          type: integer
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          nullable: true
+    MicroCompleteResponse:
+      type: object
+      properties:
+        microActionId:
+          type: integer
+        grantedGoalCoin:
+          type: integer
+        dailyGoalCoinEarned:
+          type: integer
+        currentStreakDays:
+          type: integer
+        consistencyScore:
+          type: integer
+    MicroShrinkResponse:
+      type: object
+      properties:
+        microActionId:
+          type: integer
+        replacementSteps:
+          type: array
+          items:
+            $ref: '#/components/schemas/MicroAction'
+        firstStep:
+          $ref: '#/components/schemas/MicroAction'
+        reason:
+          type: string
+    StepQuestCreateGoalRequest:
+      type: object
+      required: [title, burdenLevel]
+      properties:
+        title:
+          type: string
+        category:
+          type: string
+          enum: [auto, study, work, writing, cleaning, exercise, wake, sleep, life_admin, relationship]
+        burdenLevel:
+          type: integer
+          minimum: 1
+          maximum: 4
+        energyLevel:
+          type: string
+          enum: [low, medium, high]
+        targetAt:
+          type: string
+          format: date-time
+        recurrenceRule:
+          type: string
+          enum: [daily, weekly]
+        location:
+          type: string
+        availableMinutes:
+          type: integer
+          minimum: 1
+          maximum: 180
+        obstacle:
+          type: string
+          enum: [too_big, no_material, unclear, tired, wrong_place, not_now, forgot, anxious]
+    StepQuestShrinkRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          enum: [too_big, no_material, unclear, tired, wrong_place, not_now, forgot, anxious, costume_active]
+    StepQuestRegenerateRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          enum: [too_big, no_material, unclear, tired, wrong_place, not_now, forgot, anxious]
+    StepQuestReminderRequest:
+      type: object
+      required: [minutes]
+      properties:
+        minutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+        stepId:
+          type: integer
+    StepQuestAnyResponse:
+      type: object
+      additionalProperties: true
+    ConsistencyState:
+      type: object
+      properties:
+        userId:
+          type: integer
+        currentStreakDays:
+          type: integer
+        bestStreakDays:
+          type: integer
+        executionRate14d:
+          type: number
+        consistencyScore:
+          type: integer
+        streakRecoverTokens:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+    PredictionRequest:
+      type: object
+      required: [durationMin, difficulty, historicalSuccessRate, timeslotSuccessRate, fatigueLevel]
+      properties:
+        durationMin:
+          type: integer
+        difficulty:
+          type: integer
+        historicalSuccessRate:
+          type: number
+        timeslotSuccessRate:
+          type: number
+        fatigueLevel:
+          type: integer
+    PredictionResponse:
+      type: object
+      properties:
+        score:
+          type: integer
+        bucket:
+          type: string
+        suggestedDownscale:
+          type: object
+          nullable: true
+          properties:
+            title:
+              type: string
+            estimatedSeconds:
+              type: integer
+    IdleClaimResponse:
+      type: object
+      properties:
+        minutes:
+          type: integer
+        grantedIdleGold:
+          type: integer
+        newIdleGoldBalance:
+          type: integer
+    CostumeRequirementStatus:
+      type: object
+      properties:
+        requirementType:
+          type: string
+        targetValue:
+          type: integer
+        currentValue:
+          type: integer
+        satisfied:
+          type: boolean
+    CostumeShopItem:
+      type: object
+      properties:
+        costumeId:
+          type: integer
+        name:
+          type: string
+        rarity:
+          type: string
+        priceGoalCoin:
+          type: integer
+        affordable:
+          type: boolean
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/CostumeRequirementStatus'
+    CostumePurchaseResponse:
+      type: object
+      properties:
+        costumeId:
+          type: integer
+        owned:
+          type: boolean
+        remainingGoalCoin:
+          type: integer
+    EquipCostumeResponse:
+      type: object
+      properties:
+        costumeId:
+          type: integer
+        equipped:
+          type: boolean
+        activeSkillsetId:
+          type: string
+
+paths:
+  /stepquest/goals:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Create a STEPQUEST goal, quest chain, and first active micro step.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepQuestCreateGoalRequest'
+      responses:
+        '201':
+          description: Created STEPQUEST goal state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/current:
+    get:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Get the current active STEPQUEST micro step, user state, and village state.
+      responses:
+        '200':
+          description: Current STEPQUEST state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/stats:
+    get:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Get STEPQUEST attempt, step, and reward counters.
+      responses:
+        '200':
+          description: STEPQUEST counters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/dungeons:
+    get:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: List active and paused STEPQUEST dungeons with progress, last action, and next action.
+      responses:
+        '200':
+          description: Dungeon list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/goals/{id}/pause:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Pause an active STEPQUEST dungeon without losing progress.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '201':
+          description: Paused dungeon state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/goals/{id}/resume:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Resume a paused STEPQUEST dungeon.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '201':
+          description: Resumed dungeon state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/goals/{id}/archive:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Archive a STEPQUEST dungeon.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '201':
+          description: Archived dungeon state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/goals/{id}/regenerate:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Supersede the current chain and regenerate smaller STEPQUEST entrance steps for a goal.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepQuestRegenerateRequest'
+      responses:
+        '201':
+          description: Regenerated chain and first step
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/reminder:
+    get:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Get the saved reminder for the current user.
+      responses:
+        '200':
+          description: Saved reminder or disabled reminder state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Save a reminder tied to the current or selected STEPQUEST micro step.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepQuestReminderRequest'
+      responses:
+        '201':
+          description: Saved reminder
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/reminder/action:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Handle a reminder action for the linked STEPQUEST micro step.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [complete, snooze, shrink, skip]
+                minutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 1440
+      responses:
+        '201':
+          description: Reminder action result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/costumes:
+    get:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: List STEPQUEST costume unlock, progress, and equipped state.
+      responses:
+        '200':
+          description: Costume state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/costumes/{id}/equip:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Equip an unlocked STEPQUEST costume.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Equipped costume state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/costumes/{id}/activate:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Activate an unlocked STEPQUEST costume ability and create strategy micro steps.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Costume ability result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/steps/{id}/complete:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Complete the active STEPQUEST micro step and grant idempotent rewards.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: idempotencyKey
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Completion result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/steps/{id}/undo:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Undo the most recent completion and reverse the granted rewards when no later progress depends on it.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '201':
+          description: Undo result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/steps/{id}/shrink:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Replace the active STEPQUEST micro step with smaller steps.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepQuestShrinkRequest'
+      responses:
+        '201':
+          description: Shrink result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/steps/{id}/skip:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Skip the active STEPQUEST micro step without shame language.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '201':
+          description: Skip result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/steps/{id}/defer:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Record a stop-for-today defer attempt while preserving the active step and earned rewards.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  enum: [not_now, tired, wrong_place, forgot, anxious]
+      responses:
+        '201':
+          description: Defer result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/steps/{id}/resume:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Resume a deferred STEPQUEST micro step as the current action.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '201':
+          description: Resume result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/return/eligibility:
+    get:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Check whether the user is eligible for a return session.
+      responses:
+        '200':
+          description: Return eligibility
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /stepquest/return/start:
+    post:
+      tags: [StepQuest]
+      security:
+        - bearerAuth: []
+      summary: Start a return session with a short recovery step.
+      responses:
+        '201':
+          description: Return session result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepQuestAnyResponse'
+  /auth/signup:
+    post:
+      tags: [Auth]
+      summary: Create a user and return a JWT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '200':
+          description: Signup successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and return a JWT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+  /player/me:
+    get:
+      tags: [Player]
+      security:
+        - bearerAuth: []
+      summary: Get the authenticated player profile.
+      responses:
+        '200':
+          description: Player profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerProfile'
+  /player/currency:
+    get:
+      tags: [Player]
+      security:
+        - bearerAuth: []
+      summary: Get current currency state.
+      responses:
+        '200':
+          description: Currency state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Currency'
+  /goals/vision:
+    get:
+      tags: [Goals]
+      security:
+        - bearerAuth: []
+      summary: List vision goals.
+      responses:
+        '200':
+          description: Vision goals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VisionGoal'
+    post:
+      tags: [Goals]
+      security:
+        - bearerAuth: []
+      summary: Create a vision goal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVisionGoalRequest'
+      responses:
+        '200':
+          description: Vision created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisionGoal'
+  /goals/vision/{id}/weekly-plan:
+    post:
+      tags: [Goals]
+      security:
+        - bearerAuth: []
+      summary: Generate weekly missions.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateWeeklyPlanRequest'
+      responses:
+        '200':
+          description: Weekly missions created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WeeklyMission'
+  /goals/weekly:
+    get:
+      tags: [Goals]
+      security:
+        - bearerAuth: []
+      summary: List weekly missions.
+      parameters:
+        - name: visionId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Weekly missions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WeeklyMission'
+  /goals/weekly/{id}/micro:
+    get:
+      tags: [Goals]
+      security:
+        - bearerAuth: []
+      summary: List micro actions for a weekly mission.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Micro actions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MicroAction'
+  /goals/weekly/{id}/micro-generate:
+    post:
+      tags: [Goals]
+      security:
+        - bearerAuth: []
+      summary: Generate micro actions.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateMicroActionsRequest'
+      responses:
+        '200':
+          description: Micro actions created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MicroAction'
+  /actions/next-micro:
+    get:
+      tags: [Actions]
+      security:
+        - bearerAuth: []
+      summary: Get the smallest open micro action.
+      responses:
+        '200':
+          description: Next micro action
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MicroAction'
+  /actions/micro/{id}/complete:
+    post:
+      tags: [Actions]
+      security:
+        - bearerAuth: []
+      summary: Complete a micro action.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Completion result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MicroCompleteResponse'
+  /actions/micro/{id}/shrink:
+    post:
+      tags: [Actions]
+      security:
+        - bearerAuth: []
+      summary: Replace a too-large micro action with smaller steps.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Shrink result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MicroShrinkResponse'
+  /consistency/me:
+    get:
+      tags: [Consistency]
+      security:
+        - bearerAuth: []
+      summary: Get the current consistency state.
+      responses:
+        '200':
+          description: Consistency state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsistencyState'
+  /consistency/recover:
+    post:
+      tags: [Consistency]
+      security:
+        - bearerAuth: []
+      summary: Recover streak using a token.
+      responses:
+        '200':
+          description: Updated consistency state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsistencyState'
+  /prediction/score:
+    post:
+      tags: [Prediction]
+      security:
+        - bearerAuth: []
+      summary: Calculate a success prediction score.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PredictionRequest'
+      responses:
+        '200':
+          description: Prediction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PredictionResponse'
+  /idle/claim:
+    post:
+      tags: [Idle]
+      security:
+        - bearerAuth: []
+      summary: Claim accumulated idle gold.
+      responses:
+        '200':
+          description: Idle claim result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdleClaimResponse'
+  /shop/costumes:
+    get:
+      tags: [Costumes]
+      security:
+        - bearerAuth: []
+      summary: List costume shop items.
+      responses:
+        '200':
+          description: Costume list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CostumeShopItem'
+  /shop/costumes/{id}/buy:
+    post:
+      tags: [Costumes]
+      security:
+        - bearerAuth: []
+      summary: Buy a costume.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Purchase result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostumePurchaseResponse'
+  /costumes/{id}/equip:
+    post:
+      tags: [Costumes]
+      security:
+        - bearerAuth: []
+      summary: Equip an owned costume.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Equip result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EquipCostumeResponse'

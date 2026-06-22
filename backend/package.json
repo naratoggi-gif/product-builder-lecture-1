@@ -1,0 +1,35 @@
+﻿{
+  "name": "stepquest-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "db:init": "node scripts/db-init.js",
+    "smoke:test": "node scripts/smoke-test.js",
+    "test:domain": "npm.cmd run build && node scripts/stepquest-domain-test.js && node scripts/stepquest-state-test.js && node scripts/stepquest-persistence-test.js",
+    "start:dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/jwt": "^11.0.1",
+    "@nestjs/platform-express": "^11.0.0",
+    "bcryptjs": "^2.4.3",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "pg": "^8.13.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/schematics": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.1",
+    "@types/pg": "^8.11.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}

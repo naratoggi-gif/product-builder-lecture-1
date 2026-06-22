@@ -1,0 +1,27 @@
+{
+  "name": "STEPQUEST",
+  "short_name": "STEPQUEST",
+  "description": "큰 목표를 지금 할 수 있는 작은 행동으로 바꾸는 RPG 계획 앱",
+  "start_url": "/goals.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111413",
+  "theme_color": "#17211d",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/assets/icons/stepquest.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "오늘의 작은 행동",
+      "short_name": "오늘",
+      "url": "/goals.html",
+      "description": "지금 할 작은 행동 하나를 엽니다."
+    }
+  ]
+}

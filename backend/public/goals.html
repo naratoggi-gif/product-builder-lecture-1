@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STEPQUEST</title>
+  <meta name="theme-color" content="#17211d" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/assets/icons/stepquest.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=46" />
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/assets/js/app.js?v=46"></script>
+  <script>
+    const App = window.StepQuestApp;
+    const ko = {
+      pageTitle: '\uD070 \uBAA9\uD45C\uB97C 5\uCD08\uC9DC\uB9AC \uC2DC\uC791\uC73C\uB85C \uBC14\uAFC9\uB2C8\uB2E4.',
+      addGoal: '\uB9C9\uD798 \uBAA9\uD45C \uB123\uAE30',
+      addGoalMeta: '\uC644\uC131\uC744 \uC57D\uC18D\uD558\uC9C0 \uC54A\uACE0 \uC785\uAD6C\uB9CC \uC791\uAC8C \uC5FD\uB2C8\uB2E4.',
+      goal: '\uBAA9\uD45C',
+      category: '\uBD84\uC57C',
+      auto: '\uC790\uB3D9',
+      study: '\uACF5\uBD80\u00B7\uB3C5\uC11C',
+      work: '\uC5C5\uBB34',
+      writing: '\uAE00\uC4F0\uAE30',
+      cleaning: '\uCCAD\uC18C\u00B7\uC815\uB9AC',
+      exercise: '\uC6B4\uB3D9',
+      wake: '\uAE30\uC0C1',
+      sleep: '\uC218\uBA74',
+      lifeAdmin: '\uC0DD\uD65C \uD589\uC815',
+      relationship: '\uC5F0\uB77D',
+      burden: '\uBD80\uB2F4\uB3C4',
+      energy: '\uC5D0\uB108\uC9C0',
+      targetAt: '\uC2DC\uC810',
+      recurrence: '\uBC18\uBCF5',
+      location: '\uC7A5\uC18C',
+      availableMinutes: '\uAC00\uB2A5 \uC2DC\uAC04',
+      obstacle: '\uB9C9\uD788\uB294 \uC774\uC720',
+      minutesSuffix: '\uBD84',
+      noneSelected: '\uC120\uD0DD \uC548 \uD568',
+      noRepeat: '\uBC18\uBCF5 \uC5C6\uC74C',
+      daily: '\uB9E4\uC77C',
+      weekly: '\uB9E4\uC8FC',
+      low: '\uB0AE\uC74C',
+      medium: '\uBCF4\uD1B5',
+      high: '\uB192\uC74C',
+      create: '\uCCAB \uD589\uB3D9 \uB9CC\uB4E4\uAE30',
+      placeholder: '\uC608: \uC624\uB298 \uACF5\uBD80\uD558\uAE30',
+      quickStart: '\uBAA9\uD45C \uD55C \uC904\uB9CC \uC801\uC73C\uBA74 \uBC14\uB85C \uC2DC\uC791\uD569\uB2C8\uB2E4.',
+      goalDetails: '\uC138\uBD80 \uC870\uC815',
+      detailsMeta: '\uD544\uC694\uD560 \uB54C\uB9CC \uC5F4\uC5B4\uC11C \uBD80\uB2F4\uB3C4, \uC5D0\uB108\uC9C0, \uB9C9\uD798 \uC774\uC720\uB97C \uBC14\uAFC9\uB2C8\uB2E4.',
+      idleBadge: '\uC785\uAD6C \uC5C6\uC74C',
+      idleTitle: '\uC9C0\uAE08 \uC5F4\uB824 \uC788\uB294 \uD589\uB3D9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.',
+      idleMeta: '\uBAA9\uD45C \uD558\uB098\uB97C \uB123\uC73C\uBA74 \uBC14\uB85C 5~10\uCD08\uC9DC\uB9AC \uCCAB \uD589\uB3D9\uC73C\uB85C \uBC14\uB01D\uB2C8\uB2E4.',
+      oneNow: '\uC9C0\uAE08 \uD560 \uD558\uB098',
+      successRule: '\uC131\uACF5 \uAE30\uC900: \uC774 \uD589\uB3D9\uC744 \uC2E4\uC81C\uB85C \uC218\uD589\uD588\uB294\uC9C0\uB9CC \uD655\uC778\uD569\uB2C8\uB2E4.',
+      material: '\uC7AC\uB8CC',
+      reward: '\uBC29\uAE08 \uC5BB\uC740 \uBCF4\uC0C1',
+      rewardXp: 'XP',
+      costumeBonus: '\uCF54\uC2A4\uD2AC \uBCF4\uB108\uC2A4',
+      comboFlow: '\uD750\uB984',
+      dungeonPushed: '\uB358\uC804 \uC9C4\uD589',
+      villageGrew: '\uB9C8\uC744 \uC131\uC7A5',
+      facilityReward: '방금 성장한 시설',
+      facilityActions: '자라는 행동',
+      nextVillageLevel: '다음 레벨까지',
+      chestOpened: '\uD750\uB984 \uC0C1\uC790 \uC5F4\uB9BC',
+      timerReady: '\uC2DC\uC791\uD560 \uC900\uBE44',
+      timerRunning: '\uC9C0\uAE08 \uC2E4\uD589 \uC911',
+      timerDone: '\uC2DC\uAC04\uC774 \uB05D\uB0AC\uC2B5\uB2C8\uB2E4.',
+      timerDoneToast: '\uC2DC\uAC04\uC774 \uB05D\uB0AC\uC2B5\uB2C8\uB2E4. \uC774\uC81C \uC644\uB8CC\uB85C \uAE30\uB85D\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.',
+      timerStartedLog: '\uC791\uC740 \uD589\uB3D9 \uC2DC\uC791',
+      timerDoneLog: '\uC2E4\uD589 \uC2DC\uAC04 \uC644\uB8CC',
+      startTimer: '\uC2DC\uC791',
+      pauseTimer: '\uC7A0\uAE50 \uBA48\uCD94\uAE30',
+      resetTimer: '\uB2E4\uC2DC',
+      focusMode: '\uC9D1\uC911 \uBAA8\uB4DC',
+      focusMessage: '\uC9C0\uAE08\uC740 \uC774 \uD589\uB3D9 \uD558\uB098\uB9CC \uBCF4\uC5EC\uC90D\uB2C8\uB2E4.',
+      exitFocus: '\uC804\uCCB4 \uD654\uBA74 \uBCF4\uAE30',
+      completeNow: '\uC644\uB8CC\uB85C \uAE30\uB85D',
+      secondsLeft: '\uB0A8\uC740 \uC2DC\uAC04',
+      shrinkCreated: '\uB354 \uC791\uC740 \uC785\uAD6C\uAC00 \uC5F4\uB838\uC2B5\uB2C8\uB2E4.',
+      shrinkReason: '\uB9C9\uD78C \uC774\uC720',
+      shrinkFrom: '\uC774\uC804 \uD589\uB3D9',
+      shrinkTo: '\uC0C8 \uC785\uAD6C',
+      shrinkStrategy: '\uBC14\uAFC0 \uBC29\uD5A5',
+      shrinkSteps: '\uC0C8\uB85C \uB098\uB208 \uB2E8\uACC4',
+      returnOpened: '\uBCF5\uADC0 \uC785\uAD6C\uAC00 \uC5F4\uB838\uC2B5\uB2C8\uB2E4.',
+      regenerated: '\uC6D0\uC815\uC744 \uB2E4\uC2DC \uC791\uC740 \uC785\uAD6C\uB85C \uCABC\uAC1C\uC5C8\uC2B5\uB2C8\uB2E4.',
+      regenerate: '\uB2E4\uC2DC \uCABC\uAC1C\uAE30',
+      failedRegenerate: '\uB2E4\uC2DC \uCABC\uAC1C\uAE30 \uD655\uC778 \uD544\uC694',
+      progress: '\uC9C4\uD589',
+      feedback: '\uD53C\uB4DC\uBC31',
+      confirmed: '\uD655\uC778',
+      complete: '\uC644\uB8CC',
+      undoComplete: '\uBC29\uAE08 \uC644\uB8CC \uB418\uB3CC\uB9AC\uAE30',
+      undoDone: '\uC644\uB8CC\uB97C \uB418\uB3CC\uB838\uC2B5\uB2C8\uB2E4.',
+      undoFailed: '\uB418\uB3CC\uB9AC\uAE30 \uD655\uC778 \uD544\uC694',
+      undoReward: '\uBCF4\uC0C1 \uB418\uAC10\uAE30',
+      nextEntrance: '\uB2E4\uC74C \uC785\uAD6C',
+      goalCleared: '\uC6D0\uC815 \uD074\uB9AC\uC5B4',
+      noNextEntrance: '\uC5F4\uB9B0 \uB2E4\uC74C \uC785\uAD6C \uC5C6\uC74C',
+      shrink: '\uB354 \uC791\uAC8C',
+      skip: '\uC9C0\uAE08\uC740 \uB118\uAE30\uAE30',
+      skipSaved: '\uB118\uAE30\uAE30\uB3C4 \uAE30\uB85D\uC785\uB2C8\uB2E4.',
+      skippedFrom: '\uB118\uAE34 \uD589\uB3D9',
+      skippedTo: '\uB2E4\uC74C \uC785\uAD6C',
+      skipNote: '\uC644\uB8CC\uD558\uC9C0 \uC54A\uC544\uB3C4 \uC9C4\uD589 \uD750\uB984\uC740 \uB0A8\uC544 \uC788\uC2B5\uB2C8\uB2E4.',
+      stop: '\uC624\uB298\uC740 \uC5EC\uAE30\uAE4C\uC9C0',
+      restTitle: '\uAE30\uB85D\uC740 \uB0A8\uC544 \uC788\uC2B5\uB2C8\uB2E4.',
+      restMessage: '\uC644\uB8CC\uD558\uC9C0 \uC54A\uC544\uB3C4 \uAE30\uB85D\uC740 \uC548\uC804\uD569\uB2C8\uB2E4. \uB3CC\uC544\uC62C \uB54C\uB294 \uC791\uC740 \uBCF5\uADC0 \uC785\uAD6C\uB9CC \uC5FD\uB2C8\uB2E4.',
+      restStep: '\uBA48\uCD98 \uD589\uB3D9',
+      restAt: '\uBA48\uCD98 \uC2DC\uAC04',
+      returnSmallAction: '5\uCD08 \uBCF5\uADC0 \uC785\uAD6C \uC5F4\uAE30',
+      resumeOriginal: '\uC6D0\uB798 \uD589\uB3D9 \uB2E4\uC2DC \uBCF4\uAE30',
+      restSaved: '\uC911\uB2E8\uC744 \uAE30\uB85D\uD588\uC2B5\uB2C8\uB2E4.',
+      returnFailed: '\uBCF5\uADC0 \uC785\uAD6C \uD655\uC778 \uD544\uC694',
+      shrinkMeta: '\uC774 \uB2E8\uACC4\uAC00 \uCEF8\uB2E4\uBA74 \uC774\uC720 \uD558\uB098\uB9CC \uACE0\uB974\uC138\uC694.',
+      tooBig: '\uB108\uBB34 \uD06C\uB2E4',
+      noMaterial: '\uC900\uBE44\uBB3C\uC774 \uC5C6\uB2E4',
+      unclear: '\uC560\uB9E4\uD558\uB2E4',
+      tired: '\uD53C\uACE4\uD558\uB2E4',
+      wrongPlace: '\uC7A5\uC18C\uAC00 \uC548 \uB9DE\uB2E4',
+      notNow: '\uC9C0\uAE08\uC740 \uC544\uB2C8\uB2E4',
+      expedition: '\uC5EC\uC815',
+      weeklyProgress: '\uD604\uC7AC \uC9C4\uD589\uB960',
+      actionsDone: '\uD589\uB3D9 \uC644\uB8CC',
+      dungeon: 'Dungeon',
+      dungeonTheme: '\uD14C\uB9C8',
+      lastAction: '\uB9C8\uC9C0\uB9C9 \uC644\uB8CC',
+      nextAction: '\uB2E4\uC74C \uD589\uB3D9',
+      noLastAction: '\uC544\uC9C1 \uC644\uB8CC\uD55C \uD589\uB3D9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.',
+      noNextAction: '\uB2E4\uC74C \uD589\uB3D9 \uC5C6\uC74C',
+      pause: '\uC77C\uC2DC\uC815\uC9C0',
+      resume: '\uC7AC\uAC1C',
+      archiveAction: '\uBCF4\uAD00',
+      activeStatus: '\uC9C4\uD589 \uC911',
+      pausedStatus: '\uC77C\uC2DC\uC815\uC9C0',
+      clearedStatus: '\uD074\uB9AC\uC5B4',
+      dungeonPaused: '\uC6D0\uC815\uC744 \uC77C\uC2DC\uC815\uC9C0\uD588\uC2B5\uB2C8\uB2E4.',
+      dungeonResumed: '\uC6D0\uC815\uC744 \uC7AC\uAC1C\uD588\uC2B5\uB2C8\uB2E4.',
+      dungeonArchived: '\uC6D0\uC815\uC744 \uBCF4\uAD00\uD588\uC2B5\uB2C8\uB2E4.',
+      noQuest: '\uC544\uC9C1 \uBC1C\uACAC\uB41C \uC5EC\uC815\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.',
+      character: '\uCE90\uB9AD\uD130',
+      guestStart: '\uAC8C\uC2A4\uD2B8 \uBAA8\uB4DC\uB85C \uC2DC\uC791\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.',
+      keepBook: '\uACF5\uBC31\uC774 \uC544\uB2C8\uB77C \uAE30\uB85D\uC774 \uC313\uC785\uB2C8\uB2E4.',
+      equipped: '\uC7A5\uCC29 \uC911',
+      equip: '\uC7A5\uCC29',
+      locked: '\uD574\uAE08 \uC804',
+      passive: '\uD328\uC2DC\uBE0C',
+      active: '\uC561\uD2F0\uBE0C',
+      activeCharge: '\uCDA9\uC804',
+      activeReady: '\uC0AC\uC6A9 \uAC00\uB2A5',
+      activeRecharge: '\uAC1C \uC644\uB8CC \uD6C4 \uC7AC\uCDA9\uC804',
+      unlock: '\uD574\uAE08',
+      useActive: '\uB2A5\uB825 \uC0AC\uC6A9',
+      costumeEquipped: '\uCF54\uC2A4\uD2AC\uC744 \uC7A5\uCC29\uD588\uC2B5\uB2C8\uB2E4.',
+      costumeActivated: '\uCF54\uC2A4\uD2AC \uB2A5\uB825\uC73C\uB85C \uC791\uC740 \uC785\uAD6C\uB97C \uC5F4\uC5C8\uC2B5\uB2C8\uB2E4.',
+      costumeOpened: '\uCF54\uC2A4\uD2AC \uC785\uAD6C',
+      costumeStrategy: '\uC801\uC6A9\uB41C \uC804\uB7B5',
+      costumeFirstStep: '\uCCAB \uD589\uB3D9',
+      costumeSteps: '\uC0DD\uC131\uB41C \uB2E8\uACC4',
+      village: '\uB9C8\uC744',
+      inn: '\uC5EC\uAD00',
+      archive: '\uAE30\uB85D\uAD00',
+      workshop: '\uACF5\uBC29',
+      training: '\uD6C8\uB828\uC18C',
+      xp: 'XP',
+      villageMaterial: '\uBCF4\uC720 \uC7AC\uB8CC',
+      villageEmpty: '\uCCAB \uD589\uB3D9\uC744 \uC644\uB8CC\uD558\uBA74 \uB9C8\uC744\uC774 \uC131\uC7A5\uD569\uB2C8\uB2E4.',
+      chain: '\uC804\uCCB4 \uCCB4\uC778 \uD3BC\uCE58\uAE30',
+      waiting: '\uB300\uAE30',
+      done: '\uC644\uB8CC',
+      skipped: '\uB118\uAE40',
+      replaced: '\uB354 \uC791\uAC8C \uAD50\uCCB4',
+      deferred: '\uC911\uB2E8',
+      titleNeeded: '\uBAA9\uD45C\uB97C \uD55C \uC904\uB9CC \uC801\uC5B4\uC8FC\uC138\uC694.',
+      created: '\uC624\uB298\uC740 \uC785\uAD6C\uB9CC \uC5FD\uB2C8\uB2E4.',
+      failedCreate: '\uCCAB \uD589\uB3D9 \uC0DD\uC131 \uD655\uC778 \uD544\uC694',
+      failedComplete: '\uC644\uB8CC \uD655\uC778 \uD544\uC694',
+      failedShrink: '\uCD95\uC18C \uD655\uC778 \uD544\uC694',
+      failedSkip: '\uAC74\uB108\uB6F0\uAE30 \uD655\uC778 \uD544\uC694',
+      stopped: '\uC5EC\uAE30\uC11C \uBA48\uCDB0\uB3C4 \uC9C4\uD589\uD55C \uAC83\uC740 \uC0AC\uB77C\uC9C0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.',
+      initFailed: '\uCD08\uAE30 \uB370\uC774\uD130 \uB85C\uB4DC \uD655\uC778 \uD544\uC694',
+      returnTitle: '\uBCF5\uADC0',
+      returnMessage: '\uB3CC\uC544\uC654\uB2E4. \uAE30\uB85D\uC740 \uB0A8\uC544 \uC788\uB2E4.',
+      returnAction: '\uBCF5\uADC0 \uB2E8\uACC4 \uC5F4\uAE30',
+      returnCompleted: '\uBCF5\uADC0 \uC644\uB8CC',
+      reminder: '\uC54C\uB9BC',
+      reminderMinutes: '\uBD84 \uB4A4',
+      saveReminder: '\uC54C\uB9BC \uC800\uC7A5',
+      reminderSaved: '\uB2E4\uC74C \uD589\uB3D9 \uC54C\uB9BC\uC744 \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.',
+      noReminder: '\uC800\uC7A5\uB41C \uC54C\uB9BC \uC5C6\uC74C',
+      reminderReady: '\uC54C\uB9BC \uD589\uB3D9',
+      reminderActionMeta: '\uBAA9\uD45C \uC804\uCCB4\uAC00 \uC544\uB2C8\uB77C \uB2E4\uC74C \uD589\uB3D9 \uD558\uB098\uB9CC \uCC98\uB9AC\uD569\uB2C8\uB2E4.',
+      snoozeFive: '5\uBD84 \uB4A4',
+      reminderSnoozed: '\uC54C\uB9BC\uC744 5\uBD84 \uB4A4\uB85C \uBBF8\uB8E0\uC2B5\uB2C8\uB2E4.',
+      reminderActionFailed: '\uC54C\uB9BC \uCC98\uB9AC \uD655\uC778 \uD544\uC694',
+      stats: '\uAE30\uB85D',
+      recentTrace: '\uCD5C\uADFC \uD754\uC801',
+      noRecentTrace: '\uC544\uC9C1 \uCD5C\uADFC \uD754\uC801\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.',
+      actionComplete: '\uC644\uB8CC',
+      actionShrink: '\uB354 \uC791\uAC8C',
+      actionDefer: '\uC911\uB2E8',
+      actionSkip: '\uB118\uAE40',
+      actionUndo: '\uB418\uB3CC\uB9BC',
+      actionReturn: '\uBCF5\uADC0',
+      actionCostume: '\uCF54\uC2A4\uD2AC',
+      totalSteps: '\uC804\uCCB4 \uB2E8\uACC4',
+      completedSteps: '\uC644\uB8CC',
+      shrinkCount: '\uB354 \uC791\uAC8C',
+      deferCount: '\uC911\uB2E8',
+      returnMarks: '\uBCF5\uADC0 \uD45C\uC2DD',
+      failedReturn: '\uBCF5\uADC0 \uD655\uC778 \uD544\uC694',
+      failedReminder: '\uC54C\uB9BC \uC800\uC7A5 \uD655\uC778 \uD544\uC694',
+    };
+
+    function h(value) {
+      return App.h(value);
+    }
+
+    function statusLabel(status) {
+      return {
+        OPEN: ko.waiting,
+        active: ko.waiting,
+        PENDING: ko.waiting,
+        pending: ko.waiting,
+        DONE: ko.done,
+        completed: ko.done,
+        SKIPPED: ko.skipped,
+        skipped: ko.skipped,
+        REPLACED: ko.replaced,
+        replaced: ko.replaced,
+        DEFERRED: ko.deferred,
+        deferred: ko.deferred,
+      }[status] || status;
+    }
+
+    function statusClass(status) {
+      return {
+        DONE: 'done',
+        completed: 'done',
+        SKIPPED: 'skipped',
+        skipped: 'skipped',
+        REPLACED: 'replaced',
+        replaced: 'replaced',
+        DEFERRED: 'deferred',
+        deferred: 'deferred',
+      }[status] || '';
+    }
+
+    function themeLabel(themeKey) {
+      return {
+        library_ruins: '\uC9C0\uC2DD\uC758 \uD3D0\uD5C8',
+        guild_contract: '\uAE38\uB4DC \uACC4\uC57D\uC11C',
+        blank_archive: '\uBC31\uC9C0 \uAE30\uB85D\uAD00',
+        dust_workshop: '\uBA3C\uC9C0 \uACF5\uBC29',
+        training_field: '\uD6C8\uB828\uC7A5',
+        dawn_gate: '\uC0C8\uBCBD \uBB38',
+        quiet_inn: '\uC870\uC6A9\uD55C \uC5EC\uAD00',
+        paper_citadel: '\uC11C\uB958 \uC131\uCC44',
+        message_garden: '\uC5F0\uB77D \uC815\uC6D0',
+      }[themeKey] || '\uC791\uC740 \uC6D0\uC815';
+    }
+
+    function actionLabel(action) {
+      return {
+        complete: ko.actionComplete,
+        shrink: ko.actionShrink,
+        defer: ko.actionDefer,
+        skip: ko.actionSkip,
+        undo: ko.actionUndo,
+        return: ko.actionReturn,
+        costume_active: ko.actionCostume,
+      }[action] || action;
+    }
+
+    function shortTime(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    const stepTimer = {
+      stepId: null,
+      total: 0,
+      remaining: 0,
+      running: false,
+      intervalId: null,
+    };
+    const timerStorageKey = 'stepquest_timer_state';
+    const restStorageKey = 'stepquest_rest_state';
+    const focusStorageKey = 'stepquest_focus_mode';
+
+    function timerStepId(step) {
+      return String(step?.id || step?.stepId || '');
+    }
+
+    function timerTotal(step) {
+      return Math.max(3, Math.min(180, Number(step?.estimatedSeconds || 10)));
+    }
+
+    function readStoredTimer(step, total) {
+      try {
+        const saved = JSON.parse(localStorage.getItem(timerStorageKey) || 'null');
+        if (!saved || String(saved.stepId) !== timerStepId(step)) return null;
+        const elapsed = saved.running && saved.updatedAt
+          ? Math.floor((Date.now() - Date.parse(saved.updatedAt)) / 1000)
+          : 0;
+        const remaining = Math.max(0, Math.min(total, Number(saved.remaining || total) - Math.max(0, elapsed)));
+        return {
+          stepId: saved.stepId,
+          total,
+          remaining,
+          running: Boolean(saved.running && remaining > 0),
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    function saveTimerState() {
+      if (!stepTimer.stepId) return;
+      localStorage.setItem(timerStorageKey, JSON.stringify({
+        stepId: stepTimer.stepId,
+        total: stepTimer.total,
+        remaining: stepTimer.remaining,
+        running: stepTimer.running,
+        updatedAt: new Date().toISOString(),
+      }));
+    }
+
+    function clearTimerState() {
+      localStorage.removeItem(timerStorageKey);
+    }
+
+    function readRestState() {
+      try {
+        const raw = localStorage.getItem(restStorageKey);
+        const value = raw ? JSON.parse(raw) : null;
+        if (!value?.stepId || !value?.stoppedAt) return null;
+        return value;
+      } catch {
+        return null;
+      }
+    }
+
+    function saveRestState(step, reason = 'not_now') {
+      const rest = {
+        stepId: timerStepId(step),
+        stepTitle: step?.title || '',
+        reason,
+        stoppedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(restStorageKey, JSON.stringify(rest));
+      return rest;
+    }
+
+    function clearRestState() {
+      localStorage.removeItem(restStorageKey);
+    }
+
+    function readFocusState() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(focusStorageKey) || 'null');
+        return saved?.stepId ? saved : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function setFocusMode(enabled, step = App.state.nextMicro) {
+      if (enabled && step) {
+        localStorage.setItem(focusStorageKey, JSON.stringify({
+          stepId: timerStepId(step),
+          startedAt: new Date().toISOString(),
+        }));
+      } else {
+        localStorage.removeItem(focusStorageKey);
+      }
+    }
+
+    function isFocusMode() {
+      const focus = readFocusState();
+      const step = App.state.nextMicro;
+      if (!focus || !step) return false;
+      if (String(focus.stepId) !== timerStepId(step)) {
+        setFocusMode(false);
+        return false;
+      }
+      return true;
+    }
+
+    function activeRestState() {
+      const rest = readRestState();
+      if (!rest) {
+        const deferred = App.state.deferredStep;
+        return deferred ? {
+          stepId: timerStepId(deferred),
+          stepTitle: deferred.title || '',
+          reason: 'not_now',
+          stoppedAt: deferred.deferredAt || new Date().toISOString(),
+          serverBacked: true,
+        } : null;
+      }
+      const step = App.state.nextMicro;
+      if (step && String(rest.stepId) !== timerStepId(step)) {
+        clearRestState();
+        return null;
+      }
+      return rest;
+    }
+
+    function timerSnapshot(step) {
+      const total = timerTotal(step);
+      const nextStepId = timerStepId(step);
+      if (String(stepTimer.stepId || '') !== nextStepId) {
+        window.clearInterval(stepTimer.intervalId);
+        const stored = readStoredTimer(step, total);
+        stepTimer.stepId = nextStepId || null;
+        stepTimer.total = stored?.total || total;
+        stepTimer.remaining = stored?.remaining ?? total;
+        stepTimer.running = Boolean(stored?.running);
+        stepTimer.intervalId = null;
+      }
+      if (!stepTimer.total) {
+        stepTimer.total = total;
+        stepTimer.remaining = total;
+      }
+      return stepTimer;
+    }
+
+    function formatTimer(seconds) {
+      const safe = Math.max(0, Number(seconds || 0));
+      const minutes = Math.floor(safe / 60);
+      const rest = safe % 60;
+      return minutes ? `${minutes}:${String(rest).padStart(2, '0')}` : `${rest}s`;
+    }
+
+    function updateTimerView() {
+      const time = document.getElementById('step-timer-time');
+      const status = document.getElementById('step-timer-status');
+      const bar = document.getElementById('step-timer-bar');
+      const start = document.getElementById('btn-start-timer');
+      const pause = document.getElementById('btn-pause-timer');
+      const complete = document.getElementById('btn-complete-current');
+      const total = Math.max(stepTimer.total || 1, 1);
+      const progress = Math.round(((total - stepTimer.remaining) / total) * 100);
+      if (time) time.textContent = formatTimer(stepTimer.remaining);
+      if (status) status.textContent = stepTimer.remaining <= 0 ? ko.timerDone : stepTimer.running ? ko.timerRunning : ko.timerReady;
+      if (bar) bar.style.width = `${Math.min(100, Math.max(0, progress))}%`;
+      if (start) {
+        start.disabled = stepTimer.running || stepTimer.remaining <= 0;
+        start.textContent = ko.startTimer;
+      }
+      if (pause) pause.disabled = !stepTimer.running;
+      if (complete) {
+        complete.classList.toggle('ready-to-complete', stepTimer.remaining <= 0);
+        complete.textContent = stepTimer.remaining <= 0 ? ko.completeNow : ko.complete;
+      }
+    }
+
+    function tickStepTimer() {
+      stepTimer.remaining = Math.max(0, stepTimer.remaining - 1);
+      if (stepTimer.remaining <= 0) {
+        stopTimerInterval();
+        saveTimerState();
+        App.log(`${ko.timerDoneLog}: ${App.state.nextMicro?.title || ko.oneNow}`);
+        App.toast(ko.timerDoneToast);
+      } else {
+        saveTimerState();
+      }
+      updateTimerView();
+    }
+
+    function stopTimerInterval() {
+      window.clearInterval(stepTimer.intervalId);
+      stepTimer.intervalId = null;
+      stepTimer.running = false;
+    }
+
+    function ensureTimerInterval() {
+      if (!stepTimer.running || stepTimer.intervalId || stepTimer.remaining <= 0) return;
+      stepTimer.intervalId = window.setInterval(tickStepTimer, 1000);
+    }
+
+    function startStepTimer() {
+      if (!App.state.nextMicro || stepTimer.running || stepTimer.remaining <= 0) return;
+      stepTimer.running = true;
+      setFocusMode(true);
+      saveTimerState();
+      App.log(`${ko.timerStartedLog}: ${App.state.nextMicro.title}`);
+      ensureTimerInterval();
+      renderPage();
+    }
+
+    function pauseStepTimer() {
+      stopTimerInterval();
+      saveTimerState();
+      updateTimerView();
+    }
+
+    function resetStepTimer() {
+      stopTimerInterval();
+      stepTimer.total = timerTotal(App.state.nextMicro);
+      stepTimer.remaining = stepTimer.total;
+      setFocusMode(false);
+      saveTimerState();
+      updateTimerView();
+    }
+
+    function renderGoalForm() {
+      return `
+        <section class="panel goal-form-panel">
+          <h2>${ko.addGoal}</h2>
+          <p class="meta">${ko.addGoalMeta}</p>
+          <div class="quick-goal-row">
+            <label class="quick-goal-input">
+              <span>${ko.goal}</span>
+              <input id="goal-title" type="text" maxlength="140" placeholder="${ko.placeholder}" />
+            </label>
+            <button id="btn-create-stepquest">${ko.create}</button>
+          </div>
+          <p class="meta quick-goal-meta">${ko.quickStart}</p>
+          <details class="goal-details">
+            <summary>${ko.goalDetails}</summary>
+            <p class="meta">${ko.detailsMeta}</p>
+            <div class="goal-form">
+              <label>
+                <span>${ko.category}</span>
+                <select id="goal-category">
+                  <option value="auto">${ko.auto}</option>
+                  <option value="study">${ko.study}</option>
+                  <option value="work">${ko.work}</option>
+                  <option value="writing">${ko.writing}</option>
+                  <option value="cleaning">${ko.cleaning}</option>
+                  <option value="exercise">${ko.exercise}</option>
+                  <option value="wake">${ko.wake}</option>
+                  <option value="sleep">${ko.sleep}</option>
+                  <option value="life_admin">${ko.lifeAdmin}</option>
+                  <option value="relationship">${ko.relationship}</option>
+                </select>
+              </label>
+              <label>
+                <span>${ko.burden}</span>
+                <select id="goal-burden">
+                  <option value="4">4</option>
+                  <option value="3">3</option>
+                  <option value="2">2</option>
+                  <option value="1">1</option>
+                </select>
+              </label>
+              <label>
+                <span>${ko.energy}</span>
+                <select id="goal-energy">
+                  <option value="low">${ko.low}</option>
+                  <option value="medium">${ko.medium}</option>
+                  <option value="high">${ko.high}</option>
+                </select>
+              </label>
+              <label>
+                <span>${ko.targetAt}</span>
+                <input id="goal-target-at" type="datetime-local" />
+              </label>
+              <label>
+                <span>${ko.recurrence}</span>
+                <select id="goal-recurrence">
+                  <option value="">${ko.noRepeat}</option>
+                  <option value="daily">${ko.daily}</option>
+                  <option value="weekly">${ko.weekly}</option>
+                </select>
+              </label>
+              <label>
+                <span>${ko.location}</span>
+                <input id="goal-location" type="text" maxlength="80" placeholder="${ko.location}" />
+              </label>
+              <label>
+                <span>${ko.availableMinutes}</span>
+                <input id="goal-available-minutes" type="number" min="1" max="180" placeholder="${ko.minutesSuffix}" />
+              </label>
+              <label>
+                <span>${ko.obstacle}</span>
+                <select id="goal-obstacle">
+                  <option value="">${ko.noneSelected}</option>
+                  <option value="too_big">${ko.tooBig}</option>
+                  <option value="no_material">${ko.noMaterial}</option>
+                  <option value="unclear">${ko.unclear}</option>
+                  <option value="tired">${ko.tired}</option>
+                  <option value="wrong_place">${ko.wrongPlace}</option>
+                  <option value="not_now">${ko.notNow}</option>
+                </select>
+              </label>
+            </div>
+          </details>
+        </section>
+      `;
+    }
+
+    function renderCurrentStep(step) {
+      if (!step) {
+        return `
+          <section class="panel step-runner empty-runner">
+            <span class="badge gold">${ko.idleBadge}</span>
+            <h2>${ko.idleTitle}</h2>
+            <p class="meta">${ko.idleMeta}</p>
+          </section>
+        `;
+      }
+
+      const reward = App.rewardForStep(step);
+      const timer = timerSnapshot(step);
+      const timerProgress = Math.round(((Math.max(timer.total, 1) - timer.remaining) / Math.max(timer.total, 1)) * 100);
+      const focus = isFocusMode();
+      return `
+        <section class="panel step-runner ${focus ? 'focus-runner' : ''}">
+          <div class="runner-top">
+            <span class="badge good">${focus ? ko.focusMode : ko.oneNow}</span>
+            <span class="badge">${h(step.estimatedSeconds || 10)}s</span>
+          </div>
+          <h2>${h(step.title)}</h2>
+          <p class="meta">${focus ? ko.focusMessage : ko.successRule}</p>
+          <div class="action-timer" aria-live="polite">
+            <div>
+              <span id="step-timer-status" class="badge good">${timer.remaining <= 0 ? ko.timerDone : timer.running ? ko.timerRunning : ko.timerReady}</span>
+              <strong id="step-timer-time">${formatTimer(timer.remaining)}</strong>
+              <p class="meta">${ko.secondsLeft}</p>
+            </div>
+            <div class="timer-track"><i id="step-timer-bar" style="width:${Math.min(100, Math.max(0, timerProgress))}%"></i></div>
+            <div class="section-actions timer-actions">
+              <button id="btn-start-timer" class="ok" ${timer.running || timer.remaining <= 0 ? 'disabled' : ''}>${ko.startTimer}</button>
+              <button id="btn-pause-timer" class="alt" ${timer.running ? '' : 'disabled'}>${ko.pauseTimer}</button>
+              <button id="btn-reset-timer" class="ghost">${ko.resetTimer}</button>
+            </div>
+          </div>
+          <div class="reward-preview">
+            <div><strong>+${h(reward.xp)}</strong><span>${ko.rewardXp}</span></div>
+            <div><strong>+${h(reward.material)}</strong><span>${ko.material}</span></div>
+            <div><strong>${ko.confirmed}</strong><span>${ko.feedback}</span></div>
+          </div>
+          <div class="primary-actions">
+            <button id="btn-complete-current" class="ok">${ko.complete}</button>
+            <button id="btn-open-shrink" class="alt">${ko.shrink}</button>
+            <button id="btn-skip-current" class="warn">${ko.skip}</button>
+          </div>
+          <div id="shrink-panel" class="shrink-panel" hidden>
+            <p class="meta">${ko.shrinkMeta}</p>
+            <div class="reason-grid">
+              <button class="reason-button" data-reason="too_big">${ko.tooBig}</button>
+              <button class="reason-button" data-reason="no_material">${ko.noMaterial}</button>
+              <button class="reason-button" data-reason="unclear">${ko.unclear}</button>
+              <button class="reason-button" data-reason="tired">${ko.tired}</button>
+              <button class="reason-button" data-reason="wrong_place">${ko.wrongPlace}</button>
+              <button class="reason-button" data-reason="not_now">${ko.notNow}</button>
+            </div>
+          </div>
+          <div class="section-actions quiet-actions">
+            <button id="btn-stop-today" class="ghost">${ko.stop}</button>
+            ${focus ? `<button id="btn-exit-focus" class="ghost">${ko.exitFocus}</button>` : ''}
+          </div>
+        </section>
+      `;
+    }
+
+    function renderRestPanel(rest) {
+      const stoppedAt = rest?.stoppedAt ? new Date(rest.stoppedAt).toLocaleString() : '';
+      return `
+        <section class="panel step-runner rest-runner">
+          <div class="runner-top">
+            <span class="badge gold">${ko.stop}</span>
+            <span class="badge">${ko.returnTitle}</span>
+          </div>
+          <h2>${ko.restTitle}</h2>
+          <p class="meta">${ko.restMessage}</p>
+          <div class="rest-card">
+            <div class="stat"><label>${ko.restStep}</label><strong>${h(rest?.stepTitle || App.state.nextMicro?.title || ko.noNextAction)}</strong></div>
+            <div class="stat"><label>${ko.restAt}</label><strong>${h(stoppedAt)}</strong></div>
+          </div>
+          <div class="primary-actions rest-actions">
+            <button id="btn-return-small" class="ok">${ko.returnSmallAction}</button>
+            <button id="btn-resume-original" class="alt">${ko.resumeOriginal}</button>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderExpeditionSummary() {
+      const weekly = App.state.weekly[0];
+      const progress = weekly ? Math.round((weekly.completedCount / Math.max(weekly.targetCount, 1)) * 100) : 0;
+      const dungeons = App.state.dungeons || [];
+      const statusText = {
+        active: ko.activeStatus,
+        paused: ko.pausedStatus,
+        cleared: ko.clearedStatus,
+      };
+      return `
+        <section class="tile-grid expedition-grid" id="expedition">
+          <div class="panel">
+            <h2>${ko.expedition}</h2>
+            ${dungeons.length ? dungeons.map((dungeon) => `
+              <div class="dungeon-card ${h(dungeon.status || 'active')}">
+                <div class="progress-head">
+                  <strong>${h(dungeon.name || dungeon.title)}</strong>
+                  <span>${h(statusText[dungeon.status] || dungeon.status || ko.activeStatus)}</span>
+                </div>
+                <p class="meta">${ko.dungeonTheme}: ${h(themeLabel(dungeon.themeKey))}</p>
+                <div class="progress">
+                  <div class="progress-head"><span>${ko.weeklyProgress}</span><span>${h(dungeon.progress || 0)}%</span></div>
+                  <div class="progress-bar"><i style="width:${Math.min(Number(dungeon.progress || 0), 100)}%"></i></div>
+                </div>
+                <div class="dungeon-facts">
+                  <div class="stat"><label>${ko.actionsDone}</label><strong>${h(dungeon.completedSteps || 0)}/${h(dungeon.totalSteps || 0)}</strong></div>
+                  <div class="stat"><label>${ko.lastAction}</label><strong>${h(dungeon.lastCompletedStep?.title || ko.noLastAction)}</strong></div>
+                  <div class="stat"><label>${ko.nextAction}</label><strong>${h(dungeon.nextStep?.title || ko.noNextAction)}</strong></div>
+                </div>
+                <div class="section-actions">
+                  ${dungeon.status === 'paused'
+                    ? `<button class="btn-dungeon-status ok" data-goal-id="${h(dungeon.goalId)}" data-status="ACTIVE">${ko.resume}</button>`
+                    : `<button class="btn-dungeon-status ghost" data-goal-id="${h(dungeon.goalId)}" data-status="PAUSED">${ko.pause}</button>`}
+                  <button class="btn-regenerate-dungeon alt" data-goal-id="${h(dungeon.goalId)}">${ko.regenerate}</button>
+                  <button class="btn-dungeon-status warn" data-goal-id="${h(dungeon.goalId)}" data-status="ARCHIVED">${ko.archiveAction}</button>
+                </div>
+              </div>
+            `).join('') : weekly ? `
+              <strong>${h(weekly.title)}</strong>
+              <div class="progress">
+                <div class="progress-head"><span>${ko.weeklyProgress}</span><span>${progress}%</span></div>
+                <div class="progress-bar"><i style="width:${progress}%"></i></div>
+              </div>
+              <p class="meta">${h(weekly.completedCount)}/${h(weekly.targetCount)} ${ko.actionsDone}</p>
+            ` : `<div class="empty">${ko.noQuest}</div>`}
+          </div>
+          <div class="panel" id="character">
+            <h2>${ko.character}</h2>
+            ${App.state.player ? `
+              <strong>${h(App.state.player.equippedCostumeName || '\uCD08\uB3D9 \uBAA8\uD5D8\uAC00')}</strong>
+              <p class="meta">Lv.${h(App.state.player.level || 1)} | ${ko.material} ${h(App.state.player.goalCoin || 0)}</p>
+              <p class="meta">${ko.keepBook}</p>
+              <div class="costume-grid">
+                ${(App.state.shop.length ? App.state.shop : App.basicCostumes).map((costume) => `
+                  <div class="costume-card ${costume.equipped ? 'equipped' : ''} ${costume.unlocked ? '' : 'locked'}">
+                    <div class="progress-head">
+                      <strong>${h(costume.name)}</strong>
+                      <span>${costume.equipped ? ko.equipped : costume.unlocked ? `Lv.${h(costume.level || 1)}` : ko.locked}</span>
+                    </div>
+                    <div class="sub">${h(costume.role)}</div>
+                    <div class="sub"><b>${ko.passive}</b> ${h(costume.passiveAbility || costume.ability || '')}</div>
+                    <div class="sub"><b>${ko.active}</b> ${h(costume.activeAbility || costume.ability || '')}</div>
+                    <div class="sub costume-charge ${costume.activeCharge?.available === false ? 'waiting' : 'ready'}"><b>${ko.activeCharge}</b> ${costume.activeCharge?.available === false ? `${h(costume.activeCharge.remaining || 0)}${ko.activeRecharge}` : ko.activeReady}</div>
+                    <div class="progress">
+                      <div class="progress-head"><span>${ko.unlock}: ${h(costume.unlockText || '')}</span><span>${h(costume.progress?.current ?? (costume.unlocked ? 1 : 0))}/${h(costume.progress?.target ?? 1)}</span></div>
+                      <div class="progress-bar"><i style="width:${h(costume.progress?.percent ?? (costume.unlocked ? 100 : 0))}%"></i></div>
+                    </div>
+                    <div class="section-actions">
+                      <button class="alt btn-equip-costume" data-costume-id="${h(costume.id)}" ${costume.unlocked && !costume.equipped ? '' : 'disabled'}>${costume.equipped ? ko.equipped : costume.unlocked ? ko.equip : ko.locked}</button>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+              <div class="section-actions">
+                <button id="btn-costume-active" class="alt" ${(App.state.shop.find((costume) => costume.equipped)?.activeCharge?.available === false) ? 'disabled' : ''}>${ko.useActive}</button>
+              </div>
+            ` : `<div class="empty">${ko.guestStart}</div>`}
+          </div>
+        </section>
+      `;
+    }
+
+    function renderReturnPanel() {
+      if (!App.state.returnInfo?.eligible) return '';
+      return `
+        <section class="panel">
+          <div class="runner-top">
+            <span class="badge gold">${ko.returnTitle}</span>
+            <span class="badge">${Math.floor(App.state.returnInfo.inactiveHours || 0)}h</span>
+          </div>
+          <h2>${ko.returnMessage}</h2>
+          <div class="section-actions">
+            <button id="btn-start-return" class="ok">${ko.returnAction}</button>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderGamePulse() {
+      const event = App.state.gameEvent;
+      if (!event) return '';
+      const eventTitle = event.type === 'return'
+        ? ko.returnOpened
+        : event.type === 'regenerate'
+          ? ko.regenerated
+          : event.type === 'shrink'
+          ? ko.shrinkCreated
+          : h(event.stepTitle || ko.reward);
+      if (event.type === 'shrink' || event.type === 'regenerate') {
+        return `
+          <section class="panel reward-pulse shrink-pulse">
+            <div class="progress-head">
+              <strong>${event.type === 'regenerate' ? ko.regenerated : ko.shrinkCreated}</strong>
+              <span>${ko.comboFlow} ${h(event.combo || 0)}</span>
+            </div>
+            <h2>${h(event.nextStepTitle || event.stepTitle || ko.shrinkCreated)}</h2>
+            <div class="shrink-map">
+              <div><span>${ko.shrinkFrom}</span><strong>${h(event.originalStepTitle || ko.oneNow)}</strong></div>
+              <div><span>${ko.shrinkReason}</span><strong>${h(event.shrinkReasonLabel || ko.notNow)}</strong></div>
+              <div><span>${ko.shrinkTo}</span><strong>${h(event.nextStepTitle || event.stepTitle || ko.oneNow)}</strong></div>
+              <div><span>${ko.shrinkSteps}</span><strong>${h(event.replacementCount || 1)}</strong></div>
+            </div>
+            <p class="reward-note"><b>${ko.shrinkStrategy}</b> ${h(event.shrinkStrategy || ko.shrinkMeta)}</p>
+          </section>
+        `;
+      }
+      if (event.type === 'costume_active') {
+        return `
+          <section class="panel reward-pulse costume-pulse">
+            <div class="progress-head">
+              <strong>${ko.costumeOpened}</strong>
+              <span>${h(event.costumeName || ko.character)}</span>
+            </div>
+            <h2>${h(event.stepTitle || ko.oneNow)}</h2>
+            <div class="costume-pulse-grid">
+              <div><span>${ko.costumeStrategy}</span><strong>${h(event.activeAbility || event.costumeRole || ko.active)}</strong></div>
+              <div><span>${ko.costumeFirstStep}</span><strong>${h(event.stepTitle || ko.oneNow)}</strong></div>
+              <div><span>${ko.costumeSteps}</span><strong>${h(event.createdSteps || 1)}</strong></div>
+              <div><span>${ko.dungeonPushed}</span><strong>${h(event.dungeonProgress || 0)}%</strong></div>
+            </div>
+          </section>
+        `;
+      }
+      if (event.type === 'skip') {
+        return `
+          <section class="panel reward-pulse skip-pulse">
+            <div class="progress-head">
+              <strong>${ko.skipSaved}</strong>
+              <span>${ko.comboFlow} ${h(event.combo || 0)}</span>
+            </div>
+            <h2>${h(event.nextStepTitle || ko.noNextAction)}</h2>
+            <div class="skip-map">
+              <div><span>${ko.skippedFrom}</span><strong>${h(event.skippedStepTitle || ko.oneNow)}</strong></div>
+              <div><span>${ko.skippedTo}</span><strong>${h(event.nextStepTitle || ko.noNextAction)}</strong></div>
+              <div><span>${ko.dungeonPushed}</span><strong>${h(event.dungeonProgress || 0)}%</strong></div>
+            </div>
+            <p class="reward-note">${ko.skipNote}</p>
+          </section>
+        `;
+      }
+      if (event.type === 'undo') {
+        return `
+          <section class="panel reward-pulse undo-pulse">
+            <div class="progress-head">
+              <strong>${ko.undoDone}</strong>
+              <span>${ko.undoReward}</span>
+            </div>
+            <h2>${h(event.nextStepTitle || event.stepTitle || ko.oneNow)}</h2>
+            <div class="undo-map">
+              <div><span>${ko.rewardXp}</span><strong>-${h(event.reversedXp || 0)}</strong></div>
+              <div><span>${ko.material}</span><strong>-${h(event.reversedMaterial || 0)}</strong></div>
+              <div><span>${ko.nextEntrance}</span><strong>${h(event.nextStepTitle || ko.oneNow)}</strong></div>
+            </div>
+          </section>
+        `;
+      }
+      const facilityLabel = event.facilityLabel || (event.facilityKey ? App.facilityInfo(event.facilityKey).label : ko.villageGrew);
+      const facilityDetail = event.facilityDetail || (event.facilityKey ? App.facilityInfo(event.facilityKey).detail : '');
+      const facilityExample = event.facilityExample || (event.facilityKey ? App.facilityInfo(event.facilityKey).example : '');
+      return `
+        <section class="panel reward-pulse">
+          <div class="progress-head">
+            <strong>${ko.reward}</strong>
+            <span>${event.chestReady ? ko.chestOpened : `${ko.comboFlow} ${h(event.combo || 0)}`}</span>
+          </div>
+          <h2>${eventTitle}</h2>
+          <div class="reward-pulse-grid">
+            <div><strong>+${h(event.xp || 0)}</strong><span>${ko.rewardXp}</span></div>
+            <div><strong>+${h(event.material || 0)}</strong><span>${ko.material}</span></div>
+            <div><strong>${h(event.dungeonProgress || 0)}%</strong><span>${ko.dungeonPushed}</span></div>
+            <div class="facility-reward">
+              <strong>${h(facilityLabel)} +${h(event.facilityXp || 0)}</strong>
+              <span>${event.returnCompleted ? ko.returnCompleted : event.facilityLeveledUp ? `Lv.${h(event.facilityLevel || 1)} ${ko.facilityReward}` : ko.facilityReward}</span>
+            </div>
+          </div>
+          ${Number(event.costumeMultiplier || 1) > 1 ? `
+            <p class="reward-note"><b>${ko.costumeBonus}</b> x${h(Number(event.costumeMultiplier || 1).toFixed(2))}</p>
+          ` : ''}
+          ${event.nextStepTitle || event.clearedGoalTitle ? `
+            <div class="next-entrance">
+              <span>${event.clearedGoalTitle ? ko.goalCleared : ko.nextEntrance}</span>
+              <strong>${h(event.clearedGoalTitle || event.nextStepTitle || ko.noNextEntrance)}</strong>
+            </div>
+          ` : ''}
+          ${event.type === 'complete' && event.stepId ? `
+            <div class="section-actions undo-actions">
+              <button id="btn-undo-complete" class="ghost" data-step-id="${h(event.stepId)}">${ko.undoComplete}</button>
+            </div>
+          ` : ''}
+          ${facilityDetail || facilityExample ? `
+            <p class="reward-note">${h(facilityDetail)} ${facilityExample ? `${ko.facilityActions}: ${h(facilityExample)}` : ''}</p>
+          ` : ''}
+        </section>
+      `;
+    }
+
+    function renderReminderStats() {
+      const stats = App.state.stats || { attempts: {}, steps: {}, rewards: {} };
+      const reminderAt = App.state.reminder?.at ? new Date(App.state.reminder.at).toLocaleTimeString() : ko.noReminder;
+      const hasReminderAction = Boolean(App.state.reminder?.stepId || App.state.nextMicro);
+      return `
+        <section class="tile-grid">
+          <div class="panel">
+            <h2>${ko.reminder}</h2>
+            <div class="goal-form reminder-form">
+              <label>
+                <span>${ko.reminderMinutes}</span>
+                <input id="reminder-minutes" type="number" min="1" max="1440" value="10" />
+              </label>
+            </div>
+            <div class="section-actions">
+              <button id="btn-save-reminder" class="alt">${ko.saveReminder}</button>
+            </div>
+            <p class="meta">${h(reminderAt)}</p>
+            ${hasReminderAction ? `
+              <div class="reminder-action-box ${App.state.reminderDue ? 'due' : ''}">
+                <div class="progress-head">
+                  <strong>${ko.reminderReady}</strong>
+                  <span>${h(App.state.nextMicro?.estimatedSeconds || 10)}s</span>
+                </div>
+                <p class="meta">${ko.reminderActionMeta}</p>
+                <div class="section-actions">
+                  <button class="ok btn-reminder-action" data-action="complete">${ko.complete}</button>
+                  <button class="alt btn-reminder-action" data-action="snooze">${ko.snoozeFive}</button>
+                  <button class="ghost btn-reminder-action" data-action="shrink">${ko.shrink}</button>
+                  <button class="warn btn-reminder-action" data-action="skip">${ko.skip}</button>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+          <div class="panel">
+            <h2>${ko.stats}</h2>
+            <div class="stat-grid">
+              <div class="stat"><label>${ko.totalSteps}</label><strong>${h(stats.steps?.totalSteps || 0)}</strong></div>
+              <div class="stat"><label>${ko.completedSteps}</label><strong>${h(stats.steps?.completedSteps || 0)}</strong></div>
+              <div class="stat"><label>${ko.shrinkCount}</label><strong>${h(stats.attempts?.shrink || 0)}</strong></div>
+              <div class="stat"><label>${ko.deferCount}</label><strong>${h(stats.attempts?.defer || 0)}</strong></div>
+            </div>
+            <div class="progress">
+              <div class="progress-head"><span>${ko.returnMarks}</span><span>${h(stats.rewards?.return_mark || App.state.player?.returnMarks || 0)}</span></div>
+              <div class="progress-bar"><i style="width:${Math.min((stats.steps?.completedSteps || 0) * 12, 100)}%"></i></div>
+            </div>
+            <div class="recent-trace">
+              <div class="progress-head"><strong>${ko.recentTrace}</strong><span>${h((stats.recent || []).length)}</span></div>
+              ${(stats.recent || []).length ? `
+                <div class="trace-list">
+                  ${(stats.recent || []).map((item) => `
+                    <div class="trace-item">
+                      <span class="badge">${h(actionLabel(item.action))}</span>
+                      <strong>${h(item.stepTitle || ko.oneNow)}</strong>
+                      <small>${h(shortTime(item.createdAt))}${item.reason ? ` · ${h(item.reason)}` : ''}</small>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : `<p class="meta">${ko.noRecentTrace}</p>`}
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderVillage() {
+      const village = App.state.village || [];
+      return `
+        <section class="panel" id="village">
+          <h2>${ko.village}</h2>
+          ${village.length ? `
+            <div class="village-grid">
+              ${village.map((facility) => {
+                const xp = Number(facility.xp || 0);
+                const next = Math.max(5, Number(facility.level || 1) * 5);
+                const progress = Math.min(100, Math.round((xp % 5) * 20));
+                const info = App.facilityInfo(facility.facilityKey);
+                const left = Math.max(0, next - xp);
+                return `
+                  <div class="village-facility">
+                    <div class="progress-head">
+                      <strong>${h(facility.label || facility.facilityKey)}</strong>
+                      <span>Lv.${h(facility.level || 1)}</span>
+                    </div>
+                    <div class="progress-bar"><i style="width:${progress}%"></i></div>
+                    <div class="sub">${ko.xp} ${h(xp)}/${h(next)} | ${ko.villageMaterial} ${h(facility.material || 0)}</div>
+                    <p class="facility-detail">${h(facility.detail || info.detail)}</p>
+                    <div class="facility-example">${ko.facilityActions}: ${h(facility.example || info.example)}</div>
+                    <div class="facility-next">${ko.nextVillageLevel} ${h(left)} XP</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          ` : `<div class="empty">${ko.villageEmpty}</div>`}
+        </section>
+      `;
+    }
+
+    function renderChain() {
+      const items = App.state.micro || [];
+      if (!items.length) return '';
+      return `
+        <details class="panel chain-panel">
+          <summary>${ko.chain}</summary>
+          <div class="list chain-list">
+            ${items.map((item) => `
+              <div class="list-item chain-item ${h(statusClass(item.status))}">
+                <strong>${h(item.title)}</strong>
+                <div class="sub">${h(item.estimatedSeconds || 10)}s | ${h(statusLabel(item.status))}</div>
+              </div>
+            `).join('')}
+          </div>
+        </details>
+      `;
+    }
+
+    function wirePage() {
+      document.getElementById('btn-create-stepquest')?.addEventListener('click', async () => {
+        const title = document.getElementById('goal-title').value.trim();
+        if (!title) {
+          App.toast(ko.titleNeeded, true);
+          return;
+        }
+        try {
+          await App.createStepQuestGoal({
+            title,
+            category: document.getElementById('goal-category').value,
+            burdenLevel: Number(document.getElementById('goal-burden').value),
+            energyLevel: document.getElementById('goal-energy').value,
+            targetAt: document.getElementById('goal-target-at').value ? new Date(document.getElementById('goal-target-at').value).toISOString() : undefined,
+            recurrenceRule: document.getElementById('goal-recurrence').value || undefined,
+            location: document.getElementById('goal-location').value.trim() || undefined,
+            availableMinutes: document.getElementById('goal-available-minutes').value ? Number(document.getElementById('goal-available-minutes').value) : undefined,
+            obstacle: document.getElementById('goal-obstacle').value || undefined,
+          });
+          clearTimerState();
+          setFocusMode(false);
+          App.toast(ko.created);
+          renderPage();
+        } catch (error) {
+          App.toast(`${ko.failedCreate}: ${error.message}`, true);
+        }
+      });
+
+      document.getElementById('btn-complete-current')?.addEventListener('click', async () => {
+        try {
+          pauseStepTimer();
+          clearTimerState();
+          setFocusMode(false);
+          await App.completeMicro(App.state.nextMicro.id);
+          App.toast(App.t.completed);
+          renderPage();
+        } catch (error) {
+          App.toast(`${ko.failedComplete}: ${error.message}`, true);
+        }
+      });
+
+      document.getElementById('btn-open-shrink')?.addEventListener('click', () => {
+        const panel = document.getElementById('shrink-panel');
+        if (panel) panel.hidden = !panel.hidden;
+      });
+
+      document.getElementById('btn-undo-complete')?.addEventListener('click', async (event) => {
+        try {
+          clearTimerState();
+          setFocusMode(false);
+          await App.undoMicro(event.currentTarget.dataset.stepId);
+          App.toast(ko.undoDone);
+          renderPage();
+        } catch (error) {
+          App.toast(`${ko.undoFailed}: ${error.message}`, true);
+        }
+      });
+
+      document.getElementById('btn-start-timer')?.addEventListener('click', startStepTimer);
+      document.getElementById('btn-pause-timer')?.addEventListener('click', pauseStepTimer);
+      document.getElementById('btn-reset-timer')?.addEventListener('click', resetStepTimer);
+      document.getElementById('btn-exit-focus')?.addEventListener('click', () => {
+        setFocusMode(false);
+        renderPage();
+      });
+
+      document.querySelectorAll('.reason-button').forEach((button) => {
+        button.addEventListener('click', async () => {
+          try {
+            clearTimerState();
+            setFocusMode(false);
+            await App.shrinkMicro(App.state.nextMicro.id, button.dataset.reason);
+            App.toast(App.t.shrunk);
+            renderPage();
+          } catch (error) {
+            App.toast(`${ko.failedShrink}: ${error.message}`, true);
+          }
+        });
+      });
+
+      document.getElementById('btn-skip-current')?.addEventListener('click', async () => {
+        try {
+          clearTimerState();
+          setFocusMode(false);
+          await App.skipMicro(App.state.nextMicro.id);
+          App.toast(App.t.skipped);
+          renderPage();
+        } catch (error) {
+          App.toast(`${ko.failedSkip}: ${error.message}`, true);
+        }
+      });
+
+      document.getElementById('btn-stop-today')?.addEventListener('click', () => {
+        clearTimerState();
+        setFocusMode(false);
+        const step = App.state.nextMicro;
+        App.deferMicro(App.state.nextMicro.id, 'not_now')
+          .then(() => {
+            saveRestState(step, 'not_now');
+            App.toast(ko.restSaved);
+            renderPage();
+          })
+          .catch((error) => App.toast(`${ko.failedSkip}: ${error.message}`, true));
+      });
+
+      document.getElementById('btn-resume-original')?.addEventListener('click', async () => {
+        try {
+          const rest = readRestState();
+          const deferred = App.state.deferredStep;
+          const stepId = deferred?.id || (!App.state.token ? rest?.stepId : null);
+          if (stepId) await App.resumeMicro(stepId);
+          clearRestState();
+          clearTimerState();
+          setFocusMode(false);
+          App.toast(ko.returnMessage);
+          renderPage();
+        } catch (error) {
+          App.toast(`${ko.returnFailed}: ${error.message}`, true);
+        }
+      });
+
+      document.getElementById('btn-return-small')?.addEventListener('click', async () => {
+        try {
+          const rest = readRestState();
+          const stepId = rest?.stepId || App.state.nextMicro?.id;
+          if (!stepId) return;
+          clearRestState();
+          clearTimerState();
+          setFocusMode(false);
+          await App.shrinkMicro(stepId, 'not_now');
+          App.toast(ko.shrinkCreated);
+          renderPage();
+        } catch (error) {
+          App.toast(`${ko.returnFailed}: ${error.message}`, true);
+        }
+      });
+
+      document.getElementById('btn-costume-active')?.addEventListener('click', async () => {
+        try {
+          const equipped = App.state.shop.find((costume) => costume.equipped)?.id || App.state.player?.equippedCostumeId || 'starter_mage';
+          clearTimerState();
+          setFocusMode(false);
+          await App.activateCostume(equipped);
+          App.toast(ko.costumeActivated);
+          renderPage();
+        } catch (error) {
+          App.toast(`${ko.failedShrink}: ${error.message}`, true);
+        }
+      });
+
+      document.querySelectorAll('.btn-equip-costume').forEach((button) => {
+        button.addEventListener('click', async () => {
+          try {
+            await App.equipCostume(button.dataset.costumeId);
+            App.toast(ko.costumeEquipped);
+            renderPage();
+          } catch (error) {
+            App.toast(error.message, true);
+          }
+        });
+      });
+
+      document.querySelectorAll('.btn-dungeon-status').forEach((button) => {
+        button.addEventListener('click', async () => {
+          try {
+            await App.setDungeonStatus(button.dataset.goalId, button.dataset.status);
+            App.toast(button.dataset.status === 'ACTIVE' ? ko.dungeonResumed : button.dataset.status === 'PAUSED' ? ko.dungeonPaused : ko.dungeonArchived);
+            renderPage();
+          } catch (error) {
+            App.toast(error.message, true);
+          }
+        });
+      });
+
+      document.querySelectorAll('.btn-regenerate-dungeon').forEach((button) => {
+        button.addEventListener('click', async () => {
+          try {
+            clearTimerState();
+            setFocusMode(false);
+            await App.regenerateGoal(button.dataset.goalId, 'too_big');
+            App.toast(ko.regenerated);
+            renderPage();
+          } catch (error) {
+            App.toast(`${ko.failedRegenerate}: ${error.message}`, true);
+          }
+        });
+      });
+
+      document.getElementById('btn-start-return')?.addEventListener('click', async () => {
+        try {
+          clearTimerState();
+          await App.startReturnFlow();
+          App.toast(ko.returnMessage);
+          renderPage();
+        } catch (error) {
+          App.toast(`${ko.failedReturn}: ${error.message}`, true);
+        }
+      });
+
+      document.getElementById('btn-save-reminder')?.addEventListener('click', async () => {
+        try {
+          const minutes = Number(document.getElementById('reminder-minutes').value || 10);
+          await App.saveReminder(minutes);
+          App.toast(ko.reminderSaved);
+          renderPage();
+        } catch (error) {
+          App.toast(`${ko.failedReminder}: ${error.message}`, true);
+        }
+      });
+
+      document.querySelectorAll('.btn-reminder-action').forEach((button) => {
+        button.addEventListener('click', async () => {
+          try {
+            if (button.dataset.action !== 'snooze') clearTimerState();
+            await App.handleReminderAction(button.dataset.action, 5);
+            App.toast(button.dataset.action === 'snooze' ? ko.reminderSnoozed : ko.completed);
+            renderPage();
+          } catch (error) {
+            App.toast(`${ko.reminderActionFailed}: ${error.message}`, true);
+          }
+        });
+      });
+
+      updateTimerView();
+      ensureTimerInterval();
+    }
+
+    function renderPage() {
+      App.renderShell(ko.pageTitle);
+      const root = document.getElementById('page-root');
+      const rest = activeRestState();
+      const focus = !rest && isFocusMode();
+      root.classList.toggle('focus-page', focus);
+      root.innerHTML = focus
+        ? [
+          renderCurrentStep(App.state.nextMicro),
+          renderGamePulse(),
+        ].join('')
+        : [
+          renderGoalForm(),
+          rest ? renderRestPanel(rest) : renderCurrentStep(App.state.nextMicro),
+          renderGamePulse(),
+          renderReturnPanel(),
+          renderReminderStats(),
+          renderExpeditionSummary(),
+          renderVillage(),
+          renderChain(),
+        ].join('');
+      wirePage();
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        await App.refresh();
+      } catch (error) {
+        App.log(`${ko.initFailed}: ${error.message}`);
+      }
+      renderPage();
+    });
+
+    window.addEventListener('stepquest:refresh', renderPage);
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((error) => {
+          App.log(`service worker: ${error.message}`);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
