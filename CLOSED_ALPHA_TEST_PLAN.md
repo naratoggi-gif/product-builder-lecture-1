@@ -77,7 +77,7 @@ Primary metrics:
 - Smaller used -> completed.
 - Return offered -> return started.
 - Guest import completed.
-- D1 and D7 revisit by anonymous user or account user.
+- D1 and D7 revisit by anonymous user or account user. In the JSON report, check `retention.d1RetentionPct` and `retention.d7RetentionPct`.
 
 Secondary metrics:
 

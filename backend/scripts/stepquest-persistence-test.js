@@ -85,6 +85,7 @@ assert.ok(stagingRunbook.includes('ENABLE_SUPER_MODE=false'), 'staging runbook m
 assert.ok(stagingRunbook.includes('npm run analytics:report'), 'staging runbook must explain how to pull product event metrics');
 assert.ok(alphaTestPlan.includes('ADHD-friendly execution helper'), 'closed alpha plan must avoid medical treatment positioning');
 assert.ok(alphaTestPlan.includes('Goal created -> first step completed'), 'closed alpha plan must define the primary execution metric');
+assert.ok(alphaTestPlan.includes('retention.d1RetentionPct'), 'closed alpha plan must map D1 retention to the report output');
 assert.ok(alphaTestPlan.includes('Production super login succeeds'), 'closed alpha plan must include security stop conditions');
 assert.ok(renderBlueprint.includes('healthCheckPath: /health'), 'Render blueprint must use the health endpoint');
 assert.ok(renderBlueprint.includes('rootDir: backend'), 'Render blueprint must deploy the backend directory');
@@ -98,6 +99,8 @@ assert.ok(stagingSmoke.includes('/stepquest/costumes/one_punch_hero/equip'), 'st
 assert.ok(productEventReport.includes('goalToFirstCompletionPct'), 'product event report must expose goal-to-completion conversion');
 assert.ok(productEventReport.includes('shrinkToCompletionPct'), 'product event report must expose shrink-to-completion conversion');
 assert.ok(productEventReport.includes('returnOfferToStartPct'), 'product event report must expose return-start conversion');
+assert.ok(productEventReport.includes('d1RetentionPct'), 'product event report must expose D1 retention');
+assert.ok(productEventReport.includes('d7RetentionPct'), 'product event report must expose D7 retention');
 assert.ok(ciWorkflow.includes('postgres:16'), 'CI must run with a PostgreSQL service container');
 assert.ok(ciWorkflow.includes('npm run test:domain'), 'CI must run the domain tests');
 assert.ok(ciWorkflow.includes('npm run test:e2e'), 'CI must run the Playwright E2E tests');

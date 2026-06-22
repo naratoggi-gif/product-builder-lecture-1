@@ -82,7 +82,43 @@ async function main() {
     [since],
   );
 
+  const retention = await pool.query(
+    `WITH user_days AS (
+       SELECT
+         COALESCE(account_user_id::text, anonymous_user_id) AS user_key,
+         (occurred_at AT TIME ZONE 'UTC')::date AS event_day
+       FROM product_events
+       WHERE occurred_at >= NOW() - $1::interval
+     ),
+     cohorts AS (
+       SELECT user_key, MIN(event_day) AS first_day
+       FROM user_days
+       GROUP BY user_key
+     )
+     SELECT
+       COUNT(*)::int AS cohort,
+       COUNT(*) FILTER (
+         WHERE EXISTS (
+           SELECT 1
+           FROM user_days d1
+           WHERE d1.user_key = cohorts.user_key
+             AND d1.event_day = cohorts.first_day + 1
+         )
+       )::int AS "d1Returned",
+       COUNT(*) FILTER (
+         WHERE EXISTS (
+           SELECT 1
+           FROM user_days d7
+           WHERE d7.user_key = cohorts.user_key
+             AND d7.event_day = cohorts.first_day + 7
+         )
+       )::int AS "d7Returned"
+     FROM cohorts`,
+    [since],
+  );
+
   const f = funnel.rows[0] || {};
+  const r = retention.rows[0] || {};
   const report = {
     ok: true,
     checked: 'product-events',
@@ -102,6 +138,13 @@ async function main() {
       goalToFirstCompletionPct: ratio(f.stepCompleted, f.goalCreated),
       shrinkToCompletionPct: ratio(f.shrunkAndCompleted, f.stepShrunk),
       returnOfferToStartPct: ratio(f.returnStarted, f.returnOffered),
+    },
+    retention: {
+      cohort: Number(r.cohort || 0),
+      d1Returned: Number(r.d1Returned || 0),
+      d7Returned: Number(r.d7Returned || 0),
+      d1RetentionPct: ratio(r.d1Returned, r.cohort),
+      d7RetentionPct: ratio(r.d7Returned, r.cohort),
     },
     events: eventCounts.rows,
     categories: categories.rows,
