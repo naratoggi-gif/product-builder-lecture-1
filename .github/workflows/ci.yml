@@ -31,7 +31,7 @@ jobs:
     env:
       NODE_ENV: test
       APP_VERSION: 0.1.0-alpha
-      DATABASE_URL: postgres://stepquest:stepquest@localhost:5432/stepquest_test
+      DATABASE_URL: postgres://stepquest:stepquest@127.0.0.1:5432/stepquest_test
       DATABASE_SSL: "false"
       JWT_SECRET: test-only-secret
       ENABLE_SUPER_MODE: "false"
