@@ -19,6 +19,7 @@ const controller = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.cont
 const service = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.service.ts'), 'utf8');
 const devtoolsController = fs.readFileSync(path.join(root, 'src/devtools/devtools.controller.ts'), 'utf8');
 const healthController = fs.readFileSync(path.join(root, 'src/health/health.controller.ts'), 'utf8');
+const appVersionSource = fs.readFileSync(path.join(root, 'src/shared/app-version.ts'), 'utf8');
 const mainTs = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf8');
 const stateModule = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.state.ts'), 'utf8');
 const browserApp = fs.readFileSync(path.join(root, 'public/assets/js/app.js'), 'utf8');
@@ -64,6 +65,7 @@ assert.ok(dbInit.includes('0007_stepquest_guest_migrations'), 'db-init does not 
 assert.ok(dbInit.includes('0008_user_settings_and_events'), 'db-init does not apply user settings and product events migration');
 assert.ok(packageJson.includes('"version": "0.1.1-alpha"'), 'backend version must be 0.1.1-alpha');
 assert.ok(packageJson.includes('"test:domain": "npm run build &&'), 'domain tests must use cross-platform npm, not npm.cmd');
+assert.ok(packageJson.includes('node scripts/health-test.js'), 'domain tests must verify health check behavior');
 assert.ok(packageJson.includes('"seed:super"'), 'seed:super script must be present');
 assert.ok(packageJson.includes('"test:e2e"'), 'Playwright E2E script must be present');
 assert.ok(packageJson.includes('"audit:ci"'), 'production audit CI script must be present');
@@ -121,6 +123,8 @@ assert.ok(mainTs.includes('safeRequestLogger'), 'safe structured request logger 
 assert.ok(mainTs.includes("app.set('trust proxy', 1)"), 'reverse proxy trust setting must be available');
 assert.ok(healthController.includes('@Get()'), 'health endpoint route is missing');
 assert.ok(healthController.includes('appVersion()'), 'health endpoint must expose the app version');
+assert.ok(healthController.includes('ServiceUnavailableException'), 'health endpoint must fail with HTTP 503 when the DB is unavailable');
+assert.ok(appVersionSource.includes('RENDER_GIT_COMMIT'), 'health commit metadata must read Render deploy commit env');
 assert.ok(service.includes('`reminder:${stepId}:complete`'), 'reminder completion must use a stable reward idempotency key');
 assert.ok(service.includes('importGuestProgress'), 'guest progress import API is missing');
 assert.ok(service.includes('getSettings'), 'user timezone settings API is missing');

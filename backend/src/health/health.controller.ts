@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { appVersion, commitSha } from '../shared/app-version';
 import { DatabaseService } from '../shared/database.service';
@@ -24,11 +24,17 @@ export class HealthController {
       database = 'unavailable';
     }
 
-    return {
-      status: database === 'connected' ? 'ok' : 'degraded',
+    const payload = {
+      status: database === 'connected' ? 'ok' as const : 'degraded' as const,
       database,
       version: appVersion(),
       commit: commitSha(),
     };
+
+    if (database !== 'connected') {
+      throw new ServiceUnavailableException(payload);
+    }
+
+    return payload;
   }
 }

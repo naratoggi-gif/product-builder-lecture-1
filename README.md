@@ -117,6 +117,7 @@ STAGING_URL=https://your-stepquest-staging-url npm run smoke:staging
 ```
 
 See `STAGING_RUNBOOK.md` for the full deployment and closed alpha checklist.
+On Render, `/health` uses the platform-provided `RENDER_GIT_COMMIT` value for the commit field. If the database is unavailable, `/health` returns HTTP 503 so the platform health check fails the deploy.
 
 ## CI
 

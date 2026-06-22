@@ -31,11 +31,11 @@ DATABASE_URL=postgresql://...
 JWT_SECRET=<long random secret>
 JWT_EXPIRES_IN=7d
 APP_VERSION=0.1.1-alpha
-GIT_COMMIT_SHA=<deployed commit sha>
 TRUST_PROXY=true
 ```
 
 `npm start` runs `scripts/start-production.js`, so production startup fails if `DATABASE_URL` is missing or migrations fail.
+On Render, `/health` reads the deploy commit from the default `RENDER_GIT_COMMIT` environment variable.
 
 ## Smoke Test
 

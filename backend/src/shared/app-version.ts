@@ -5,5 +5,9 @@ export function appVersion(): string {
 }
 
 export function commitSha(): string {
-  return process.env.GIT_COMMIT_SHA || process.env.GIT_SHA || process.env.COMMIT_SHA || 'local';
+  return process.env.GIT_COMMIT_SHA
+    || process.env.RENDER_GIT_COMMIT
+    || process.env.GIT_SHA
+    || process.env.COMMIT_SHA
+    || 'local';
 }
