@@ -46,6 +46,14 @@ cd backend
 STAGING_URL=https://your-stepquest-staging-url npm run smoke:staging
 ```
 
+Or run the same check from GitHub:
+
+```text
+Actions -> StepQuest Staging Smoke -> Run workflow
+staging_url: https://your-stepquest-staging-url
+expected_app_version: 0.1.1-alpha
+```
+
 The smoke test checks:
 
 - `/health` returns HTTP 200, DB connected, version `0.1.1-alpha`, and a non-local commit SHA.

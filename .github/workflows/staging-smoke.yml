@@ -1,0 +1,37 @@
+name: StepQuest Staging Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      staging_url:
+        description: "Public HTTPS staging URL, for example https://stepquest-staging.onrender.com"
+        required: true
+        type: string
+      expected_app_version:
+        description: "Expected /health version"
+        required: true
+        default: "0.1.1-alpha"
+        type: string
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      STAGING_URL: ${{ inputs.staging_url }}
+      EXPECTED_APP_VERSION: ${{ inputs.expected_app_version }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+      - run: npm run smoke:staging
