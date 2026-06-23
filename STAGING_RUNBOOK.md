@@ -84,6 +84,16 @@ The smoke test checks:
 - Guest progress import is idempotent when the same `migrationId` is submitted twice.
 - Failed smoke HTTP checks include status and a short response snippet for diagnosis without printing tokens.
 
+Smoke accounts use `staging-smoke+...@example.com` and `staging-smoke-import+...@example.com`. To inspect and remove only smoke data from the staging database:
+
+```bash
+cd backend
+DATABASE_URL=postgresql://... DATABASE_SSL=true npm run smoke:cleanup
+DATABASE_URL=postgresql://... DATABASE_SSL=true SMOKE_CLEANUP_DRY_RUN=false CONFIRM_STAGING_SMOKE_CLEANUP=true npm run smoke:cleanup
+```
+
+The cleanup script is dry-run by default. It only targets those smoke email prefixes and the `staging-smoke-anon` product event ID.
+
 ## Manual Closed Alpha Smoke
 
 Run once on desktop Chrome, Android Chrome, and iPhone Safari:

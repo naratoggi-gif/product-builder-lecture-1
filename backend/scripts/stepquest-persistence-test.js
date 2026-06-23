@@ -36,6 +36,7 @@ const appCss = fs.readFileSync(path.join(root, 'public/assets/css/app.css'), 'ut
 const manifest = fs.readFileSync(path.join(root, 'public/manifest.webmanifest'), 'utf8');
 const serviceWorker = fs.readFileSync(path.join(root, 'public/sw.js'), 'utf8');
 const stagingSmoke = fs.readFileSync(path.join(root, 'scripts/staging-smoke-test.js'), 'utf8');
+const stagingSmokeCleanup = fs.readFileSync(path.join(root, 'scripts/cleanup-staging-smoke-data.js'), 'utf8');
 const productEventReport = fs.readFileSync(path.join(root, 'scripts/product-event-report.js'), 'utf8');
 const appModule = fs.readFileSync(path.join(root, 'src/app.module.ts'), 'utf8');
 const eventsController = fs.readFileSync(path.join(root, 'src/events/events.controller.ts'), 'utf8');
@@ -99,6 +100,7 @@ assert.ok(packageJson.includes('"seed:super"'), 'seed:super script must be prese
 assert.ok(packageJson.includes('"test:e2e"'), 'Playwright E2E script must be present');
 assert.ok(packageJson.includes('"audit:ci"'), 'production audit CI script must be present');
 assert.ok(packageJson.includes('"smoke:staging"'), 'staging smoke script must be present');
+assert.ok(packageJson.includes('"smoke:cleanup"'), 'staging smoke cleanup script must be present');
 assert.ok(packageJson.includes('"analytics:report"'), 'product event analytics report script must be present');
 assert.ok(rootReadme.includes('StepQuest'), 'root README must describe StepQuest');
 assert.ok(rootReadme.includes('v0.1.1-alpha'), 'root README must show the current alpha version');
@@ -153,6 +155,11 @@ assert.ok(stagingSmoke.includes('received HTTP'), 'staging smoke test must inclu
 assert.ok(stagingRunbook.includes('Disposable `example.com` staging users'), 'staging runbook must explain smoke-test user creation');
 assert.ok(stagingRunbook.includes('SMOKE_TIMEOUT_MS'), 'staging runbook must document smoke request timeout tuning');
 assert.ok(stagingRunbook.includes('real staging URL must use HTTPS'), 'staging runbook must document HTTPS enforcement');
+assert.ok(stagingRunbook.includes('npm run smoke:cleanup'), 'staging runbook must document smoke data cleanup');
+assert.ok(stagingSmokeCleanup.includes('SMOKE_CLEANUP_DRY_RUN'), 'staging smoke cleanup must default to a dry-run mode');
+assert.ok(stagingSmokeCleanup.includes('CONFIRM_STAGING_SMOKE_CLEANUP'), 'staging smoke cleanup must require explicit confirmation before deletion');
+assert.ok(stagingSmokeCleanup.includes('staging-smoke+%@example.com'), 'staging smoke cleanup must only target smoke account prefixes');
+assert.ok(stagingSmokeCleanup.includes('staging-smoke-anon'), 'staging smoke cleanup must only target smoke product events');
 assert.ok(productEventReport.includes('goalToFirstCompletionPct'), 'product event report must expose goal-to-completion conversion');
 assert.ok(productEventReport.includes('firstStepShownToCompletionPct'), 'product event report must expose first-step-to-completion conversion');
 assert.ok(productEventReport.includes('completionUndoPct'), 'product event report must expose undo rate');
