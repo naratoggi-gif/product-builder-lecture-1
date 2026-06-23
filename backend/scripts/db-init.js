@@ -4,15 +4,24 @@ const path = require('path');
 const { Client } = require('pg');
 const { setTimeout: sleep } = require('timers/promises');
 
-async function connectWithRetry(client) {
+function clientConfig(databaseUrl) {
+  return {
+    connectionString: databaseUrl,
+    ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+  };
+}
+
+async function connectWithRetry(databaseUrl) {
   let lastError;
   for (let attempt = 1; attempt <= 20; attempt += 1) {
+    const client = new Client(clientConfig(databaseUrl));
     try {
       await client.connect();
-      return;
+      return client;
     } catch (error) {
       lastError = error;
       process.stdout.write(`Waiting for database (${attempt}/20): ${error.message}\n`);
+      await client.end().catch(() => {});
       await sleep(1000);
     }
   }
@@ -37,12 +46,7 @@ async function run() {
     { name: 'seed', path: path.resolve(__dirname, '../db/seed.sql') },
   ];
 
-  const client = new Client({
-    connectionString: databaseUrl,
-    ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
-  });
-
-  await connectWithRetry(client);
+  const client = await connectWithRetry(databaseUrl);
   try {
     await client.query(`
       CREATE TABLE IF NOT EXISTS codex_migrations (

@@ -74,6 +74,9 @@ assert.ok(dbInit.includes('0005_stepquest_core'), 'db-init does not apply STEPQU
 assert.ok(dbInit.includes('0006_stepquest_costume_active'), 'db-init does not apply STEPQUEST costume active migration');
 assert.ok(dbInit.includes('0007_stepquest_guest_migrations'), 'db-init does not apply STEPQUEST guest migration ledger');
 assert.ok(dbInit.includes('0008_user_settings_and_events'), 'db-init does not apply user settings and product events migration');
+assert.ok(dbInit.includes('function clientConfig'), 'db-init must centralize PostgreSQL client configuration');
+assert.ok(dbInit.includes('const client = new Client(clientConfig(databaseUrl));'), 'db-init must create a fresh client for each connection retry');
+assert.ok(dbInit.includes('await client.end().catch(() => {})'), 'db-init must close failed retry clients');
 assert.ok(dbInit.includes("await client.query('BEGIN')"), 'db-init must apply each migration file transactionally');
 assert.ok(dbInit.includes('INSERT INTO codex_migrations'), 'db-init must record migration markers');
 assert.ok(dbInit.includes("await client.query('ROLLBACK')"), 'db-init must roll back failed migration files');
