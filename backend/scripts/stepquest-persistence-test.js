@@ -130,6 +130,8 @@ assert.ok(securityAudit.includes('Enable Dependabot alerts'), 'security audit mu
 assert.ok(securityAudit.includes('Critical or High production alert'), 'security audit must define the production alert release gate');
 assert.ok(stagingSmoke.includes('/health'), 'staging smoke test must check health');
 assert.ok(stagingSmoke.includes('/dev/super-mode.js?v=0.1.1-alpha'), 'staging smoke test must check production super mode');
+assert.ok(stagingSmoke.includes('x-content-type-options'), 'staging smoke test must verify Helmet security headers');
+assert.ok(stagingSmoke.includes('strict-transport-security'), 'staging smoke test must verify HSTS');
 assert.ok(stagingSmoke.includes('/events/track'), 'staging smoke test must check product event ingestion');
 assert.ok(stagingSmoke.includes('/stepquest/costumes/one_punch_hero/equip'), 'staging smoke test must reject direct QA costume access');
 assert.ok(stagingSmoke.includes('/auth/signup'), 'staging smoke test must create disposable authenticated users');

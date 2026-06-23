@@ -120,6 +120,9 @@ async function main() {
   const csp = goals.response.headers.get('content-security-policy') || '';
   assert.ok(csp.includes("default-src 'self'"), 'Helmet CSP must be present');
   assert.ok(csp.includes('fonts.googleapis.com'), 'CSP must allow Google Fonts styles');
+  assert.equal(goals.response.headers.get('x-content-type-options'), 'nosniff', 'Helmet must prevent MIME type sniffing');
+  assert.equal(goals.response.headers.get('x-frame-options'), 'SAMEORIGIN', 'Helmet must restrict framing');
+  assert.ok(goals.response.headers.get('strict-transport-security'), 'Helmet HSTS header must be present on staging');
 
   const superScript = await read('/dev/super-mode.js?v=0.1.1-alpha');
   assertStatus(superScript, 200, 'super hook should return a disabled stub in production');
