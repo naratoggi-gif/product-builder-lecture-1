@@ -14,6 +14,7 @@ function spawnServer() {
       NODE_ENV: 'production',
       ENABLE_SUPER_MODE: 'false',
       APP_VERSION: '0.1.1-alpha',
+      JWT_SECRET: process.env.JWT_SECRET || 'e2e-secret-with-at-least-32-characters',
     },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
