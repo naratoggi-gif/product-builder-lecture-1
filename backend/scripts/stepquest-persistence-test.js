@@ -73,6 +73,9 @@ assert.ok(dbInit.includes('0005_stepquest_core'), 'db-init does not apply STEPQU
 assert.ok(dbInit.includes('0006_stepquest_costume_active'), 'db-init does not apply STEPQUEST costume active migration');
 assert.ok(dbInit.includes('0007_stepquest_guest_migrations'), 'db-init does not apply STEPQUEST guest migration ledger');
 assert.ok(dbInit.includes('0008_user_settings_and_events'), 'db-init does not apply user settings and product events migration');
+assert.ok(dbInit.includes("await client.query('BEGIN')"), 'db-init must apply each migration file transactionally');
+assert.ok(dbInit.includes('INSERT INTO codex_migrations'), 'db-init must record migration markers');
+assert.ok(dbInit.includes("await client.query('ROLLBACK')"), 'db-init must roll back failed migration files');
 assert.ok(startProduction.includes('validateProductionEnv'), 'production start must validate deployment environment');
 assert.ok(startProduction.includes('ENABLE_SUPER_MODE must be false in production'), 'production start must block super mode');
 assert.ok(startProduction.includes('JWT_SECRET must be set to a strong random value in production'), 'production start must require a strong JWT secret');
@@ -98,6 +101,7 @@ assert.ok(stagingRunbook.includes('Actions -> StepQuest Staging Smoke'), 'stagin
 assert.ok(stagingRunbook.includes('ENABLE_SUPER_MODE=false'), 'staging runbook must forbid super mode');
 assert.ok(stagingRunbook.includes('JWT_SECRET=<32+ character random secret>'), 'staging runbook must document strong JWT secret enforcement');
 assert.ok(stagingRunbook.includes('ENABLE_SUPER_MODE=true'), 'staging runbook must document production super-mode startup failure');
+assert.ok(stagingRunbook.includes('one DB transaction'), 'staging runbook must document transactional migration startup');
 assert.ok(stagingRunbook.includes('npm run analytics:report'), 'staging runbook must explain how to pull product event metrics');
 assert.ok(alphaTestPlan.includes('ADHD-friendly execution helper'), 'closed alpha plan must avoid medical treatment positioning');
 assert.ok(alphaTestPlan.includes('Goal created -> first step completed'), 'closed alpha plan must define the primary execution metric');

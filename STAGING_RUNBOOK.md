@@ -35,6 +35,7 @@ TRUST_PROXY=true
 ```
 
 `npm start` runs `scripts/start-production.js`, so production startup fails if `DATABASE_URL` is missing, `JWT_SECRET` is weak, `ENABLE_SUPER_MODE=true`, or migrations fail.
+Each migration file and its `codex_migrations` marker are applied in one DB transaction.
 On Render, `/health` reads the deploy commit from the default `RENDER_GIT_COMMIT` environment variable.
 
 ## Smoke Test
