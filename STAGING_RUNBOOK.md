@@ -83,7 +83,7 @@ The smoke test checks:
 - The same smoke account can log in again and still load its StepQuest state.
 - The same smoke account can shrink a blocked Step, defer it, read return eligibility, and resume it.
 - Guest progress import is idempotent when the same `migrationId` is submitted twice.
-- Failed smoke HTTP checks include status and a short response snippet for diagnosis without printing tokens.
+- Failed smoke HTTP checks include requestId, status, and a short response snippet for diagnosis without printing tokens.
 
 Smoke accounts use `staging-smoke+...@example.com` and `staging-smoke-import+...@example.com`. To inspect and remove only smoke data from the staging database:
 

@@ -383,6 +383,7 @@
     const raw = await response.text();
     const data = parseJson(raw, raw);
     if (!response.ok) {
+      const requestId = response.headers.get('x-request-id');
       const message = typeof data === 'string'
         ? data
         : Array.isArray(data.message)
@@ -393,7 +394,7 @@
         state.user = null;
         persistAuth();
       }
-      throw new Error(`${response.status} ${message}`);
+      throw new Error(`${response.status} ${message}${requestId ? ` [requestId: ${requestId}]` : ''}`);
     }
     return data;
   }

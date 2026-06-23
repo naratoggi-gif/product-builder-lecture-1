@@ -28,34 +28,47 @@ function snippet(text) {
 
 function assertStatus(result, statuses, message) {
   const allowed = Array.isArray(statuses) ? statuses : [statuses];
+  const requestId = result.response.headers.get('x-request-id') || result.requestId || 'missing';
   assert.ok(
     allowed.includes(result.response.status),
-    `${message}; received HTTP ${result.response.status}: ${snippet(result.text)}`,
+    `${message}; requestId ${requestId}; received HTTP ${result.response.status}: ${snippet(result.text)}`,
   );
 }
 
+function smokeRequestId(path) {
+  const safePath = path.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'root';
+  return `staging-smoke-${safePath}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 async function read(path, options = {}) {
+  const requestId = smokeRequestId(path);
+  const headers = {
+    ...(options.headers || {}),
+    'x-request-id': requestId,
+  };
   try {
     const response = await fetch(`${baseUrl}${path}`, {
       ...options,
+      headers,
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
     const text = await response.text();
-    return { response, text };
+    return { response, text, requestId };
   } catch (error) {
-    throw new Error(`${path} request failed: ${error.message}`);
+    throw new Error(`${path} request failed with requestId ${requestId}: ${error.message}`);
   }
 }
 
 async function readJson(path, options = {}) {
-  const { response, text } = await read(path, options);
+  const { response, text, requestId } = await read(path, options);
   let data;
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error(`${path} did not return JSON over HTTP ${response.status}: ${snippet(text)}`);
+    const responseRequestId = response.headers.get('x-request-id') || requestId;
+    throw new Error(`${path} did not return JSON over HTTP ${response.status} with requestId ${responseRequestId}: ${snippet(text)}`);
   }
-  return { response, text, data };
+  return { response, text, data, requestId };
 }
 
 function jsonOptions(method, body, token) {

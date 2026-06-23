@@ -60,6 +60,7 @@ async function run() {
 
     const accessLog = JSON.parse(logs.stdout.trim());
     assert.equal(accessLog.requestId, 'req-test-1');
+    assert.equal(response.headers['x-request-id'], 'req-test-1');
     assert.equal(accessLog.path, '/stepquest/goals');
     assert.equal(accessLog.statusCode, 503);
     assert.equal(accessLog.userId, 7);
