@@ -230,6 +230,7 @@ assert.ok(mainTs.includes('safeRequestLogger'), 'safe structured request logger 
 assert.ok(safeLogger.includes('ConsoleErrorReporter'), 'safe request logger must connect server errors to the error reporter');
 assert.ok(safeLogger.includes('response.statusCode >= 500'), 'safe request logger must report 5xx app errors');
 assert.ok(safeLogger.includes('sanitizePath'), 'safe request logger must remove query strings before logging');
+assert.ok(safeLogger.includes('SAFE_REQUEST_ID'), 'safe request logger must reject unsafe request IDs');
 assert.ok(browserApp.includes("response.headers.get('x-request-id')"), 'browser API errors must expose request IDs for staging diagnostics');
 assert.ok(stagingSmoke.includes('x-request-id'), 'staging smoke requests must send request IDs for log correlation');
 assert.ok(stagingSmoke.includes('requestId'), 'staging smoke failures must include request IDs');

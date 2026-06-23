@@ -88,6 +88,22 @@ async function run() {
     });
     assert.equal(skipped.stdout, '');
     assert.equal(skipped.stderr, '');
+
+    const unsafeResponse = mockResponse(200);
+    const unsafeRequest = {
+      method: 'GET',
+      originalUrl: '/health',
+      url: '/health',
+      header: (name) => (name.toLowerCase() === 'x-request-id' ? 'bad request id\nwith newline' : undefined),
+    };
+    const unsafeLogs = await captureLogs(async () => {
+      safeRequestLogger(unsafeRequest, unsafeResponse, () => {});
+      unsafeResponse.emit('finish');
+    });
+    const unsafeAccessLog = JSON.parse(unsafeLogs.stdout.trim());
+    assert.notEqual(unsafeAccessLog.requestId, 'bad request id\nwith newline');
+    assert.match(unsafeAccessLog.requestId, /^[0-9a-f-]{36}$/);
+    assert.equal(unsafeResponse.headers['x-request-id'], unsafeAccessLog.requestId);
   } finally {
     if (oldAppVersion === undefined) delete process.env.APP_VERSION;
     else process.env.APP_VERSION = oldAppVersion;

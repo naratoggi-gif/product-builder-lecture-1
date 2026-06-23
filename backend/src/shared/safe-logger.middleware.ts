@@ -9,6 +9,7 @@ type RequestWithUser = Request & {
 };
 
 const SENSITIVE_PATH_PARTS = ['password', 'token', 'authorization', 'jwt'];
+const SAFE_REQUEST_ID = /^[A-Za-z0-9:_-]{1,120}$/;
 const errorReporter = new ConsoleErrorReporter();
 
 function sanitizePath(path: string): string {
@@ -19,9 +20,14 @@ function safeUserId(request: RequestWithUser): number | null {
   return Number(request.user?.sub || request.user?.userId) || null;
 }
 
+function requestIdFromHeader(value?: string): string {
+  const trimmed = String(value || '').trim();
+  return SAFE_REQUEST_ID.test(trimmed) ? trimmed : randomUUID();
+}
+
 export function safeRequestLogger(request: RequestWithUser, response: Response, next: NextFunction): void {
   const startedAt = Date.now();
-  const requestId = request.header('x-request-id') || randomUUID();
+  const requestId = requestIdFromHeader(request.header('x-request-id'));
   request.requestId = requestId;
   response.setHeader('x-request-id', requestId);
 
