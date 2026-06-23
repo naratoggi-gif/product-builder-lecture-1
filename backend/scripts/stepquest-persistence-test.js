@@ -27,6 +27,7 @@ const healthController = fs.readFileSync(path.join(root, 'src/health/health.cont
 const authController = fs.readFileSync(path.join(root, 'src/auth/auth.controller.ts'), 'utf8');
 const appVersionSource = fs.readFileSync(path.join(root, 'src/shared/app-version.ts'), 'utf8');
 const mainTs = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf8');
+const safeLogger = fs.readFileSync(path.join(root, 'src/shared/safe-logger.middleware.ts'), 'utf8');
 const stateModule = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.state.ts'), 'utf8');
 const browserApp = fs.readFileSync(path.join(root, 'public/assets/js/app.js'), 'utf8');
 const goalsHtml = fs.readFileSync(path.join(root, 'public/goals.html'), 'utf8');
@@ -77,6 +78,7 @@ assert.ok(packageJson.includes('"version": "0.1.1-alpha"'), 'backend version mus
 assert.ok(packageJson.includes('"test:domain": "npm run build &&'), 'domain tests must use cross-platform npm, not npm.cmd');
 assert.ok(packageJson.includes('node scripts/health-test.js'), 'domain tests must verify health check behavior');
 assert.ok(packageJson.includes('node scripts/production-env-test.js'), 'domain tests must verify production environment guards');
+assert.ok(packageJson.includes('node scripts/request-logger-test.js'), 'domain tests must verify safe structured logging');
 assert.ok(packageJson.includes('"seed:super"'), 'seed:super script must be present');
 assert.ok(packageJson.includes('"test:e2e"'), 'Playwright E2E script must be present');
 assert.ok(packageJson.includes('"audit:ci"'), 'production audit CI script must be present');
@@ -169,6 +171,9 @@ assert.ok(authController.includes("@Throttle({ default: { ttl: 60_000, limit: 5 
   || authController.includes("@Throttle({ default: { ttl: 60_000, limit: 5 } })\n  @Post('login')"), 'login must be rate-limited to 5 attempts per minute');
 assert.ok(mainTs.includes('helmet('), 'helmet must be applied at bootstrap');
 assert.ok(mainTs.includes('safeRequestLogger'), 'safe structured request logger must be applied at bootstrap');
+assert.ok(safeLogger.includes('ConsoleErrorReporter'), 'safe request logger must connect server errors to the error reporter');
+assert.ok(safeLogger.includes('response.statusCode >= 500'), 'safe request logger must report 5xx app errors');
+assert.ok(safeLogger.includes('sanitizePath'), 'safe request logger must remove query strings before logging');
 assert.ok(mainTs.includes("app.set('trust proxy', 1)"), 'reverse proxy trust setting must be available');
 assert.ok(healthController.includes('@Get()'), 'health endpoint route is missing');
 assert.ok(healthController.includes('appVersion()'), 'health endpoint must expose the app version');

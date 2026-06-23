@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { NextFunction, Request, Response } from 'express';
 import { appVersion } from './app-version';
+import { ConsoleErrorReporter } from './error-reporter';
 
 type RequestWithUser = Request & {
   requestId?: string;
@@ -8,6 +9,7 @@ type RequestWithUser = Request & {
 };
 
 const SENSITIVE_PATH_PARTS = ['password', 'token', 'authorization', 'jwt'];
+const errorReporter = new ConsoleErrorReporter();
 
 function sanitizePath(path: string): string {
   return path.replace(/[?].*$/, '');
@@ -26,6 +28,7 @@ export function safeRequestLogger(request: RequestWithUser, response: Response, 
   response.on('finish', () => {
     const path = sanitizePath(request.originalUrl || request.url || '');
     if (SENSITIVE_PATH_PARTS.some((part) => path.toLowerCase().includes(part))) return;
+    const timestamp = new Date().toISOString();
     const entry = {
       requestId,
       method: request.method,
@@ -35,9 +38,19 @@ export function safeRequestLogger(request: RequestWithUser, response: Response, 
       userId: safeUserId(request),
       appVersion: appVersion(),
       environment: process.env.NODE_ENV || 'development',
-      timestamp: new Date().toISOString(),
+      timestamp,
     };
     process.stdout.write(`${JSON.stringify(entry)}\n`);
+    if (response.statusCode >= 500) {
+      void errorReporter.report({
+        requestId,
+        path,
+        statusCode: response.statusCode,
+        appVersion: entry.appVersion,
+        environment: entry.environment,
+        occurredAt: timestamp,
+      });
+    }
   });
 
   next();
