@@ -329,6 +329,9 @@ assert.ok(goalsHtml.includes('returnCompleted'), 'completion feedback must ackno
 assert.ok(goalsHtml.includes('recent-trace'), 'stats panel must render recent attempts');
 assert.ok(goalsHtml.includes('v=0.1.1-alpha'), 'shell asset cache version must be bumped');
 assert.ok(serviceWorker.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must follow the app version');
+assert.ok(serviceWorker.includes('self.skipWaiting()'), 'service worker must activate updated deploys promptly');
+assert.ok(serviceWorker.includes('self.clients.claim()'), 'service worker must claim open clients after activation');
+assert.ok(serviceWorker.includes('caches.delete(key)'), 'service worker must delete old cache versions');
 assert.ok(serviceWorker.includes('notificationclick'), 'service worker must handle reminder notification clicks');
 assert.ok(serviceWorker.includes('/goals.html?reminder=1#today'), 'notification click must return to the action screen');
 assert.ok(manifest.includes('큰 목표를 지금 할 수 있는 작은 행동'), 'manifest description must be localized and readable');

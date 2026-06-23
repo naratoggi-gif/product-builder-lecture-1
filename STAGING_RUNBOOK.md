@@ -73,7 +73,7 @@ The smoke test checks:
 - `/dev/super-mode.js` returns only the disabled production stub.
 - Super login does not succeed.
 - Direct QA costume access is rejected.
-- Service worker cache version is `stepquest-v0.1.1-alpha`.
+- Service worker cache version is `stepquest-v0.1.1-alpha`, activates promptly, claims clients, and deletes old cache versions.
 - `POST /events/track` accepts a product event without collecting goal text.
 - Disposable `example.com` staging users can sign up and load default `Asia/Seoul` settings.
 - Authenticated users can create a StepQuest goal, complete the first Step, retry the same completion idempotently, and undo the reward.

@@ -129,6 +129,9 @@ async function main() {
   const serviceWorker = await read('/sw.js');
   assertStatus(serviceWorker, 200, '/sw.js must load');
   assert.ok(serviceWorker.text.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must match the app version');
+  assert.ok(serviceWorker.text.includes('self.skipWaiting()'), 'service worker must activate updated deploys promptly');
+  assert.ok(serviceWorker.text.includes('self.clients.claim()'), 'service worker must claim open clients after activation');
+  assert.ok(serviceWorker.text.includes('caches.delete(key)'), 'service worker must delete old cache versions');
 
   const event = await readJson('/events/track', {
     method: 'POST',
