@@ -67,7 +67,7 @@ Run:
 
 ```bash
 cd backend
-DATABASE_URL=postgresql://... DATABASE_SSL=true npm run analytics:report
+DATABASE_URL=postgresql://... DATABASE_SSL=true REPORT_ENV=production REPORT_TIMEZONE=Asia/Seoul npm run analytics:report
 ```
 
 Primary metrics:
@@ -77,7 +77,7 @@ Primary metrics:
 - Smaller used -> completed.
 - Return offered -> return started.
 - Guest import completed.
-- D1 and D7 revisit by anonymous user or account user. In the JSON report, check `retention.d1RetentionPct` and `retention.d7RetentionPct`.
+- D1 and D7 revisit by anonymous user or account user, calculated in `REPORT_TIMEZONE` (`Asia/Seoul` by default). In the JSON report, check `retention.d1RetentionPct` and `retention.d7RetentionPct`.
 
 Secondary metrics:
 

@@ -116,8 +116,10 @@ After testers begin using the staging URL, pull the product event report:
 
 ```bash
 cd backend
-DATABASE_URL=postgresql://... DATABASE_SSL=true npm run analytics:report
+DATABASE_URL=postgresql://... DATABASE_SSL=true REPORT_ENV=production REPORT_TIMEZONE=Asia/Seoul npm run analytics:report
 ```
+
+Use `REPORT_ENV=staging` if the staging service stores events with a staging environment value. Retention is calculated in `REPORT_TIMEZONE`, which defaults to `Asia/Seoul`.
 
 Use `CLOSED_ALPHA_TEST_PLAN.md` for participant instructions, follow-up questions, and stop conditions.
 

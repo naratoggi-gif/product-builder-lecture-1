@@ -137,6 +137,8 @@ assert.ok(productEventReport.includes('shrinkToCompletionPct'), 'product event r
 assert.ok(productEventReport.includes('returnOfferToStartPct'), 'product event report must expose return-start conversion');
 assert.ok(productEventReport.includes('d1RetentionPct'), 'product event report must expose D1 retention');
 assert.ok(productEventReport.includes('d7RetentionPct'), 'product event report must expose D7 retention');
+assert.ok(productEventReport.includes('REPORT_TIMEZONE'), 'product event report must calculate retention in the configured timezone');
+assert.ok(productEventReport.includes('REPORT_ENV'), 'product event report must filter events by environment');
 assert.ok(ciWorkflow.includes('postgres:16'), 'CI must run with a PostgreSQL service container');
 assert.ok(ciWorkflow.includes('npm run test:domain'), 'CI must run the domain tests');
 assert.ok(ciWorkflow.includes('npm run test:e2e'), 'CI must run the Playwright E2E tests');

@@ -3,6 +3,8 @@ const { Pool } = require('pg');
 
 const windowDays = Number(process.env.REPORT_DAYS || process.argv[2] || 7);
 const databaseUrl = process.env.DATABASE_URL;
+const reportEnvironment = process.env.REPORT_ENV || process.env.NODE_ENV || 'production';
+const reportTimezone = process.env.REPORT_TIMEZONE || 'Asia/Seoul';
 
 if (!databaseUrl) {
   console.error('DATABASE_URL is required. Example: DATABASE_URL=postgresql://... npm run analytics:report');
@@ -19,16 +21,21 @@ function ratio(numerator, denominator) {
   return Math.round((Number(numerator || 0) / Number(denominator || 0)) * 1000) / 10;
 }
 
+function eventWindowWhere() {
+  return `occurred_at >= NOW() - $1::interval AND environment = $2`;
+}
+
 async function main() {
   const since = `${windowDays} days`;
+  const reportParams = [since, reportEnvironment];
 
   const eventCounts = await pool.query(
     `SELECT event_name AS "eventName", COUNT(*)::int AS count
      FROM product_events
-     WHERE occurred_at >= NOW() - $1::interval
+     WHERE ${eventWindowWhere()}
      GROUP BY event_name
      ORDER BY count DESC, event_name ASC`,
-    [since],
+    reportParams,
   );
 
   const totals = await pool.query(
@@ -37,8 +44,8 @@ async function main() {
        COUNT(DISTINCT session_id)::int AS sessions,
        COUNT(*)::int AS events
      FROM product_events
-     WHERE occurred_at >= NOW() - $1::interval`,
-    [since],
+     WHERE ${eventWindowWhere()}`,
+    reportParams,
   );
 
   const funnel = await pool.query(
@@ -54,7 +61,7 @@ async function main() {
          BOOL_OR(event_name = 'return_started') AS return_started,
          BOOL_OR(event_name = 'guest_import_completed') AS guest_import_completed
        FROM product_events
-       WHERE occurred_at >= NOW() - $1::interval
+       WHERE ${eventWindowWhere()}
        GROUP BY session_id
      )
      SELECT
@@ -69,26 +76,26 @@ async function main() {
        COUNT(*) FILTER (WHERE return_offered AND return_started)::int AS "returnStarted",
        COUNT(*) FILTER (WHERE guest_import_completed)::int AS "guestImportCompleted"
      FROM session_flags`,
-    [since],
+    reportParams,
   );
 
   const categories = await pool.query(
     `SELECT category, COUNT(*)::int AS count
      FROM product_events
-     WHERE occurred_at >= NOW() - $1::interval
+     WHERE ${eventWindowWhere()}
        AND category IS NOT NULL
      GROUP BY category
      ORDER BY count DESC, category ASC`,
-    [since],
+    reportParams,
   );
 
   const retention = await pool.query(
     `WITH user_days AS (
        SELECT
          COALESCE(account_user_id::text, anonymous_user_id) AS user_key,
-         (occurred_at AT TIME ZONE 'UTC')::date AS event_day
+         (occurred_at AT TIME ZONE $3)::date AS event_day
        FROM product_events
-       WHERE occurred_at >= NOW() - $1::interval
+       WHERE ${eventWindowWhere()}
      ),
      cohorts AS (
        SELECT user_key, MIN(event_day) AS first_day
@@ -111,10 +118,10 @@ async function main() {
            FROM user_days d7
            WHERE d7.user_key = cohorts.user_key
              AND d7.event_day = cohorts.first_day + 7
-         )
-       )::int AS "d7Returned"
+       )
+     )::int AS "d7Returned"
      FROM cohorts`,
-    [since],
+    [...reportParams, reportTimezone],
   );
 
   const f = funnel.rows[0] || {};
@@ -123,6 +130,8 @@ async function main() {
     ok: true,
     checked: 'product-events',
     windowDays,
+    environment: reportEnvironment,
+    timezone: reportTimezone,
     totals: totals.rows[0] || { anonymousUsers: 0, sessions: 0, events: 0 },
     funnel: {
       sessions: Number(f.sessions || 0),
