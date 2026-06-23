@@ -89,6 +89,7 @@ assert.ok(packageJson.includes('"version": "0.1.1-alpha"'), 'backend version mus
 assert.ok(packageJson.includes('"node": ">=20 <23"'), 'backend package must pin a Node 20 compatible runtime');
 assert.ok(packageJson.includes('"test:domain": "npm run build &&'), 'domain tests must use cross-platform npm, not npm.cmd');
 assert.ok(packageJson.includes('node scripts/health-test.js'), 'domain tests must verify health check behavior');
+assert.ok(packageJson.includes('node scripts/version-consistency-test.js'), 'domain tests must verify deployment version consistency');
 assert.ok(packageJson.includes('node scripts/production-env-test.js'), 'domain tests must verify production environment guards');
 assert.ok(packageJson.includes('node scripts/request-logger-test.js'), 'domain tests must verify safe structured logging');
 assert.ok(packageJson.includes('node scripts/product-event-dto-test.js'), 'domain tests must verify product event payload boundaries');
@@ -129,7 +130,8 @@ assert.ok(dependabotConfig.includes('package-ecosystem: github-actions'), 'Depen
 assert.ok(securityAudit.includes('Enable Dependabot alerts'), 'security audit must document the repository-level Dependabot alerts step');
 assert.ok(securityAudit.includes('Critical or High production alert'), 'security audit must define the production alert release gate');
 assert.ok(stagingSmoke.includes('/health'), 'staging smoke test must check health');
-assert.ok(stagingSmoke.includes('/dev/super-mode.js?v=0.1.1-alpha'), 'staging smoke test must check production super mode');
+assert.ok(stagingSmoke.includes('/dev/super-mode.js?v='), 'staging smoke test must check production super mode');
+assert.ok(stagingSmoke.includes('packageVersion'), 'staging smoke test must derive its default version from package.json');
 assert.ok(stagingSmoke.includes('x-content-type-options'), 'staging smoke test must verify Helmet security headers');
 assert.ok(stagingSmoke.includes('strict-transport-security'), 'staging smoke test must verify HSTS');
 assert.ok(stagingSmoke.includes('/events/track'), 'staging smoke test must check product event ingestion');

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict');
+const { version: packageVersion } = require('../package.json');
 
 const rawBaseUrl = (process.env.STAGING_URL || process.argv[2] || '').trim();
 const baseUrl = rawBaseUrl.replace(/\/$/, '');
-const expectedVersion = process.env.EXPECTED_APP_VERSION || '0.1.1-alpha';
+const expectedVersion = process.env.EXPECTED_APP_VERSION || packageVersion;
 const requestTimeoutMs = Number(process.env.SMOKE_TIMEOUT_MS || 15_000);
 
 if (!baseUrl) {
@@ -112,7 +113,7 @@ async function main() {
 
   const goals = await read('/goals.html');
   assertStatus(goals, 200, '/goals.html must load');
-  assert.ok(goals.text.includes('v=0.1.1-alpha'), 'goals shell must reference versioned assets');
+  assert.ok(goals.text.includes(`v=${expectedVersion}`), 'goals shell must reference versioned assets');
   assert.ok(!goals.text.includes('super@stepquest.local'), 'production shell must not expose super credentials');
   assert.ok(!goals.text.includes('stepquest-super-1234'), 'production shell must not expose super password');
   assert.ok(!goals.text.includes('one_punch_hero'), 'production shell must not expose QA hero IDs');
@@ -124,7 +125,7 @@ async function main() {
   assert.equal(goals.response.headers.get('x-frame-options'), 'SAMEORIGIN', 'Helmet must restrict framing');
   assert.ok(goals.response.headers.get('strict-transport-security'), 'Helmet HSTS header must be present on staging');
 
-  const superScript = await read('/dev/super-mode.js?v=0.1.1-alpha');
+  const superScript = await read(`/dev/super-mode.js?v=${encodeURIComponent(expectedVersion)}`);
   assertStatus(superScript, 200, 'super hook should return a disabled stub in production');
   assert.ok(superScript.text.includes('window.StepQuestSuperMode=undefined'), 'production super hook must be disabled');
   assert.ok(!superScript.text.includes('stepquest-super-1234'), 'disabled super hook must not expose credentials');
@@ -142,7 +143,7 @@ async function main() {
 
   const serviceWorker = await read('/sw.js');
   assertStatus(serviceWorker, 200, '/sw.js must load');
-  assert.ok(serviceWorker.text.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must match the app version');
+  assert.ok(serviceWorker.text.includes(`const CACHE_VERSION = 'stepquest-v${expectedVersion}'`), 'service worker cache version must match the app version');
   assert.ok(serviceWorker.text.includes('self.skipWaiting()'), 'service worker must activate updated deploys promptly');
   assert.ok(serviceWorker.text.includes('self.clients.claim()'), 'service worker must claim open clients after activation');
   assert.ok(serviceWorker.text.includes('caches.delete(key)'), 'service worker must delete old cache versions');

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const { spawn } = require('node:child_process');
 const { setTimeout: sleep } = require('node:timers/promises');
+const { version: packageVersion } = require('../package.json');
 
 const port = Number(process.env.E2E_PORT || 3100);
 const baseURL = `http://127.0.0.1:${port}`;
@@ -13,7 +14,7 @@ function spawnServer() {
       PORT: String(port),
       NODE_ENV: 'production',
       ENABLE_SUPER_MODE: 'false',
-      APP_VERSION: '0.1.1-alpha',
+      APP_VERSION: packageVersion,
       JWT_SECRET: process.env.JWT_SECRET || 'e2e-secret-with-at-least-32-characters',
     },
     stdio: ['ignore', 'inherit', 'inherit'],
