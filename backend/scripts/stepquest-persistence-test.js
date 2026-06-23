@@ -82,6 +82,7 @@ assert.ok(packageJson.includes('node scripts/health-test.js'), 'domain tests mus
 assert.ok(packageJson.includes('node scripts/production-env-test.js'), 'domain tests must verify production environment guards');
 assert.ok(packageJson.includes('node scripts/request-logger-test.js'), 'domain tests must verify safe structured logging');
 assert.ok(packageJson.includes('node scripts/product-event-dto-test.js'), 'domain tests must verify product event payload boundaries');
+assert.ok(packageJson.includes('node scripts/timezone-test.js'), 'domain tests must verify Korean midnight timezone boundaries');
 assert.ok(packageJson.includes('"seed:super"'), 'seed:super script must be present');
 assert.ok(packageJson.includes('"test:e2e"'), 'Playwright E2E script must be present');
 assert.ok(packageJson.includes('"audit:ci"'), 'production audit CI script must be present');
