@@ -127,9 +127,11 @@ assert.ok(stagingSmoke.includes('/dev/super-mode.js?v=0.1.1-alpha'), 'staging sm
 assert.ok(stagingSmoke.includes('/events/track'), 'staging smoke test must check product event ingestion');
 assert.ok(stagingSmoke.includes('/stepquest/costumes/one_punch_hero/equip'), 'staging smoke test must reject direct QA costume access');
 assert.ok(stagingSmoke.includes('/auth/signup'), 'staging smoke test must create disposable authenticated users');
+assert.ok(stagingSmoke.includes('/auth/login'), 'staging smoke test must verify account login after signup');
 assert.ok(stagingSmoke.includes('/stepquest/goals'), 'staging smoke test must create a real StepQuest goal');
 assert.ok(stagingSmoke.includes('idempotencyKey'), 'staging smoke test must verify duplicate completion idempotency');
 assert.ok(stagingSmoke.includes('/stepquest/guest/import'), 'staging smoke test must verify guest import idempotency');
+assert.ok(stagingSmoke.includes('relogged account must load StepQuest state'), 'staging smoke test must verify account persistence after relogin');
 assert.ok(stagingSmoke.includes('ALLOW_INSECURE_STAGING_SMOKE'), 'staging smoke test must require HTTPS unless explicitly bypassed for local dry runs');
 assert.ok(stagingSmoke.includes('AbortSignal.timeout'), 'staging smoke test must fail hung requests with a timeout');
 assert.ok(stagingSmoke.includes('received HTTP'), 'staging smoke test must include response status diagnostics');

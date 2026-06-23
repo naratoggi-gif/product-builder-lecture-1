@@ -77,6 +77,7 @@ The smoke test checks:
 - `POST /events/track` accepts a product event without collecting goal text.
 - Disposable `example.com` staging users can sign up and load default `Asia/Seoul` settings.
 - Authenticated users can create a StepQuest goal, complete the first Step, retry the same completion idempotently, and undo the reward.
+- The same smoke account can log in again and still load its StepQuest state.
 - Guest progress import is idempotent when the same `migrationId` is submitted twice.
 - Failed smoke HTTP checks include status and a short response snippet for diagnosis without printing tokens.
 

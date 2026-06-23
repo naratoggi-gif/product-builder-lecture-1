@@ -81,14 +81,25 @@ async function getJson(path, token) {
 async function signupSmokeUser(prefix) {
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const email = `${prefix}+${unique}@example.com`;
+  const password = `Smoke-${unique}-password-12345`;
   const signup = await postJson('/auth/signup', {
     email,
-    password: `Smoke-${unique}-password-12345`,
+    password,
     nickname: `${prefix.slice(0, 16)}-${unique.slice(-8)}`,
   });
   assertStatus(signup, [200, 201], `${prefix} signup must succeed`);
   assert.ok(signup.data.accessToken, `${prefix} signup must return an access token`);
-  return { email, token: signup.data.accessToken };
+  return { email, password, token: signup.data.accessToken };
+}
+
+async function loginSmokeUser(account) {
+  const login = await postJson('/auth/login', {
+    email: account.email,
+    password: account.password,
+  });
+  assertStatus(login, [200, 201], `${account.email} login must succeed`);
+  assert.ok(login.data.accessToken, `${account.email} login must return an access token`);
+  return login.data.accessToken;
 }
 
 async function main() {
@@ -194,6 +205,13 @@ async function main() {
   assert.equal(afterUndo.data.currentStep?.stepId, goal.data.firstStep.id, 'undo must restore the completed step as current');
   assert.equal(afterUndo.data.user?.xp, beforeXp, 'undo must restore XP');
   assert.equal(afterUndo.data.user?.goalCoin, beforeGoalCoin, 'undo must restore goal coins');
+
+  const reloginToken = await loginSmokeUser(account);
+  const afterRelogin = await getJson('/stepquest/current', reloginToken);
+  assertStatus(afterRelogin, 200, 'relogged account must load StepQuest state');
+  assert.equal(afterRelogin.data.currentStep?.stepId, goal.data.firstStep.id, 'relogged account must keep the restored current step');
+  assert.equal(afterRelogin.data.user?.xp, beforeXp, 'relogged account must keep restored XP');
+  assert.equal(afterRelogin.data.user?.goalCoin, beforeGoalCoin, 'relogged account must keep restored goal coins');
 
   const importAccount = await signupSmokeUser('staging-smoke-import');
   const migrationId = `staging-smoke-migration-${Date.now()}`;
