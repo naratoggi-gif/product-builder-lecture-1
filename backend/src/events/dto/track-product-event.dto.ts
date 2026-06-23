@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 
 const PRODUCT_EVENTS = [
   'app_opened',
@@ -22,20 +22,24 @@ export class TrackProductEventDto {
 
   @IsString()
   @MaxLength(120)
+  @Matches(/^[A-Za-z0-9:_-]+$/)
   anonymousUserId!: string;
 
   @IsString()
   @MaxLength(120)
+  @Matches(/^[A-Za-z0-9:_-]+$/)
   sessionId!: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(80)
+  @Matches(/^[A-Za-z0-9:_-]+$/)
   goalId?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(80)
+  @Matches(/^[A-Za-z0-9:_-]+$/)
   stepId?: string;
 
   @IsOptional()
