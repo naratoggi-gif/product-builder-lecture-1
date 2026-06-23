@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const { validateProductionEnv } = require('./start-production');
 
-const keys = ['NODE_ENV', 'DATABASE_URL', 'ENABLE_SUPER_MODE', 'JWT_SECRET'];
+const keys = ['NODE_ENV', 'APP_VERSION', 'DATABASE_URL', 'ENABLE_SUPER_MODE', 'JWT_SECRET'];
 const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 
 function restore() {
@@ -21,11 +21,20 @@ try {
   setEnv({ NODE_ENV: 'development' });
   assert.doesNotThrow(() => validateProductionEnv(), 'development should not require production secrets');
 
-  setEnv({ NODE_ENV: 'production', ENABLE_SUPER_MODE: 'false', JWT_SECRET: 'x'.repeat(48) });
+  setEnv({ NODE_ENV: 'production', APP_VERSION: '0.1.1-alpha', ENABLE_SUPER_MODE: 'false', JWT_SECRET: 'x'.repeat(48) });
   assert.throws(() => validateProductionEnv(), /DATABASE_URL is required/);
 
   setEnv({
     NODE_ENV: 'production',
+    DATABASE_URL: 'postgresql://example',
+    ENABLE_SUPER_MODE: 'false',
+    JWT_SECRET: 'x'.repeat(48),
+  });
+  assert.throws(() => validateProductionEnv(), /APP_VERSION is required/);
+
+  setEnv({
+    NODE_ENV: 'production',
+    APP_VERSION: '0.1.1-alpha',
     DATABASE_URL: 'postgresql://example',
     ENABLE_SUPER_MODE: 'true',
     JWT_SECRET: 'x'.repeat(48),
@@ -34,6 +43,7 @@ try {
 
   setEnv({
     NODE_ENV: 'production',
+    APP_VERSION: '0.1.1-alpha',
     DATABASE_URL: 'postgresql://example',
     ENABLE_SUPER_MODE: 'false',
     JWT_SECRET: 'dev-secret-change-me',
@@ -42,6 +52,7 @@ try {
 
   setEnv({
     NODE_ENV: 'production',
+    APP_VERSION: '0.1.1-alpha',
     DATABASE_URL: 'postgresql://example',
     ENABLE_SUPER_MODE: 'false',
     JWT_SECRET: 'short',
@@ -50,6 +61,7 @@ try {
 
   setEnv({
     NODE_ENV: 'production',
+    APP_VERSION: '0.1.1-alpha',
     DATABASE_URL: 'postgresql://example',
     ENABLE_SUPER_MODE: 'false',
     JWT_SECRET: 'x'.repeat(48),

@@ -12,6 +12,7 @@ const dbInit = fs.readFileSync(path.join(root, 'scripts/db-init.js'), 'utf8');
 const startProduction = fs.readFileSync(path.join(root, 'scripts/start-production.js'), 'utf8');
 const superSeed = fs.readFileSync(path.join(root, 'scripts/seed-super-user.js'), 'utf8');
 const packageJson = fs.readFileSync(path.join(root, 'package.json'), 'utf8');
+const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
 const rootReadme = fs.readFileSync(path.join(root, '../README.md'), 'utf8');
 const stagingRunbook = fs.readFileSync(path.join(root, '../STAGING_RUNBOOK.md'), 'utf8');
 const alphaTestPlan = fs.readFileSync(path.join(root, '../CLOSED_ALPHA_TEST_PLAN.md'), 'utf8');
@@ -77,8 +78,10 @@ assert.ok(dbInit.includes("await client.query('BEGIN')"), 'db-init must apply ea
 assert.ok(dbInit.includes('INSERT INTO codex_migrations'), 'db-init must record migration markers');
 assert.ok(dbInit.includes("await client.query('ROLLBACK')"), 'db-init must roll back failed migration files');
 assert.ok(startProduction.includes('validateProductionEnv'), 'production start must validate deployment environment');
+assert.ok(startProduction.includes('APP_VERSION is required in production'), 'production start must require app version metadata');
 assert.ok(startProduction.includes('ENABLE_SUPER_MODE must be false in production'), 'production start must block super mode');
 assert.ok(startProduction.includes('JWT_SECRET must be set to a strong random value in production'), 'production start must require a strong JWT secret');
+assert.ok(envExample.includes('JWT_SECRET=change-this-secret-to-at-least-32-random-characters'), '.env.example must show a strong JWT secret placeholder');
 assert.ok(packageJson.includes('"version": "0.1.1-alpha"'), 'backend version must be 0.1.1-alpha');
 assert.ok(packageJson.includes('"test:domain": "npm run build &&'), 'domain tests must use cross-platform npm, not npm.cmd');
 assert.ok(packageJson.includes('node scripts/health-test.js'), 'domain tests must verify health check behavior');
@@ -101,6 +104,7 @@ assert.ok(stagingRunbook.includes('STAGING_URL='), 'staging runbook must documen
 assert.ok(stagingRunbook.includes('Actions -> StepQuest Staging Smoke'), 'staging runbook must document the GitHub staging smoke workflow');
 assert.ok(stagingRunbook.includes('ENABLE_SUPER_MODE=false'), 'staging runbook must forbid super mode');
 assert.ok(stagingRunbook.includes('JWT_SECRET=<32+ character random secret>'), 'staging runbook must document strong JWT secret enforcement');
+assert.ok(stagingRunbook.includes('APP_VERSION` is missing'), 'staging runbook must document app version startup failure');
 assert.ok(stagingRunbook.includes('ENABLE_SUPER_MODE=true'), 'staging runbook must document production super-mode startup failure');
 assert.ok(stagingRunbook.includes('one DB transaction'), 'staging runbook must document transactional migration startup');
 assert.ok(stagingRunbook.includes('npm run analytics:report'), 'staging runbook must explain how to pull product event metrics');

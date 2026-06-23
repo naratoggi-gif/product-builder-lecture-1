@@ -6,6 +6,9 @@ function validateProductionEnv() {
   if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is required in production.');
   }
+  if (!process.env.APP_VERSION) {
+    throw new Error('APP_VERSION is required in production.');
+  }
   if (process.env.ENABLE_SUPER_MODE === 'true') {
     throw new Error('ENABLE_SUPER_MODE must be false in production.');
   }
