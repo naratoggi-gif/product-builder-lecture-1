@@ -216,6 +216,26 @@ async function main() {
   assert.equal(afterRelogin.data.user?.xp, beforeXp, 'relogged account must keep restored XP');
   assert.equal(afterRelogin.data.user?.goalCoin, beforeGoalCoin, 'relogged account must keep restored goal coins');
 
+  const shrunk = await postJson(`/stepquest/steps/${goal.data.firstStep.id}/shrink`, { reason: 'too_big' }, reloginToken);
+  assertStatus(shrunk, [200, 201], 'shrinking the current step must succeed');
+  assert.equal(shrunk.data.replacedStepId, goal.data.firstStep.id, 'shrink must replace the blocked step');
+  assert.ok(shrunk.data.firstStep?.id, 'shrink must create a smaller active step');
+
+  const afterShrink = await getJson('/stepquest/current', reloginToken);
+  assert.equal(afterShrink.data.currentStep?.stepId, shrunk.data.firstStep.id, 'shrunk first step must become current');
+
+  const deferred = await postJson(`/stepquest/steps/${shrunk.data.firstStep.id}/defer`, { reason: 'not_now' }, reloginToken);
+  assertStatus(deferred, [200, 201], 'deferring the current step must succeed');
+  assert.equal(deferred.data.deferredStepId, shrunk.data.firstStep.id, 'defer must mark the current step as deferred');
+
+  const returnEligibility = await getJson('/stepquest/return/eligibility', reloginToken);
+  assertStatus(returnEligibility, 200, 'return eligibility must be readable after deferring a step');
+  assert.equal(typeof returnEligibility.data.eligible, 'boolean', 'return eligibility must expose an eligibility boolean');
+
+  const resumed = await postJson(`/stepquest/steps/${shrunk.data.firstStep.id}/resume`, {}, reloginToken);
+  assertStatus(resumed, [200, 201], 'resuming the deferred step must succeed');
+  assert.equal(resumed.data.currentStep?.stepId, shrunk.data.firstStep.id, 'resume must restore the deferred step as current');
+
   const importAccount = await signupSmokeUser('staging-smoke-import');
   const migrationId = `staging-smoke-migration-${Date.now()}`;
   const guestState = {
@@ -260,6 +280,7 @@ async function main() {
     version: health.data.version,
     commit: health.data.commit,
     accountFlow: 'goal-complete-duplicate-undo',
+    returnFlow: 'shrink-defer-eligibility-resume',
     guestImport: 'idempotent',
   }, null, 2));
 }

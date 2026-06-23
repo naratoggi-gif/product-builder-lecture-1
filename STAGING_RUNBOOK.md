@@ -80,6 +80,7 @@ The smoke test checks:
 - Disposable `example.com` staging users can sign up and load default `Asia/Seoul` settings.
 - Authenticated users can create a StepQuest goal, complete the first Step, retry the same completion idempotently, and undo the reward.
 - The same smoke account can log in again and still load its StepQuest state.
+- The same smoke account can shrink a blocked Step, defer it, read return eligibility, and resume it.
 - Guest progress import is idempotent when the same `migrationId` is submitted twice.
 - Failed smoke HTTP checks include status and a short response snippet for diagnosis without printing tokens.
 

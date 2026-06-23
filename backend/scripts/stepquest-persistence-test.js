@@ -138,8 +138,13 @@ assert.ok(stagingSmoke.includes('/auth/signup'), 'staging smoke test must create
 assert.ok(stagingSmoke.includes('/auth/login'), 'staging smoke test must verify account login after signup');
 assert.ok(stagingSmoke.includes('/stepquest/goals'), 'staging smoke test must create a real StepQuest goal');
 assert.ok(stagingSmoke.includes('idempotencyKey'), 'staging smoke test must verify duplicate completion idempotency');
+assert.ok(stagingSmoke.includes('/shrink'), 'staging smoke test must verify shrink behavior');
+assert.ok(stagingSmoke.includes('/defer'), 'staging smoke test must verify defer behavior');
+assert.ok(stagingSmoke.includes('/stepquest/return/eligibility'), 'staging smoke test must verify return eligibility behavior');
+assert.ok(stagingSmoke.includes('/resume'), 'staging smoke test must verify deferred step resume behavior');
 assert.ok(stagingSmoke.includes('/stepquest/guest/import'), 'staging smoke test must verify guest import idempotency');
 assert.ok(stagingSmoke.includes('relogged account must load StepQuest state'), 'staging smoke test must verify account persistence after relogin');
+assert.ok(stagingRunbook.includes('shrink a blocked Step, defer it, read return eligibility, and resume it'), 'staging runbook must document shrink/defer/return smoke coverage');
 assert.ok(stagingSmoke.includes('ALLOW_INSECURE_STAGING_SMOKE'), 'staging smoke test must require HTTPS unless explicitly bypassed for local dry runs');
 assert.ok(stagingSmoke.includes('AbortSignal.timeout'), 'staging smoke test must fail hung requests with a timeout');
 assert.ok(stagingSmoke.includes('received HTTP'), 'staging smoke test must include response status diagnostics');
