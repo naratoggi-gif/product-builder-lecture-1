@@ -64,6 +64,7 @@ Or run the same check from GitHub:
 Actions -> StepQuest Staging Smoke -> Run workflow
 staging_url: https://your-stepquest-staging-url
 expected_app_version: 0.1.1-alpha
+cleanup_smoke_data: false
 ```
 
 The smoke test checks:
@@ -93,6 +94,7 @@ DATABASE_URL=postgresql://... DATABASE_SSL=true SMOKE_CLEANUP_DRY_RUN=false CONF
 ```
 
 The cleanup script is dry-run by default. It only targets those smoke email prefixes and the `staging-smoke-anon` product event ID.
+The GitHub smoke workflow can run the same cleanup after a successful smoke check when `cleanup_smoke_data=true` and the repository secret `STAGING_DATABASE_URL` is configured.
 
 ## Manual Closed Alpha Smoke
 

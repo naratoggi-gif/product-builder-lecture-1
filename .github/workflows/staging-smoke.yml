@@ -12,6 +12,21 @@ on:
         required: true
         default: "0.1.1-alpha"
         type: string
+      cleanup_smoke_data:
+        description: "Delete smoke-created staging users/events after a successful smoke run. Requires STAGING_DATABASE_URL secret."
+        required: true
+        default: false
+        type: boolean
+      cleanup_database_ssl:
+        description: "Use SSL for the cleanup database connection."
+        required: true
+        default: true
+        type: boolean
+      cleanup_min_age_hours:
+        description: "Only delete smoke data at least this many hours old."
+        required: true
+        default: "0"
+        type: string
 
 jobs:
   smoke:
@@ -35,3 +50,12 @@ jobs:
 
       - run: npm ci
       - run: npm run smoke:staging
+      - name: Clean up smoke data
+        if: ${{ inputs.cleanup_smoke_data }}
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DATABASE_SSL: ${{ inputs.cleanup_database_ssl }}
+          SMOKE_CLEANUP_DRY_RUN: "false"
+          CONFIRM_STAGING_SMOKE_CLEANUP: "true"
+          SMOKE_CLEANUP_MIN_AGE_HOURS: ${{ inputs.cleanup_min_age_hours }}
+        run: npm run smoke:cleanup

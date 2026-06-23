@@ -126,6 +126,9 @@ assert.ok(renderBlueprint.includes('NODE_VERSION'), 'Render blueprint must pin t
 assert.ok(stagingSmokeWorkflow.includes('workflow_dispatch'), 'staging smoke workflow must be manually runnable');
 assert.ok(stagingSmokeWorkflow.includes('staging_url'), 'staging smoke workflow must accept a staging URL input');
 assert.ok(stagingSmokeWorkflow.includes('npm run smoke:staging'), 'staging smoke workflow must run the staging smoke script');
+assert.ok(stagingSmokeWorkflow.includes('cleanup_smoke_data'), 'staging smoke workflow must optionally clean up smoke data');
+assert.ok(stagingSmokeWorkflow.includes('STAGING_DATABASE_URL'), 'staging smoke cleanup workflow must use an explicit database secret');
+assert.ok(stagingSmokeWorkflow.includes('CONFIRM_STAGING_SMOKE_CLEANUP'), 'staging smoke cleanup workflow must explicitly confirm deletion');
 assert.ok(dependabotConfig.includes('package-ecosystem: npm'), 'Dependabot must watch backend npm dependencies');
 assert.ok(dependabotConfig.includes('directory: /backend'), 'Dependabot npm updates must target backend');
 assert.ok(dependabotConfig.includes('package-ecosystem: github-actions'), 'Dependabot must watch GitHub Actions');
@@ -156,6 +159,8 @@ assert.ok(stagingRunbook.includes('Disposable `example.com` staging users'), 'st
 assert.ok(stagingRunbook.includes('SMOKE_TIMEOUT_MS'), 'staging runbook must document smoke request timeout tuning');
 assert.ok(stagingRunbook.includes('real staging URL must use HTTPS'), 'staging runbook must document HTTPS enforcement');
 assert.ok(stagingRunbook.includes('npm run smoke:cleanup'), 'staging runbook must document smoke data cleanup');
+assert.ok(stagingRunbook.includes('cleanup_smoke_data=true'), 'staging runbook must document optional GitHub smoke cleanup');
+assert.ok(stagingRunbook.includes('STAGING_DATABASE_URL'), 'staging runbook must document the cleanup database secret');
 assert.ok(stagingSmokeCleanup.includes('SMOKE_CLEANUP_DRY_RUN'), 'staging smoke cleanup must default to a dry-run mode');
 assert.ok(stagingSmokeCleanup.includes('CONFIRM_STAGING_SMOKE_CLEANUP'), 'staging smoke cleanup must require explicit confirmation before deletion');
 assert.ok(stagingSmokeCleanup.includes('staging-smoke+%@example.com'), 'staging smoke cleanup must only target smoke account prefixes');
