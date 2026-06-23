@@ -85,6 +85,7 @@ assert.ok(packageJson.includes('node scripts/health-test.js'), 'domain tests mus
 assert.ok(packageJson.includes('node scripts/production-env-test.js'), 'domain tests must verify production environment guards');
 assert.ok(packageJson.includes('node scripts/request-logger-test.js'), 'domain tests must verify safe structured logging');
 assert.ok(packageJson.includes('node scripts/product-event-dto-test.js'), 'domain tests must verify product event payload boundaries');
+assert.ok(packageJson.includes('node scripts/product-event-auth-test.js'), 'domain tests must verify optional product event account linking');
 assert.ok(packageJson.includes('node scripts/timezone-test.js'), 'domain tests must verify Korean midnight timezone boundaries');
 assert.ok(packageJson.includes('"seed:super"'), 'seed:super script must be present');
 assert.ok(packageJson.includes('"test:e2e"'), 'Playwright E2E script must be present');
@@ -174,6 +175,9 @@ assert.ok(appModule.includes('HealthModule'), 'HealthModule is not registered');
 assert.ok(appModule.includes('ThrottlerModule.forRoot'), 'rate limiting module is not registered');
 assert.ok(appModule.includes('EventsModule'), 'product events module is not registered');
 assert.ok(eventsController.includes("@Throttle({ default: { ttl: 60_000, limit: 120 } })"), 'product event ingestion must be rate-limited');
+assert.ok(eventsController.includes('optionalUserId'), 'product events must link authenticated events without blocking guest tracking');
+assert.ok(eventsController.includes('verifyAsync'), 'product event optional auth must verify bearer tokens');
+assert.ok(browserApp.includes("Authorization: `Bearer ${state.token}`"), 'browser product events must attach account tokens when available');
 assert.ok(productEventDto.includes('@Matches(/^[A-Za-z0-9:_-]+$/)'), 'product event IDs must reject free text');
 assert.ok(authController.includes("@Throttle({ default: { ttl: 600_000, limit: 5 } })\r\n  @Post('signup')")
   || authController.includes("@Throttle({ default: { ttl: 600_000, limit: 5 } })\n  @Post('signup')"), 'signup must be rate-limited to 5 attempts per 10 minutes');
