@@ -2,6 +2,10 @@
   "name": "stepquest-backend",
   "version": "0.1.1-alpha",
   "private": true,
+  "engines": {
+    "node": ">=20 <23",
+    "npm": ">=10"
+  },
   "scripts": {
     "audit:reports": "node scripts/generate-audit-reports.js",
     "audit:ci": "node scripts/audit-ci.js",

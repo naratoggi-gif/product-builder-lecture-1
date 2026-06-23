@@ -86,6 +86,7 @@ assert.ok(startProduction.includes('ENABLE_SUPER_MODE must be explicitly false i
 assert.ok(startProduction.includes('JWT_SECRET must be set to a strong random value in production'), 'production start must require a strong JWT secret');
 assert.ok(envExample.includes('JWT_SECRET=change-this-secret-to-at-least-32-random-characters'), '.env.example must show a strong JWT secret placeholder');
 assert.ok(packageJson.includes('"version": "0.1.1-alpha"'), 'backend version must be 0.1.1-alpha');
+assert.ok(packageJson.includes('"node": ">=20 <23"'), 'backend package must pin a Node 20 compatible runtime');
 assert.ok(packageJson.includes('"test:domain": "npm run build &&'), 'domain tests must use cross-platform npm, not npm.cmd');
 assert.ok(packageJson.includes('node scripts/health-test.js'), 'domain tests must verify health check behavior');
 assert.ok(packageJson.includes('node scripts/production-env-test.js'), 'domain tests must verify production environment guards');
@@ -107,6 +108,7 @@ assert.ok(stagingRunbook.includes('STAGING_URL='), 'staging runbook must documen
 assert.ok(stagingRunbook.includes('Actions -> StepQuest Staging Smoke'), 'staging runbook must document the GitHub staging smoke workflow');
 assert.ok(stagingRunbook.includes('ENABLE_SUPER_MODE=false'), 'staging runbook must forbid super mode');
 assert.ok(stagingRunbook.includes('JWT_SECRET=<32+ character random secret>'), 'staging runbook must document strong JWT secret enforcement');
+assert.ok(stagingRunbook.includes('NODE_VERSION=20'), 'staging runbook must document the Node runtime version');
 assert.ok(stagingRunbook.includes('APP_VERSION` is missing'), 'staging runbook must document app version startup failure');
 assert.ok(stagingRunbook.includes('not exactly `false`'), 'staging runbook must document explicit super-mode startup failure');
 assert.ok(stagingRunbook.includes('one DB transaction'), 'staging runbook must document transactional migration startup');
@@ -117,6 +119,7 @@ assert.ok(alphaTestPlan.includes('retention.d1RetentionPct'), 'closed alpha plan
 assert.ok(alphaTestPlan.includes('Production super login succeeds'), 'closed alpha plan must include security stop conditions');
 assert.ok(renderBlueprint.includes('healthCheckPath: /health'), 'Render blueprint must use the health endpoint');
 assert.ok(renderBlueprint.includes('rootDir: backend'), 'Render blueprint must deploy the backend directory');
+assert.ok(renderBlueprint.includes('NODE_VERSION'), 'Render blueprint must pin the Node runtime version');
 assert.ok(stagingSmokeWorkflow.includes('workflow_dispatch'), 'staging smoke workflow must be manually runnable');
 assert.ok(stagingSmokeWorkflow.includes('staging_url'), 'staging smoke workflow must accept a staging URL input');
 assert.ok(stagingSmokeWorkflow.includes('npm run smoke:staging'), 'staging smoke workflow must run the staging smoke script');

@@ -107,6 +107,7 @@ Root Directory: backend
 Build Command: npm ci && npm run build
 Start Command: npm start
 Health Check Path: /health
+Runtime: Node 20
 ```
 
 After the HTTPS staging URL exists, run:

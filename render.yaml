@@ -11,6 +11,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "20"
       - key: ENABLE_SUPER_MODE
         value: "false"
       - key: APP_VERSION
