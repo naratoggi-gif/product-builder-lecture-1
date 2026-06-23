@@ -76,6 +76,8 @@ Primary metrics:
 - App opened -> first step completed.
 - Smaller used -> completed.
 - Return offered -> return started.
+- Return started -> return completed.
+- First step shown -> skipped or deferred.
 - Guest import completed.
 - D1 and D7 revisit by anonymous user or account user, calculated in `REPORT_TIMEZONE` (`Asia/Seoul` by default). In the JSON report, check `retention.d1RetentionPct` and `retention.d7RetentionPct`.
 
@@ -103,6 +105,9 @@ Choose one direction:
 ```text
 Execution rate is low
 -> improve goal decomposition, "smaller", and return UX.
+
+Skip or defer rate is high
+-> inspect the most common category and estimatedSeconds values before adding game features.
 
 Execution rate is okay but revisit is low
 -> improve character, village, costume growth feedback.

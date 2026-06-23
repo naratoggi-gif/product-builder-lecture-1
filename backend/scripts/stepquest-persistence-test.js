@@ -152,8 +152,14 @@ assert.ok(stagingRunbook.includes('Disposable `example.com` staging users'), 'st
 assert.ok(stagingRunbook.includes('SMOKE_TIMEOUT_MS'), 'staging runbook must document smoke request timeout tuning');
 assert.ok(stagingRunbook.includes('real staging URL must use HTTPS'), 'staging runbook must document HTTPS enforcement');
 assert.ok(productEventReport.includes('goalToFirstCompletionPct'), 'product event report must expose goal-to-completion conversion');
+assert.ok(productEventReport.includes('firstStepShownToCompletionPct'), 'product event report must expose first-step-to-completion conversion');
+assert.ok(productEventReport.includes('completionUndoPct'), 'product event report must expose undo rate');
 assert.ok(productEventReport.includes('shrinkToCompletionPct'), 'product event report must expose shrink-to-completion conversion');
+assert.ok(productEventReport.includes('skipAfterShownPct'), 'product event report must expose skip-after-shown rate');
+assert.ok(productEventReport.includes('deferAfterShownPct'), 'product event report must expose defer-after-shown rate');
 assert.ok(productEventReport.includes('returnOfferToStartPct'), 'product event report must expose return-start conversion');
+assert.ok(productEventReport.includes('returnStartToCompletePct'), 'product event report must expose return-completion conversion');
+assert.ok(productEventReport.includes('goalClearPct'), 'product event report must expose goal clear rate');
 assert.ok(productEventReport.includes('d1RetentionPct'), 'product event report must expose D1 retention');
 assert.ok(productEventReport.includes('d7RetentionPct'), 'product event report must expose D7 retention');
 assert.ok(productEventReport.includes('REPORT_TIMEZONE'), 'product event report must calculate retention in the configured timezone');
