@@ -39,7 +39,15 @@ try {
     ENABLE_SUPER_MODE: 'true',
     JWT_SECRET: 'x'.repeat(48),
   });
-  assert.throws(() => validateProductionEnv(), /ENABLE_SUPER_MODE must be false/);
+  assert.throws(() => validateProductionEnv(), /ENABLE_SUPER_MODE must be explicitly false/);
+
+  setEnv({
+    NODE_ENV: 'production',
+    APP_VERSION: '0.1.1-alpha',
+    DATABASE_URL: 'postgresql://example',
+    JWT_SECRET: 'x'.repeat(48),
+  });
+  assert.throws(() => validateProductionEnv(), /ENABLE_SUPER_MODE must be explicitly false/);
 
   setEnv({
     NODE_ENV: 'production',

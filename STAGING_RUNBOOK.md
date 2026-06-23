@@ -34,7 +34,7 @@ APP_VERSION=0.1.1-alpha
 TRUST_PROXY=true
 ```
 
-`npm start` runs `scripts/start-production.js`, so production startup fails if `DATABASE_URL` is missing, `APP_VERSION` is missing, `JWT_SECRET` is weak, `ENABLE_SUPER_MODE=true`, or migrations fail.
+`npm start` runs `scripts/start-production.js`, so production startup fails if `DATABASE_URL` is missing, `APP_VERSION` is missing, `JWT_SECRET` is weak, `ENABLE_SUPER_MODE` is not exactly `false`, or migrations fail.
 Each migration file and its `codex_migrations` marker are applied in one DB transaction.
 On Render, `/health` reads the deploy commit from the default `RENDER_GIT_COMMIT` environment variable.
 
@@ -127,6 +127,6 @@ Use `CLOSED_ALPHA_TEST_PLAN.md` for participant instructions, follow-up question
 ## Security Notes
 
 - Do not run `seed:super` in production.
-- Do not enable `ENABLE_SUPER_MODE` in staging or production.
+- Keep `ENABLE_SUPER_MODE=false` in staging and production.
 - Do not paste real JWTs, passwords, Authorization headers, goal text, or user obstacle text into issue reports.
 - Revisit `SECURITY_AUDIT.md` before adding file uploads or multipart endpoints.

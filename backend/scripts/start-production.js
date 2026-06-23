@@ -9,8 +9,8 @@ function validateProductionEnv() {
   if (!process.env.APP_VERSION) {
     throw new Error('APP_VERSION is required in production.');
   }
-  if (process.env.ENABLE_SUPER_MODE === 'true') {
-    throw new Error('ENABLE_SUPER_MODE must be false in production.');
+  if (process.env.ENABLE_SUPER_MODE !== 'false') {
+    throw new Error('ENABLE_SUPER_MODE must be explicitly false in production.');
   }
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me' || process.env.JWT_SECRET.length < 32) {
     throw new Error('JWT_SECRET must be set to a strong random value in production.');

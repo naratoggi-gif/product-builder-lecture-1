@@ -140,7 +140,7 @@ The CI job uses PostgreSQL 16 and disables super mode.
 
 - This is an ADHD-friendly execution support tool, not a medical treatment or diagnostic product.
 - Avoid promising therapeutic outcomes.
-- Production builds must keep `ENABLE_SUPER_MODE=false`.
+- Production builds must set `ENABLE_SUPER_MODE=false` explicitly.
 - Debug credentials, JWTs, and Authorization headers must not be logged.
 
 ## Next Stabilization Priorities
