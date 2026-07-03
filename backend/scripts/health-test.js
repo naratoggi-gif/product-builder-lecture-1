@@ -8,8 +8,10 @@ async function run() {
   const oldAppVersion = process.env.APP_VERSION;
   const oldRenderCommit = process.env.RENDER_GIT_COMMIT;
   const oldGitCommit = process.env.GIT_COMMIT_SHA;
+  const oldNodeEnv = process.env.NODE_ENV;
 
   process.env.APP_VERSION = '0.1.1-alpha';
+  process.env.NODE_ENV = 'production';
   delete process.env.GIT_COMMIT_SHA;
   process.env.RENDER_GIT_COMMIT = 'render-commit-smoke';
 
@@ -22,6 +24,7 @@ async function run() {
       database: 'connected',
       version: '0.1.1-alpha',
       commit: 'render-commit-smoke',
+      environment: 'production',
     });
 
     const degraded = new HealthController({ query: async () => { throw new Error('db down'); } });
@@ -35,6 +38,7 @@ async function run() {
           database: 'unavailable',
           version: '0.1.1-alpha',
           commit: 'render-commit-smoke',
+          environment: 'production',
         });
         return true;
       },
@@ -46,6 +50,8 @@ async function run() {
     else process.env.RENDER_GIT_COMMIT = oldRenderCommit;
     if (oldGitCommit === undefined) delete process.env.GIT_COMMIT_SHA;
     else process.env.GIT_COMMIT_SHA = oldGitCommit;
+    if (oldNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = oldNodeEnv;
   }
 
   console.log(JSON.stringify({ ok: true, checked: 'health' }, null, 2));

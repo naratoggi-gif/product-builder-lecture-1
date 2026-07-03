@@ -16,6 +16,7 @@ export class HealthController {
     database: 'connected' | 'unavailable';
     version: string;
     commit: string;
+    environment: string;
   }> {
     let database: 'connected' | 'unavailable' = 'connected';
     try {
@@ -29,6 +30,7 @@ export class HealthController {
       database,
       version: appVersion(),
       commit: commitSha(),
+      environment: process.env.NODE_ENV || 'development',
     };
 
     if (database !== 'connected') {

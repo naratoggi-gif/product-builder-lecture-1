@@ -123,6 +123,7 @@ async function main() {
   assert.equal(health.data.database, 'connected', '/health database must be connected');
   assert.equal(health.data.version, expectedVersion, '/health must report the deployed app version');
   assert.ok(health.data.commit && health.data.commit !== 'local', '/health must expose the deployed commit SHA');
+  assert.equal(health.data.environment, 'production', '/health must prove the staging service is running with NODE_ENV=production');
 
   const goals = await read('/goals.html');
   assertStatus(goals, 200, '/goals.html must load');

@@ -69,7 +69,7 @@ cleanup_smoke_data: false
 
 The smoke test checks:
 
-- `/health` returns HTTP 200, DB connected, version `0.1.1-alpha`, and a non-local commit SHA.
+- `/health` returns HTTP 200, DB connected, version `0.1.1-alpha`, environment `production`, and a non-local commit SHA.
 - The supplied staging URL uses HTTPS, unless a local dry run explicitly opts into insecure mode.
 - `goals.html` loads and references `v=0.1.1-alpha` assets.
 - Helmet CSP is present.

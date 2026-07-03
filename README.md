@@ -94,7 +94,8 @@ Example:
   "status": "ok",
   "database": "connected",
   "version": "0.1.1-alpha",
-  "commit": "local"
+  "commit": "local",
+  "environment": "development"
 }
 ```
 

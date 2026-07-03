@@ -135,6 +135,7 @@ assert.ok(dependabotConfig.includes('package-ecosystem: github-actions'), 'Depen
 assert.ok(securityAudit.includes('Enable Dependabot alerts'), 'security audit must document the repository-level Dependabot alerts step');
 assert.ok(securityAudit.includes('Critical or High production alert'), 'security audit must define the production alert release gate');
 assert.ok(stagingSmoke.includes('/health'), 'staging smoke test must check health');
+assert.ok(stagingSmoke.includes("health.data.environment, 'production'"), 'staging smoke test must verify production runtime mode');
 assert.ok(stagingSmoke.includes('/dev/super-mode.js?v='), 'staging smoke test must check production super mode');
 assert.ok(stagingSmoke.includes('packageVersion'), 'staging smoke test must derive its default version from package.json');
 assert.ok(stagingSmoke.includes('x-content-type-options'), 'staging smoke test must verify Helmet security headers');
@@ -237,6 +238,7 @@ assert.ok(stagingSmoke.includes('requestId'), 'staging smoke failures must inclu
 assert.ok(mainTs.includes("app.set('trust proxy', 1)"), 'reverse proxy trust setting must be available');
 assert.ok(healthController.includes('@Get()'), 'health endpoint route is missing');
 assert.ok(healthController.includes('appVersion()'), 'health endpoint must expose the app version');
+assert.ok(healthController.includes('environment'), 'health endpoint must expose the runtime environment');
 assert.ok(healthController.includes('ServiceUnavailableException'), 'health endpoint must fail with HTTP 503 when the DB is unavailable');
 assert.ok(appVersionSource.includes('RENDER_GIT_COMMIT'), 'health commit metadata must read Render deploy commit env');
 assert.ok(service.includes('`reminder:${stepId}:complete`'), 'reminder completion must use a stable reward idempotency key');
