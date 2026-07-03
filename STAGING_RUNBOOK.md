@@ -36,7 +36,7 @@ TRUST_PROXY=true
 ```
 
 `package.json` and `render.yaml` pin the deployment runtime to Node 20.
-`npm start` runs `scripts/start-production.js`, so production startup fails if `DATABASE_URL` is missing, `APP_VERSION` is missing, `JWT_SECRET` is weak, `ENABLE_SUPER_MODE` is not exactly `false`, or migrations fail.
+`npm start` runs `scripts/start-production.js`, so production startup fails if `DATABASE_URL` is missing, `APP_VERSION` is missing, `JWT_SECRET` is weak, `ENABLE_SUPER_MODE` is not exactly `false`, `SKIP_DB_INIT=true`, or migrations fail.
 Each migration file and its `codex_migrations` marker are applied in one DB transaction.
 On Render, `/health` reads the deploy commit from the default `RENDER_GIT_COMMIT` environment variable.
 

@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const { validateProductionEnv } = require('./start-production');
 
-const keys = ['NODE_ENV', 'APP_VERSION', 'DATABASE_URL', 'ENABLE_SUPER_MODE', 'JWT_SECRET'];
+const keys = ['NODE_ENV', 'APP_VERSION', 'DATABASE_URL', 'ENABLE_SUPER_MODE', 'JWT_SECRET', 'SKIP_DB_INIT'];
 const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 
 function restore() {
@@ -48,6 +48,16 @@ try {
     JWT_SECRET: 'x'.repeat(48),
   });
   assert.throws(() => validateProductionEnv(), /ENABLE_SUPER_MODE must be explicitly false/);
+
+  setEnv({
+    NODE_ENV: 'production',
+    APP_VERSION: '0.1.1-alpha',
+    DATABASE_URL: 'postgresql://example',
+    ENABLE_SUPER_MODE: 'false',
+    SKIP_DB_INIT: 'true',
+    JWT_SECRET: 'x'.repeat(48),
+  });
+  assert.throws(() => validateProductionEnv(), /SKIP_DB_INIT must not be true/);
 
   setEnv({
     NODE_ENV: 'production',
