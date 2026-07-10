@@ -4,6 +4,7 @@ const NOW = '2026-07-11T00:00:00.000Z';
 
 async function clearBrowserState(page) {
   await page.goto('/goals.html');
+  await expect(page.locator('#v02-goal-title')).toBeVisible();
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
