@@ -5,6 +5,7 @@
   const FALLBACK_STATE_KEY = 'stepquest_v02_fallback_state';
   const FALLBACK_BACKUPS_KEY = 'stepquest_v02_fallback_backups';
   const FALLBACK_META_PREFIX = 'stepquest_v02_meta_';
+  const REPOSITORY_MODE_KEY = 'stepquest_v02_repository_mode';
   const STATE_STORES = [
     'goals',
     'steps',
@@ -75,9 +76,12 @@
         createStore(database, 'wallet', { keyPath: 'id' });
         createStore(database, 'backups', { keyPath: 'id' });
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        request.result.onversionchange = () => request.result.close();
+        resolve(request.result);
+      };
       request.onerror = () => reject(request.error || new Error('INDEXED_DB_OPEN_FAILED'));
-      request.onblocked = () => reject(new Error('INDEXED_DB_OPEN_BLOCKED'));
+      request.onblocked = () => {};
     });
   }
 
@@ -113,6 +117,27 @@
       stepCoin: Number.isFinite(value?.stepCoin) ? value.stepCoin : 0,
       gold: Number.isFinite(value?.gold) ? value.gold : 0,
     };
+  }
+
+  function hasDomainState(state) {
+    return Boolean(
+      state.goals?.length
+      || state.steps?.length
+      || state.expeditions?.length
+      || state.resumeAnchors?.length
+      || state.events?.length
+      || state.rewards?.length
+      || Number(state.wallet?.stepCoin || 0)
+      || Number(state.wallet?.gold || 0),
+    );
+  }
+
+  function mirrorFallbackState(state) {
+    try {
+      root.localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(state));
+    } catch (_error) {
+      // IndexedDB remains authoritative when the emergency mirror is unavailable.
+    }
   }
 
   function partitionRecords(records) {
@@ -162,6 +187,12 @@
     state.events.forEach((value) => transaction.objectStore('events').put(clone(value)));
     state.rewards.forEach((value) => transaction.objectStore('rewards').put(clone(value)));
     transaction.objectStore('wallet').put({ id: 'main', ...normalizeWallet(state.wallet) });
+  }
+
+  function replaceState(transaction, state) {
+    ['goals', 'steps', 'expeditions', 'resumeAnchors', 'events', 'rewards', 'wallet']
+      .forEach((storeName) => transaction.objectStore(storeName).clear());
+    writeState(transaction, state);
   }
 
   function putQuarantine(transaction, invalid, now) {
@@ -328,6 +359,7 @@
           }
         }
         await done;
+        mirrorFallbackState(outcome.state);
         return { ...outcome, state: clone(outcome.state) };
       } catch (error) {
         abortQuietly(transaction);
@@ -358,6 +390,7 @@
           value: { idempotencyKey: command.idempotencyKey, completedAt: command.now },
         });
         await done;
+        mirrorFallbackState(next);
         root.localStorage.setItem(ACTIVE_KEY, '1');
         return { migrated: true, snapshot: clone(next) };
       } catch (error) {
@@ -377,6 +410,41 @@
       return { ...state, backups };
     }
 
+    async function recoverFallback(state, backups = []) {
+      const transaction = database.transaction(ALL_STORES, 'readwrite');
+      const done = transactionDone(transaction);
+      try {
+        const { state: previous } = partitionRecords(await readRecords(transaction));
+        if (hasDomainState(previous)) {
+          await rotateBackups(
+            transaction,
+            previous,
+            'fallback_recovery_previous',
+            new Date().toISOString(),
+          );
+        }
+        replaceState(transaction, state);
+        const backupStore = transaction.objectStore('backups');
+        backups.forEach((backup) => backupStore.put(clone(backup)));
+        const mergedBackups = await requestResult(backupStore.getAll());
+        mergedBackups
+          .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
+          .slice(5)
+          .forEach((backup) => backupStore.delete(backup.id));
+        transaction.objectStore('meta').put({
+          key: 'fallbackRecovery',
+          value: { completedAt: new Date().toISOString() },
+        });
+        await done;
+        mirrorFallbackState(state);
+        return clone(state);
+      } catch (error) {
+        abortQuietly(transaction);
+        try { await done; } catch (_transactionError) { /* preserve recovery error */ }
+        throw error;
+      }
+    }
+
     return {
       mode: 'indexedDB',
       getSnapshot,
@@ -386,6 +454,7 @@
       getMeta,
       setMeta,
       exportRecords,
+      recoverFallback,
     };
   }
 
@@ -411,7 +480,7 @@
     }
   }
 
-  function createFallbackRepository(Domain) {
+  function createFallbackRepository(Domain, options = {}) {
     function setMeta(key, value) {
       root.localStorage.setItem(`${FALLBACK_META_PREFIX}${key}`, JSON.stringify(value));
       return Promise.resolve(value);
@@ -432,13 +501,16 @@
       if (invalid.length) {
         await setMeta('lastQuarantineCount', invalid.length);
         await setMeta(`quarantine:${new Date().toISOString()}`, invalid);
-        root.localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(state));
+        saveState(state);
       }
       return state;
     }
 
     function saveState(state) {
       root.localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(state));
+      if (options.markAuthorityOnWrite !== false) {
+        root.localStorage.setItem(REPOSITORY_MODE_KEY, 'localStorage');
+      }
     }
 
     function rotateFallbackBackups(snapshot, operation, now) {
@@ -515,9 +587,31 @@
     if (!Domain) throw new Error('STEPQUEST_V02_DOMAIN_NOT_LOADED');
     try {
       const database = await openDatabase();
-      return createIndexedDbRepository(database, Domain);
+      const repository = createIndexedDbRepository(database, Domain);
+      const authority = root.localStorage.getItem(REPOSITORY_MODE_KEY);
+      const fallbackRepository = createFallbackRepository(Domain, { markAuthorityOnWrite: false });
+      const [indexedState, fallbackState] = await Promise.all([
+        repository.getSnapshot(),
+        fallbackRepository.getSnapshot(),
+      ]);
+      if (
+        hasDomainState(fallbackState)
+        && (authority === 'localStorage' || (!authority && !hasDomainState(indexedState)))
+      ) {
+        await repository.recoverFallback(fallbackState, readFallbackBackups());
+      } else {
+        mirrorFallbackState(indexedState);
+      }
+      root.localStorage.setItem(REPOSITORY_MODE_KEY, 'indexedDB');
+      if (
+        root.localStorage.getItem(ACTIVE_KEY) !== '1'
+        && await repository.getMeta('migrationComplete')
+      ) {
+        root.localStorage.setItem(ACTIVE_KEY, '1');
+      }
+      return repository;
     } catch (_error) {
-      return createFallbackRepository(Domain);
+      return createFallbackRepository(Domain, { markAuthorityOnWrite: true });
     }
   }
 

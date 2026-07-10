@@ -140,10 +140,15 @@ function testReplacementLineageCannotMintStartReward() {
     reason: 'too_big',
     route: 'manual_shrink',
     nextPhysicalAction: '문서 제목만 보기',
+    reportIdempotencyKey: 'lineage-report-original',
     idempotencyKey: 'lineage-shrink-1',
     now: NOW,
     idFactory,
   });
+  assert.equal(
+    transition.state.events.find((event) => event.type === 'obstacle_routed').resolvesEventKey,
+    'lineage-report-original',
+  );
   let replacement = activeStep(transition.state);
   assert.equal(replacement.phase, 'start');
   assert.equal(replacement.rewardLineage, 'step-1');
@@ -168,6 +173,7 @@ function testReplacementLineageCannotMintStartReward() {
     reason: 'too_big',
     route: 'manual_shrink',
     nextPhysicalAction: '파일 이름만 보기',
+    reportIdempotencyKey: 'lineage-report-1',
     idempotencyKey: 'lineage-shrink-2',
     now: NOW,
     idFactory,

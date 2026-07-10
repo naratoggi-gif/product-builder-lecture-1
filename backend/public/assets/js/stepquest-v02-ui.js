@@ -22,6 +22,48 @@
   };
   const h = (value) => App.h(String(value ?? ''));
   const key = (name, id) => `v02:${name}:${id}`;
+  const anchorDraftKey = (expeditionId) => `stepquest_v02_anchor_draft_${expeditionId}`;
+
+  function readAnchorDraft(expeditionId) {
+    if (!expeditionId) return null;
+    try {
+      return JSON.parse(root.localStorage.getItem(anchorDraftKey(expeditionId)) || 'null');
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function writeAnchorDraft(expeditionId, draft) {
+    if (!expeditionId) return;
+    try {
+      root.localStorage.setItem(anchorDraftKey(expeditionId), JSON.stringify({
+        ...draft,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch (_error) {
+      // The report remains usable even if the browser denies draft storage.
+    }
+  }
+
+  function clearAnchorDraft(expeditionId) {
+    if (!expeditionId) return;
+    try {
+      root.localStorage.removeItem(anchorDraftKey(expeditionId));
+    } catch (_error) {
+      // A stale draft is ignored when its expedition is no longer active.
+    }
+  }
+
+  function captureAnchorDraft(expeditionId) {
+    writeAnchorDraft(expeditionId, {
+      outcome: selectedOutcome,
+      lastCompletedAction: document.getElementById('v02-last-action')?.value || '',
+      nextPhysicalAction: document.getElementById('v02-next-action')?.value || '',
+      location: document.getElementById('v02-location')?.value || '',
+      requiredMaterial: document.getElementById('v02-material')?.value || '',
+      note: document.getElementById('v02-note')?.value || '',
+    });
+  }
 
   function viewModel() {
     const state = Core.getSnapshot();
@@ -34,19 +76,20 @@
         .reverse()
         .find((item) => item.stepId === interrupted.id && !item.consumedAt)
       : null;
-    let lastNotStartedIndex = -1;
-    for (let index = state.events.length - 1; index >= 0; index -= 1) {
-      const event = state.events[index];
-      if (event.type === 'expedition_reported' && event.outcome === 'not_started') {
-        lastNotStartedIndex = index;
-        break;
-      }
-    }
-    const lastNotStarted = lastNotStartedIndex >= 0 ? state.events[lastNotStartedIndex] : null;
-    const routed = lastNotStarted && state.events.slice(lastNotStartedIndex + 1).some((event) => (
-      event.stepId === lastNotStarted.stepId
-      && (event.type === 'obstacle_routed' || event.type === 'step_started')
-    ));
+    const notStartedReports = state.events
+      .filter((event) => event.type === 'expedition_reported' && event.outcome === 'not_started')
+      .sort((left, right) => (
+        String(right.createdAt).localeCompare(String(left.createdAt))
+        || String(right.idempotencyKey).localeCompare(String(left.idempotencyKey))
+      ));
+    const lastNotStarted = notStartedReports.find((report) => !state.events.some((event) => (
+      event.type === 'obstacle_routed'
+      && event.stepId === report.stepId
+      && (
+        event.resolvesEventKey === report.idempotencyKey
+        || (!event.resolvesEventKey && String(event.createdAt) >= String(report.createdAt))
+      )
+    ))) || null;
     return {
       state,
       active,
@@ -54,7 +97,7 @@
       deferred,
       expedition,
       anchor,
-      pendingObstacle: lastNotStarted && !routed ? lastNotStarted : null,
+      pendingObstacle: lastNotStarted,
     };
   }
 
@@ -99,6 +142,7 @@
     const rootNode = document.getElementById('page-root');
     const vm = viewModel();
     const status = Core.getStatus();
+    const anchorDraft = vm.expedition ? readAnchorDraft(vm.expedition.id) : null;
     const wallet = `
       <div id="v02-wallet" class="v02-wallet" aria-label="보유 재화">
         <span>스텝코인 <b>${vm.state.wallet.stepCoin}</b></span>
@@ -136,7 +180,6 @@
               <button id="v02-defer" class="ghost">나중에</button>
             </div>
           ` : ''}
-          <button id="v02-retry-now" class="ghost">지금 다시 시작</button>
         </section>
       `;
     } else if (vm.expedition && (reporting || status.recoveredExpedition)) {
@@ -151,11 +194,11 @@
           </div>
           ${['partial', 'interrupted'].includes(selectedOutcome) ? `
             <div class="v02-anchor">
-              <label>마지막으로 한 것<input id="v02-last-action" autocomplete="off" /></label>
-              <label>다음 손동작<input id="v02-next-action" aria-required="true" autocomplete="off" /></label>
-              <label>장소<input id="v02-location" autocomplete="off" /></label>
-              <label>필요한 준비물<input id="v02-material" autocomplete="off" /></label>
-              <label>메모<textarea id="v02-note"></textarea></label>
+              <label>마지막으로 한 것<input id="v02-last-action" value="${h(anchorDraft?.lastCompletedAction || '')}" autocomplete="off" /></label>
+              <label>다음 손동작<input id="v02-next-action" value="${h(anchorDraft?.nextPhysicalAction || '')}" aria-required="true" autocomplete="off" /></label>
+              <label>장소<input id="v02-location" value="${h(anchorDraft?.location || '')}" autocomplete="off" /></label>
+              <label>필요한 준비물<input id="v02-material" value="${h(anchorDraft?.requiredMaterial || '')}" autocomplete="off" /></label>
+              <label>메모<textarea id="v02-note">${h(anchorDraft?.note || '')}</textarea></label>
               <button id="v02-save-outcome">기록 저장</button>
             </div>
           ` : ''}
@@ -259,6 +302,8 @@
       button.addEventListener('click', (event) => {
         selectedOutcome = button.dataset.v02Outcome;
         if (selectedOutcome === 'partial' || selectedOutcome === 'interrupted') {
+          const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+          writeAnchorDraft(expedition.id, { outcome: selectedOutcome });
           render();
           return;
         }
@@ -268,6 +313,7 @@
             outcome: selectedOutcome,
             idempotencyKey: key('report', expedition.id),
           });
+          clearAnchorDraft(expedition.id);
           reporting = false;
           selectedOutcome = null;
           selectedReason = null;
@@ -294,10 +340,16 @@
             note: document.getElementById('v02-note').value.trim(),
           },
         });
+        clearAnchorDraft(expedition.id);
         reporting = false;
         selectedOutcome = null;
       })
     ));
+    ['v02-last-action', 'v02-next-action', 'v02-location', 'v02-material', 'v02-note']
+      .forEach((id) => document.getElementById(id)?.addEventListener('input', () => {
+        const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+        captureAnchorDraft(expedition?.id);
+      }));
     document.getElementById('v02-resume-step')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
         const step = Core.getSnapshot().steps.find((item) => item.status === 'interrupted');
@@ -325,10 +377,12 @@
           return false;
         }
         const step = Core.getSnapshot().steps.find((item) => item.status === 'active');
+        const report = viewModel().pendingObstacle;
         await Core.routeCurrentObstacle({
           reason: selectedReason,
           route: 'manual_shrink',
           nextPhysicalAction,
+          reportIdempotencyKey: report.idempotencyKey,
           idempotencyKey: key(`obstacle:${selectedReason}:manual_shrink`, step.id),
         });
         selectedReason = null;
@@ -337,20 +391,14 @@
     document.getElementById('v02-defer')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
         const step = Core.getSnapshot().steps.find((item) => item.status === 'active');
+        const report = viewModel().pendingObstacle;
         await Core.routeCurrentObstacle({
           reason: selectedReason,
           route: 'defer',
+          reportIdempotencyKey: report.idempotencyKey,
           idempotencyKey: key(`obstacle:${selectedReason}:defer`, step.id),
         });
         selectedReason = null;
-      })
-    ));
-    document.getElementById('v02-retry-now')?.addEventListener('click', (event) => (
-      run(event.currentTarget, async () => {
-        const step = Core.getSnapshot().steps.find((item) => item.status === 'active');
-        await Core.startCurrentStep(key('retry', step.id));
-        selectedReason = null;
-        reporting = false;
       })
     ));
     document.getElementById('v02-import-account')?.addEventListener('click', (event) => (
@@ -375,7 +423,11 @@
     Core = options.Core;
     await Core.init({ App });
     reporting = Core.getStatus().recoveredExpedition;
-    selectedOutcome = null;
+    const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+    const draft = readAnchorDraft(expedition?.id);
+    selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
+      ? draft.outcome
+      : null;
     selectedReason = null;
     render();
   }

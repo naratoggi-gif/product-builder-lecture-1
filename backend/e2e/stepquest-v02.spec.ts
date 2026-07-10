@@ -34,6 +34,9 @@ test('partial progress restores a Resume Anchor after reload', async ({ page }) 
   await page.locator('[data-v02-outcome="partial"]').click();
   await page.locator('#v02-last-action').fill('첫 문장을 썼음');
   await page.locator('#v02-next-action').fill('둘째 문장 첫 단어 쓰기');
+  await page.reload();
+  await expect(page.locator('#v02-next-action')).toHaveValue('둘째 문장 첫 단어 쓰기');
+  await expect(page.locator('#v02-last-action')).toHaveValue('첫 문장을 썼음');
   await page.locator('#v02-save-outcome').click();
   await expect(page.locator('#v02-resume-anchor')).toContainText('둘째 문장 첫 단어 쓰기');
   await page.reload();
@@ -78,6 +81,8 @@ test('manual shrink twice preserves reward lineage and wallet balance', async ({
   await page.locator('#v02-smaller-action').fill('바닥 한 칸 보기');
   await page.locator('#v02-manual-shrink').click();
   await expect(page.locator('[data-v02-current-step]')).toHaveText('바닥 한 칸 보기');
+  await page.reload();
+  await expect(page.locator('[data-v02-current-step]')).toHaveText('바닥 한 칸 보기');
   await page.locator('#v02-start-step').click();
   await expect(page.locator('#v02-expedition-active')).toBeVisible();
   await expect(page.locator('#v02-wallet')).toHaveText(wallet);
@@ -87,6 +92,8 @@ test('manual shrink twice preserves reward lineage and wallet balance', async ({
   await page.locator('[data-v02-reason="too_big"]').click();
   await page.locator('#v02-smaller-action').fill('바닥 먼지 한 점 보기');
   await page.locator('#v02-manual-shrink').click();
+  await expect(page.locator('[data-v02-current-step]')).toHaveText('바닥 먼지 한 점 보기');
+  await page.reload();
   await page.locator('#v02-start-step').click();
   await expect(page.locator('#v02-expedition-active')).toBeVisible();
   await expect(page.locator('#v02-wallet')).toHaveText(wallet);
@@ -98,23 +105,18 @@ test('not started can defer and undefer with no wallet change', async ({ page })
   const wallet = await page.locator('#v02-wallet').innerText();
   await page.reload();
   await page.locator('[data-v02-outcome="not_started"]').click();
+  await expect(page.locator('[data-v02-reason="not_now"]')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('[data-v02-reason="not_now"]')).toBeVisible();
   await page.locator('[data-v02-reason="not_now"]').click();
   await page.locator('#v02-defer').click();
+  await expect(page.locator('#v02-deferred-step')).toBeVisible();
+  await page.reload();
   await expect(page.locator('#v02-deferred-step')).toBeVisible();
   await expect(page.locator('#v02-wallet')).toHaveText(wallet);
   await page.locator('#v02-undefer-step').click();
   await expect(page.locator('#v02-start-step')).toBeVisible();
   await expect(page.locator('#v02-wallet')).toHaveText(wallet);
-});
-
-test('not started offers a direct retry escape hatch', async ({ page }) => {
-  await resetV02(page);
-  await createAndStart(page, '메일 초안 쓰기');
-  await page.reload();
-  await page.locator('[data-v02-outcome="not_started"]').click();
-  await expect(page.locator('#v02-retry-now')).toBeVisible();
-  await page.locator('#v02-retry-now').click();
-  await expect(page.locator('#v02-expedition-active')).toBeVisible();
 });
 
 test('double click and elapsed time do not multiply rewards', async ({ page }) => {

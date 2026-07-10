@@ -333,6 +333,15 @@
       (item) => item.id === command.stepId && item.status === 'active',
     );
     if (!step) throw domainError('STEP_NOT_ACTIVE');
+    if (command.reportIdempotencyKey) {
+      const report = state.events.find((event) => (
+        event.idempotencyKey === command.reportIdempotencyKey
+        && event.type === 'expedition_reported'
+        && event.outcome === 'not_started'
+        && event.stepId === step.id
+      ));
+      if (!report) throw domainError('NOT_STARTED_REPORT_NOT_FOUND');
+    }
     step.rewardLineage = rewardLineage(step);
 
     let title = null;
@@ -388,6 +397,7 @@
       stepId: step.id,
       reason,
       route: command.route,
+      resolvesEventKey: command.reportIdempotencyKey || undefined,
       createdAt: command.now,
       result: {
         stepId: step.id,

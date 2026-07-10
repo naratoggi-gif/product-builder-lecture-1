@@ -290,3 +290,58 @@ test('does not enable external file handles in localStorage fallback mode', asyn
 
   expect(result).toEqual({ mode: 'localStorage', enabled: false, pickerCalls: 0 });
 });
+
+test('promotes fallback progress when IndexedDB becomes available again', async ({ page }) => {
+  await page.addInitScript(() => {
+    const originalOpen = IDBFactory.prototype.open;
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value(...args) {
+        if (localStorage.getItem('stepquest_test_allow_indexeddb') !== '1') {
+          throw new Error('INDEXED_DB_TRANSIENT_FAILURE');
+        }
+        return originalOpen.apply(this, args);
+      },
+    });
+  });
+  await clearBrowserState(page);
+
+  const fallback = await page.evaluate(async ({ now }) => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.importGoal({
+      weekly: { id: 700, title: '폴백에서 만든 목표', createdAt: now },
+      micro: [{ id: 701, title: '폴백 행동', phase: 'start', createdAt: now }],
+    }, {
+      idempotencyKey: 'goal:700:import',
+      now,
+      idFactory: (prefix) => `${prefix}-fallback-recovery`,
+    });
+    return { mode: repository.mode, snapshot: await repository.getSnapshot() };
+  }, { now: NOW });
+  expect(fallback.mode).toBe('localStorage');
+  expect(fallback.snapshot.goals[0].title).toBe('폴백에서 만든 목표');
+
+  await page.evaluate(() => localStorage.setItem('stepquest_test_allow_indexeddb', '1'));
+  await page.reload();
+  const recovered = await page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    return { mode: repository.mode, snapshot: await repository.getSnapshot() };
+  });
+  expect(recovered.mode).toBe('indexedDB');
+  expect(recovered.snapshot.goals[0].title).toBe('폴백에서 만든 목표');
+  expect(await page.evaluate(() => localStorage.getItem('stepquest_v02_repository_mode'))).toBe('indexedDB');
+});
+
+test('repairs a missing legacy write guard from committed migration metadata', async ({ page }) => {
+  await clearBrowserState(page);
+  await page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.setMeta('migrationComplete', {
+      idempotencyKey: 'legacy:v02:migration',
+      completedAt: '2026-07-11T00:00:00.000Z',
+    });
+    localStorage.removeItem('stepquest_v02_active');
+  });
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('stepquest_v02_active'))).toBe('1');
+});
