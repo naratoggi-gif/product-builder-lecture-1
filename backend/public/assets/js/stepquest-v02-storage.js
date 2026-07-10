@@ -294,7 +294,7 @@
     async function setMeta(key, value) {
       const transaction = database.transaction('meta', 'readwrite');
       const done = transactionDone(transaction);
-      transaction.objectStore('meta').put({ key, value: clone(value) });
+      transaction.objectStore('meta').put({ key, value });
       await done;
       return value;
     }
@@ -319,7 +319,12 @@
         if (!outcome.duplicate) {
           writeState(transaction, outcome.state);
           if (SIGNIFICANT_OPERATIONS.has(operation)) {
-            await rotateBackups(transaction, state, operation, command.now || new Date().toISOString());
+            await rotateBackups(
+              transaction,
+              outcome.state,
+              operation,
+              command.now || new Date().toISOString(),
+            );
           }
         }
         await done;
@@ -364,14 +369,12 @@
     }
 
     async function exportRecords() {
-      const transaction = database.transaction(ALL_STORES, 'readonly');
+      const state = await getSnapshot();
+      const transaction = database.transaction('backups', 'readonly');
       const done = transactionDone(transaction);
-      const entries = await Promise.all(ALL_STORES.map(async (storeName) => [
-        storeName,
-        await requestResult(transaction.objectStore(storeName).getAll()),
-      ]));
+      const backups = await requestResult(transaction.objectStore('backups').getAll());
       await done;
-      return Object.fromEntries(entries);
+      return { ...state, backups };
     }
 
     return {
@@ -457,7 +460,11 @@
       const outcome = transition(state, command);
       if (!outcome.duplicate) {
         if (SIGNIFICANT_OPERATIONS.has(operation)) {
-          rotateFallbackBackups(state, operation, command.now || new Date().toISOString());
+          rotateFallbackBackups(
+            outcome.state,
+            operation,
+            command.now || new Date().toISOString(),
+          );
         }
         saveState(outcome.state);
       }
@@ -488,10 +495,7 @@
     }
 
     async function exportRecords() {
-      return {
-        snapshot: await getSnapshot(),
-        backups: readFallbackBackups(),
-      };
+      return { ...await getSnapshot(), backups: readFallbackBackups() };
     }
 
     return {

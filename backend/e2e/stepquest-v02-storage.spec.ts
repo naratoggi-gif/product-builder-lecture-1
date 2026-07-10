@@ -159,3 +159,28 @@ test('quarantines malformed records and keeps readable state', async ({ page }) 
   expect(result.containsBroken).toBe(false);
   expect(result.quarantinedRecords).toBe(1);
 });
+
+test('exports normalized records and retains five committed snapshots', async ({ page }) => {
+  await clearBrowserState(page);
+  const records = await page.evaluate(async ({ now }) => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    for (let index = 1; index <= 6; index += 1) {
+      await repository.importGoal({
+        weekly: { id: `backup-goal-${index}`, title: `백업 목표 ${index}`, createdAt: now },
+        micro: [{ id: `backup-step-${index}`, title: `백업 행동 ${index}`, phase: 'start', createdAt: now }],
+      }, {
+        idempotencyKey: `backup-goal-${index}:import`,
+        now: `2026-07-11T00:00:0${index}.000Z`,
+        idFactory: (prefix) => `${prefix}-backup-${index}`,
+      });
+    }
+    return repository.exportRecords();
+  }, { now: NOW });
+
+  expect(records.wallet).toEqual({ stepCoin: 0, gold: 0 });
+  expect(records.backups).toHaveLength(5);
+  const latest = records.backups.sort((left, right) => (
+    right.createdAt.localeCompare(left.createdAt)
+  ))[0];
+  expect(latest.snapshot.goals).toHaveLength(6);
+});
