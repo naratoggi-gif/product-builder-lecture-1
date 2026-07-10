@@ -42,6 +42,7 @@ Some existing behavior conflicts with v0.2: the start button is a UI timer rathe
 - IndexedDB as the browser source of truth for all users.
 - Immutable events and reward ledger with idempotency keys.
 - Entry rewards keyed by contiguous preparation segment so finer decomposition cannot mint extra currency.
+- Start and progress rewards keyed by inherited reward lineage so replacement cannot mint them again.
 - JSON export, rolling snapshots, optional user-authorized external automatic backup, and persistent-storage status in the MVP.
 - Existing server and account data retained for later synchronization, not used as the first-slice source of truth.
 - A committed migration guard makes the old guest-state writer read-only.
@@ -57,7 +58,7 @@ Design source: `docs/superpowers/specs/2026-07-10-stepquest-v02-core-loop-design
 - [x] Write and self-review the implementation plan in `docs/superpowers/plans/2026-07-11-stepquest-v02-core-loop.md`.
 - [ ] Select an execution workflow and start test-first implementation.
 - [ ] Implement the v0.2 domain transitions test-first.
-- [ ] Implement the minimum not-started router with persisted reason, manual shrink, and defer.
+- [ ] Implement the minimum not-started router with persisted reason, lineage-preserving manual shrink, defer, and undefer.
 - [ ] Implement IndexedDB persistence, migration, persistent-storage request, JSON export, and backup rotation.
 - [ ] Replace the primary UI with start, expedition, four-outcome return, and Resume Anchor flow.
 - [ ] Verify reload recovery and regressions in the built PWA.

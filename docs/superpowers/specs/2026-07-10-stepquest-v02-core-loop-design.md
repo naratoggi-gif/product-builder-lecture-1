@@ -74,6 +74,7 @@ Public operations:
 - `reportOutcome(state, command)`
 - `saveResumeAnchor(state, command)`
 - `resumeStep(state, command)`
+- `undeferStep(state, command)`
 - `routeObstacle(state, command)`
 - `exportableState(state)`
 
@@ -141,6 +142,7 @@ interface Step {
   nextPhysicalAction: string;
   phase: "orient" | "prepare" | "open" | "start" | "continue" | "close";
   entrySegmentId?: string;
+  rewardLineage: string;
   status: StepStatus;
   orderIndex: number;
   createdAt: string;
@@ -148,7 +150,7 @@ interface Step {
 }
 ```
 
-During chain creation, each contiguous run of `orient`, `prepare`, and `open` Steps receives one shared `entrySegmentId`; a `start`, `continue`, or `close` Step ends that run. This grouping is persisted and does not change when the chain is displayed again.
+During chain creation, each contiguous run of `orient`, `prepare`, and `open` Steps receives one shared `entrySegmentId`; a `start`, `continue`, or `close` Step ends that run. Every original Step also receives `rewardLineage` equal to its first Step ID. Both values are persisted and do not change when the Step is replaced or displayed again.
 
 ### Expedition
 
@@ -223,6 +225,12 @@ This slice then offers exactly two routes:
 
 The fuller reason-specific obstacle strategies remain deferred, but every not-started report therefore ends in a persisted, recoverable state.
 
+Manual shrink inherits the original Step's `phase`, `entrySegmentId`, and `rewardLineage`. A replacement therefore cannot reopen start or progress rewards merely by receiving a new Step ID.
+
+### Undefer
+
+A deferred Step is shown with `[다시 꺼내기]`. `undeferStep` changes it from `deferred` to `active` only when no other Step or Expedition is active. It records an idempotent `step_undeferred` event and grants no StepCoin or Gold.
+
 ### Resume
 
 The latest unconsumed Resume Anchor is shown before the broader Goal context. `resumeStep` marks that anchor consumed and changes the step from `interrupted` to `active`. The user then starts a new expedition with the same start command. Resume itself grants no currency.
@@ -239,11 +247,11 @@ The planning ratio 10/25/35/30 is represented by integer weights `2/5/7/6`:
 The mapping is exact:
 
 - `startStep` on `orient`, `prepare`, or `open` grants the 2-StepCoin entry reward once for the shared `entrySegmentId`. Later Steps in the same contiguous entry segment record their start but grant no additional entry reward.
-- `startStep` on `start`, `continue`, or `close` grants the 5-StepCoin actual-work-start reward once for that Step.
-- `reportOutcome` with `partial` or `completed` grants the 7-StepCoin progress reward once when the Step phase is `start`, `continue`, or `close`.
+- `startStep` on `start`, `continue`, or `close` grants the 5-StepCoin actual-work-start reward once for that Step's `rewardLineage`.
+- `reportOutcome` with `partial` or `completed` grants the 7-StepCoin progress reward once for that Step's `rewardLineage` when its phase is `start`, `continue`, or `close`.
 - Completing the final Step grants the 6-StepCoin Goal milestone once.
 
-Actual-work and progress rewards use stable keys derived from Goal, Step, and stage. Entry reward uses `goal:{goalId}:entry:{entrySegmentId}`, so splitting one entrance into several preparation Steps cannot increase its reward. Repeated clicks, reloads, or repeated partial returns cannot mint the same reward twice. Entry Steps do not also receive the meaningful-progress reward.
+Actual-work and progress rewards use `goal:{goalId}:lineage:{rewardLineage}:{stage}`. Entry reward uses `goal:{goalId}:entry:{entrySegmentId}`, so splitting or repeatedly replacing a Step cannot increase its reward. Repeated clicks, reloads, or repeated partial returns cannot mint the same reward twice. Entry Steps do not also receive the meaningful-progress reward.
 
 Gold is tied to the reported expedition outcome, never elapsed time:
 
@@ -309,7 +317,9 @@ Visible copy never uses failure, loss, streak-reset, or guilt language.
 - Separate entry segments use separate persisted segment identifiers.
 - Every not-started reason is recorded before manual shrink or defer completes.
 - Manual shrink replaces the original Step with one user-entered smaller action.
+- Repeated manual shrink preserves phase, entry segment, and reward lineage, so two replacements cannot add start or progress reward.
 - Defer preserves the original Step without a reward or penalty.
+- Undefer restores a deferred Step without a reward and rejects activation while another Step or Expedition is active.
 - Resume displays and consumes the latest anchor.
 - Reward keys prevent duplicate StepCoin and Gold.
 - Elapsed time does not change any reward.

@@ -17,10 +17,11 @@
 - `startStep` is a persisted domain event; the existing timer is not a substitute.
 - No elapsed-time reward, failure penalty, inactivity loss, or streak mutation is allowed.
 - Entry reward is 2 StepCoin per contiguous entry segment, never per entry Step.
-- Actual-work start is 5 StepCoin per Step, meaningful progress is 7 per Step, and Goal completion is 6 per Goal.
+- Actual-work start is 5 StepCoin per `rewardLineage`, meaningful progress is 7 per `rewardLineage`, and Goal completion is 6 per Goal.
 - Gold is capped at 2 per Step: completed fills the cap, partial grants at most 1, interrupted and not-started grant 0.
 - Partial and interrupted outcomes require a non-empty `nextPhysicalAction` Resume Anchor.
 - Not-started records the reason and ends in exactly one of `manual_shrink` or `defer`.
+- `manual_shrink` inherits phase, entry segment, and reward lineage; `defer` always has a zero-reward `undeferStep` path.
 - The legacy `stepquest_guest_state` value is never deleted or overwritten after migration commits.
 - User-visible copy is Korean, non-judgmental, keyboard accessible, and compatible with reduced motion.
 - Preserve unrelated untracked workspace files and directories.
@@ -29,7 +30,7 @@
 
 ## File Map
 
-- Create `backend/public/assets/js/stepquest-v02-domain.js`: pure state, reward, entry-segment, outcome, anchor, and obstacle transitions.
+- Create `backend/public/assets/js/stepquest-v02-domain.js`: pure state, reward-lineage, entry-segment, outcome, anchor, defer/undefer, and obstacle transitions.
 - Create `backend/public/assets/js/stepquest-v02-storage.js`: IndexedDB schema, transactions, migration, rolling snapshots, and localStorage fallback.
 - Create `backend/public/assets/js/stepquest-v02-backup.js`: JSON serialization, download, persistent-storage request, and external file writing.
 - Create `backend/public/assets/js/stepquest-v02-app.js`: facade joining domain, repository, backup, and the existing goal template factory.
@@ -40,7 +41,7 @@
 - Modify `backend/public/sw.js`: precache all new v0.2 assets.
 - Create `backend/scripts/stepquest-v02-domain-test.js`: pure transition test runner.
 - Create `backend/scripts/stepquest-v02-backup-test.js`: pure export and external-backup test runner.
-- Create `backend/e2e/stepquest-v02.spec.ts`: IndexedDB, reload, four outcomes, Resume Anchor, migration guard, and backup browser coverage.
+- Create `backend/e2e/stepquest-v02.spec.ts`: IndexedDB, reload, four outcomes, Resume Anchor, defer/undefer, migration guard, and backup browser coverage.
 - Modify `backend/e2e/stepquest-alpha.spec.ts`: retain production-super-mode coverage and remove assertions for UI behavior v0.2 replaces.
 - Modify `backend/package.json`: add the new Node runners to `test:domain`.
 - Modify `backend/scripts/stepquest-persistence-test.js`: assert v0.2 assets, guard, cache, and UI hooks exist.
@@ -57,7 +58,7 @@
 
 **Interfaces:**
 - Consumes: plain state and command objects only.
-- Produces: `createInitialState`, `assignEntrySegments`, `importGoal`, `startStep`, `reportOutcome`, `saveResumeAnchor`, `resumeStep`, `routeObstacle`, and `exportableState` on `window.StepQuestV02Domain` and `module.exports`.
+- Produces: `createInitialState`, `assignEntrySegments`, `importGoal`, `startStep`, `reportOutcome`, `saveResumeAnchor`, `resumeStep`, `undeferStep`, `routeObstacle`, and `exportableState` on `window.StepQuestV02Domain` and `module.exports`.
 
 - [ ] **Step 1: Write the failing domain test runner**
 
@@ -81,6 +82,7 @@ function makeState(phases = ['orient', 'prepare', 'open', 'start']) {
     title: `행동 ${index + 1}`,
     nextPhysicalAction: `행동 ${index + 1}`,
     phase,
+    rewardLineage: `step-${index + 1}`,
     status: index === 0 ? 'active' : 'pending',
     orderIndex: index,
     createdAt: now,
@@ -160,6 +162,15 @@ assert.equal(transition.state.steps.find((step) => step.id === 'step-1').status,
 assert.equal(transition.state.steps.find((step) => step.status === 'active').title, '문서 제목만 보기');
 assert.ok(transition.state.events.some((event) => event.type === 'obstacle_reported'));
 
+const walletAfterFirstStart = transition.state.wallet.stepCoin;
+transition = Domain.startStep(transition.state, { stepId: transition.state.steps.find((step) => step.status === 'active').id, idempotencyKey: 'replacement-start-1', now, idFactory });
+transition = Domain.reportOutcome(transition.state, { expeditionId: transition.result.expeditionId, outcome: 'not_started', idempotencyKey: 'replacement-report-1', now, idFactory });
+const firstReplacementId = transition.state.steps.find((step) => step.status === 'active').id;
+transition = Domain.routeObstacle(transition.state, { stepId: firstReplacementId, reason: 'too_big', route: 'manual_shrink', nextPhysicalAction: '파일 이름만 보기', idempotencyKey: 'replacement-shrink-2', now, idFactory });
+const secondReplacement = transition.state.steps.find((step) => step.status === 'active');
+transition = Domain.startStep(transition.state, { stepId: secondReplacement.id, idempotencyKey: 'replacement-start-2', now, idFactory });
+assert.equal(transition.state.wallet.stepCoin, walletAfterFirstStart, 'two shrink replacements cannot mint another start reward');
+
 state = makeState(['start']);
 transition = Domain.startStep(state, { stepId: 'step-1', idempotencyKey: 'not-started-start', now, idFactory });
 transition = Domain.reportOutcome(transition.state, { expeditionId: transition.result.expeditionId, outcome: 'not_started', idempotencyKey: 'not-started-report', now, idFactory });
@@ -186,6 +197,9 @@ transition = Domain.routeObstacle(state, {
   idFactory,
 });
 assert.equal(transition.state.steps[0].status, 'deferred');
+assert.deepEqual(transition.state.wallet, { stepCoin: 0, gold: 0 });
+transition = Domain.undeferStep(transition.state, { stepId: 'step-1', idempotencyKey: 'undefer-1', now });
+assert.equal(transition.state.steps[0].status, 'active');
 assert.deepEqual(transition.state.wallet, { stepCoin: 0, gold: 0 });
 
 console.log(JSON.stringify({ ok: true, checked: 'stepquest-v02-domain' }, null, 2));
@@ -250,8 +264,8 @@ Complete the wrapper with these transition rules, using no DOM or storage calls:
     state.expeditions.push({ id: expeditionId, stepId: step.id, status: 'active', startedAt: command.now, goldCap: 2, goldGranted: 0 });
     step.status = 'started'; step.updatedAt = command.now;
     const entry = ENTRY_PHASES.has(step.phase);
-    const rewardKey = entry ? `goal:${step.goalId}:entry:${step.entrySegmentId}` : `step:${step.id}:start`;
-    const amount = grant(state, { idempotencyKey: rewardKey, currency: 'stepCoin', amount: entry ? 2 : 5, sourceGoalId: step.goalId, sourceStepId: step.id, stage: entry ? 'entry' : 'start', createdAt: command.now });
+    const rewardKey = entry ? `goal:${step.goalId}:entry:${step.entrySegmentId}` : `goal:${step.goalId}:lineage:${step.rewardLineage}:start`;
+    const amount = grant(state, { idempotencyKey: rewardKey, currency: 'stepCoin', amount: entry ? 2 : 5, sourceGoalId: step.goalId, sourceStepId: step.id, rewardLineage: step.rewardLineage, stage: entry ? 'entry' : 'start', createdAt: command.now });
     return record(state, { idempotencyKey: command.idempotencyKey, type: 'step_started', stepId: step.id, expeditionId, createdAt: command.now, result: { stepId: step.id, expeditionId, stepCoinGranted: amount } });
   }
 
@@ -276,7 +290,7 @@ Complete the wrapper with these transition rules, using no DOM or storage calls:
     expedition.status = 'reported'; expedition.reportedAt = command.now; expedition.outcome = command.outcome;
     let stepCoinGranted = 0; let goldGranted = 0;
     if ((command.outcome === 'partial' || command.outcome === 'completed') && WORK_PHASES.has(step.phase)) {
-      stepCoinGranted += grant(state, { idempotencyKey: `step:${step.id}:progress`, currency: 'stepCoin', amount: 7, sourceGoalId: step.goalId, sourceStepId: step.id, stage: 'progress', createdAt: command.now });
+      stepCoinGranted += grant(state, { idempotencyKey: `goal:${step.goalId}:lineage:${step.rewardLineage}:progress`, currency: 'stepCoin', amount: 7, sourceGoalId: step.goalId, sourceStepId: step.id, rewardLineage: step.rewardLineage, stage: 'progress', createdAt: command.now });
     }
     const priorGold = state.rewards.filter((item) => item.currency === 'gold' && item.sourceStepId === step.id).reduce((sum, item) => sum + item.amount, 0);
     const requestedGold = command.outcome === 'completed' ? 2 - priorGold : command.outcome === 'partial' && priorGold < 2 ? 1 : 0;
@@ -321,6 +335,16 @@ Complete the factory with these exact operations and exports:
     return record(state, { idempotencyKey: command.idempotencyKey, type: 'step_resumed', stepId: step.id, createdAt: command.now, result: { stepId: step.id, anchorId: anchor.id } });
   }
 
+  function undeferStep(source, command) {
+    const repeated = replay(source, command.idempotencyKey); if (repeated) return repeated;
+    const state = clone(source);
+    const step = state.steps.find((item) => item.id === command.stepId && item.status === 'deferred');
+    if (!step) throw error('STEP_NOT_DEFERRED');
+    if (state.steps.some((item) => item.status === 'active' || item.status === 'started') || state.expeditions.some((item) => item.status === 'active')) throw error('ANOTHER_STEP_ACTIVE');
+    step.status = 'active'; step.updatedAt = command.now;
+    return record(state, { idempotencyKey: command.idempotencyKey, type: 'step_undeferred', stepId: step.id, createdAt: command.now, result: { stepId: step.id } });
+  }
+
   function routeObstacle(source, command) {
     const repeated = replay(source, command.idempotencyKey); if (repeated) return repeated;
     if (!['manual_shrink', 'defer'].includes(command.route)) throw error('OBSTACLE_ROUTE_INVALID');
@@ -338,7 +362,7 @@ Complete the factory with these exact operations and exports:
       state.steps.filter((item) => item.goalId === step.goalId && item.id !== step.id && item.orderIndex > index).forEach((item) => { item.orderIndex += 1; });
       step.status = 'replaced'; step.orderIndex = index + 1; step.updatedAt = command.now;
       replacementStepId = command.idFactory('step');
-      state.steps.push({ id: replacementStepId, goalId: step.goalId, title, nextPhysicalAction: title, phase: 'start', status: 'active', orderIndex: index, createdAt: command.now, updatedAt: command.now });
+      state.steps.push({ id: replacementStepId, goalId: step.goalId, title, nextPhysicalAction: title, phase: step.phase, entrySegmentId: step.entrySegmentId, rewardLineage: step.rewardLineage, status: 'active', orderIndex: index, createdAt: command.now, updatedAt: command.now });
     }
     return record(state, { idempotencyKey: command.idempotencyKey, type: 'obstacle_routed', stepId: step.id, reason: command.reason, route: command.route, createdAt: command.now, result: { stepId: step.id, reason: command.reason, route: command.route, replacementStepId } });
   }
@@ -351,7 +375,7 @@ Complete the factory with these exact operations and exports:
     state.steps.filter((item) => item.status === 'active').forEach((item) => { item.status = 'deferred'; item.updatedAt = command.now; });
     const goalId = String(made.weekly.id);
     const goal = { id: goalId, title: made.weekly.title, type: 'project', status: 'active', doneDefinition: made.weekly.doneDefinition || undefined, createdAt: made.weekly.createdAt || command.now, updatedAt: command.now };
-    const rawSteps = made.micro.map((item, index, all) => ({ id: String(item.id), goalId, title: item.title, nextPhysicalAction: item.title, phase: item.phase || (index === 0 ? 'orient' : index === 1 ? 'open' : index === all.length - 1 ? 'close' : 'start'), status: index === 0 ? 'active' : 'pending', orderIndex: index, createdAt: item.createdAt || command.now, updatedAt: command.now }));
+    const rawSteps = made.micro.map((item, index, all) => ({ id: String(item.id), goalId, title: item.title, nextPhysicalAction: item.title, phase: item.phase || (index === 0 ? 'orient' : index === 1 ? 'open' : index === all.length - 1 ? 'close' : 'start'), rewardLineage: item.rewardLineage || String(item.id), status: index === 0 ? 'active' : 'pending', orderIndex: index, createdAt: item.createdAt || command.now, updatedAt: command.now }));
     const steps = assignEntrySegments(rawSteps, command.idFactory);
     state.goals.push(goal); state.steps.push(...steps);
     return record(state, { idempotencyKey: command.idempotencyKey, type: 'goal_imported', goalId, createdAt: command.now, result: { goalId, firstStepId: steps[0]?.id || null } });
@@ -359,7 +383,7 @@ Complete the factory with these exact operations and exports:
 
   function exportableState(state) { return clone(state); }
 
-  return { createInitialState, assignEntrySegments, importGoal, startStep, reportOutcome, saveResumeAnchor, resumeStep, routeObstacle, exportableState };
+  return { createInitialState, assignEntrySegments, importGoal, startStep, reportOutcome, saveResumeAnchor, resumeStep, undeferStep, routeObstacle, exportableState };
 });
 ```
 
@@ -630,7 +654,7 @@ async function migrateLegacyIndexed(db, Domain, legacy, command) {
     state.goals.push({ id: goalId, title: activeGoal.title, type: 'project', status: 'active', createdAt: activeGoal.createdAt || command.now, updatedAt: command.now });
     const statusMap = { OPEN: 'active', PENDING: 'pending', DONE: 'completed', DEFERRED: 'deferred', SKIPPED: 'skipped', REPLACED: 'replaced' };
     const source = (legacy.micro || []).filter((item) => String(item.weeklyMissionId) === goalId);
-    const mapped = source.map((item, index, all) => ({ id: String(item.id), goalId, title: item.title, nextPhysicalAction: item.title, phase: item.phase || (index === 0 ? 'orient' : index === 1 ? 'open' : index === all.length - 1 ? 'close' : 'start'), status: statusMap[item.status] || 'pending', orderIndex: index, createdAt: item.createdAt || command.now, updatedAt: command.now }));
+    const mapped = source.map((item, index, all) => ({ id: String(item.id), goalId, title: item.title, nextPhysicalAction: item.title, phase: item.phase || (index === 0 ? 'orient' : index === 1 ? 'open' : index === all.length - 1 ? 'close' : 'start'), rewardLineage: item.rewardLineage || String(item.id), status: statusMap[item.status] || 'pending', orderIndex: index, createdAt: item.createdAt || command.now, updatedAt: command.now }));
     state.steps = Domain.assignEntrySegments(mapped, command.idFactory);
   }
   state.events = (legacy.attempts || []).map((item, index) => ({ idempotencyKey: `legacy:attempt:${item.id || index}`, type: `legacy_${item.action || 'attempt'}`, stepId: item.stepId ? String(item.stepId) : undefined, reason: item.reason || undefined, createdAt: item.createdAt || command.now, result: { imported: true } }));
@@ -808,7 +832,7 @@ git commit -m "Add StepQuest data backup safety"
 
 **Interfaces:**
 - Consumes: `StepQuestV02Domain`, `StepQuestV02Storage`, `StepQuestV02Backup`, and `StepQuestApp.makeGuestGoal`.
-- Produces: `init`, `getSnapshot`, `createGoal`, `importAccountProgress`, `keepLocalProfileEmpty`, `startCurrentStep`, `reportCurrentExpedition`, `resumeCurrentStep`, `routeCurrentObstacle`, `exportJson`, `enableExternalBackup`, and `getStatus`.
+- Produces: `init`, `getSnapshot`, `createGoal`, `importAccountProgress`, `keepLocalProfileEmpty`, `startCurrentStep`, `reportCurrentExpedition`, `resumeCurrentStep`, `undeferCurrentStep`, `routeCurrentObstacle`, `exportJson`, `enableExternalBackup`, and `getStatus`.
 
 - [ ] **Step 1: Extend the browser test with failing facade behavior**
 
@@ -920,6 +944,9 @@ async function reportCurrentExpedition(command) {
 async function resumeCurrentStep(stepId, idempotencyKey) {
   const transition = await repository.execute('resumeStep', { stepId, idempotencyKey, now: now() }); snapshot = transition.state; return transition.result;
 }
+async function undeferCurrentStep(stepId, idempotencyKey) {
+  const transition = await repository.execute('undeferStep', { stepId, idempotencyKey, now: now() }); snapshot = transition.state; return transition.result;
+}
 async function routeCurrentObstacle(command) {
   const step = snapshot.steps.find((item) => item.status === 'active');
   const transition = await repository.execute('routeObstacle', { ...command, stepId: step.id, now: now(), idFactory: makeId }); snapshot = transition.state; await afterSignificantCommit(); return transition.result;
@@ -956,6 +983,7 @@ globalThis.StepQuestV02App = {
   startCurrentStep,
   reportCurrentExpedition,
   resumeCurrentStep,
+  undeferCurrentStep,
   routeCurrentObstacle,
   exportJson,
   enableExternalBackup,
@@ -1076,6 +1104,9 @@ test('not started can defer with no wallet change', async ({ page }) => {
   await page.locator('#v02-defer').click();
   await expect(page.locator('#v02-deferred-step')).toBeVisible();
   await expect(page.locator('#v02-wallet')).toHaveText(wallet);
+  await page.locator('#v02-undefer-step').click();
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+  await expect(page.locator('#v02-wallet')).toHaveText(wallet);
 });
 
 test('double click and elapsed time do not multiply rewards', async ({ page }) => {
@@ -1149,6 +1180,7 @@ Render exactly one of these states:
 - Recovered active expedition: four-outcome return report immediately.
 - Partial or interrupted selected: Resume Anchor form with required next action.
 - Not-started selected: one reason question followed by `[더 작게]` and `[나중에]`.
+- Deferred: the preserved Step and `[다시 꺼내기]`, which grants no reward.
 - Pending account import: `[계정 진행 복사]` and `[이 기기에서 새로 시작]` before an empty Goal form.
 
 The wallet header labels are `스텝코인` and `골드`. Do not render streak, consistency score, multiple facilities, multiple costumes, or a growing expedition counter in `v02-mode`.
@@ -1186,7 +1218,7 @@ Implement the state selection with this concrete renderer structure:
     else if (vm.expedition) body = `<section id="v02-expedition-active" class="panel v02-expedition"><h2>${h(vm.state.steps.find((item) => item.id === vm.expedition.stepId)?.title)}</h2><p>앱을 닫아도 됩니다.</p><button id="v02-open-report">돌아왔어요</button></section>`;
     else if (vm.interrupted && vm.anchor) body = `<section id="v02-resume-anchor" class="panel v02-anchor"><span>마지막 위치</span><p>${h(vm.anchor.lastCompletedAction || '시작한 기록이 남아 있습니다.')}</p><span>다음 손동작</span><h2>${h(vm.anchor.nextPhysicalAction)}</h2><button id="v02-resume-step">재개</button></section>`;
     else if (vm.active) body = `<section class="panel v02-runner"><span>지금 할 하나</span><h2 data-v02-current-step>${h(vm.active.title)}</h2><button id="v02-start-step">시작</button></section>`;
-    else if (vm.deferred) body = `<section id="v02-deferred-step" class="panel v02-runner"><h2>이 행동은 나중을 위해 남겨두었습니다.</h2><p>${h(vm.deferred.title)}</p></section>`;
+    else if (vm.deferred) body = `<section id="v02-deferred-step" class="panel v02-runner"><h2>이 행동은 나중을 위해 남겨두었습니다.</h2><p>${h(vm.deferred.title)}</p><button id="v02-undefer-step">다시 꺼내기</button></section>`;
     else body = `<section class="panel v02-runner"><label>목표 한 줄<input id="v02-goal-title" maxlength="140" /></label><button id="v02-create-goal">첫 행동 만들기</button></section>`;
     const backupTime = status.lastExternalBackupAt ? `마지막 외부 파일 백업: ${h(status.lastExternalBackupAt)}` : '외부 파일 백업 기록 없음';
     const warning = status.mode === 'localStorage' || !status.persisted || status.manualBackupDue || status.externalBackupStale || status.migrationError || status.quarantinedRecords ? `<section class="panel v02-storage-warning"><p>${status.migrationError ? '이전 기록을 자동으로 옮기지 못했습니다. 원본은 그대로 보존되어 있습니다.' : status.quarantinedRecords ? `읽을 수 없는 기록 ${status.quarantinedRecords}개를 격리하고 나머지 기록을 열었습니다.` : status.manualBackupDue ? '변경 사항이 5회 쌓였습니다. 외부 JSON 백업을 갱신하세요.' : status.externalBackupStale ? '외부 자동 백업을 갱신하지 못했습니다. 다시 시도하거나 JSON을 내려받으세요.' : '브라우저 저장소가 지워질 수 있습니다.'}</p><small>${backupTime}</small><button id="v02-export">JSON 백업</button><button id="v02-enable-backup">자동 백업 파일 선택</button></section>` : `<div><small>${backupTime}</small><button id="v02-export" class="ghost">JSON 백업</button><button id="v02-enable-backup" class="ghost">자동 백업 파일 선택</button></div>`;
@@ -1217,6 +1249,7 @@ Wire the renderer using these exact calls:
     document.querySelectorAll('[data-v02-outcome]').forEach((button) => button.addEventListener('click', (event) => { selectedOutcome = button.dataset.v02Outcome; if (selectedOutcome === 'partial' || selectedOutcome === 'interrupted') return render(); return run(event.currentTarget, async () => { const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active'); await Core.reportCurrentExpedition({ outcome: selectedOutcome, idempotencyKey: key('report', expedition.id) }); reporting = false; selectedOutcome = null; }); }));
     document.getElementById('v02-save-outcome')?.addEventListener('click', (event) => run(event.currentTarget, async () => { const nextPhysicalAction = document.getElementById('v02-next-action').value.trim(); if (!nextPhysicalAction) { document.getElementById('v02-next-action').focus(); return false; } const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active'); await Core.reportCurrentExpedition({ outcome: selectedOutcome, idempotencyKey: key('report', expedition.id), anchor: { lastCompletedAction: document.getElementById('v02-last-action').value.trim(), nextPhysicalAction, location: document.getElementById('v02-location').value.trim(), requiredMaterial: document.getElementById('v02-material').value.trim(), note: document.getElementById('v02-note').value.trim() } }); reporting = false; selectedOutcome = null; }));
     document.getElementById('v02-resume-step')?.addEventListener('click', (event) => run(event.currentTarget, async () => { const step = Core.getSnapshot().steps.find((item) => item.status === 'interrupted'); await Core.resumeCurrentStep(step.id, key('resume', step.id)); }));
+    document.getElementById('v02-undefer-step')?.addEventListener('click', (event) => run(event.currentTarget, async () => { const step = Core.getSnapshot().steps.find((item) => item.status === 'deferred'); await Core.undeferCurrentStep(step.id, key('undefer', step.id)); }));
     document.querySelectorAll('[data-v02-reason]').forEach((button) => button.addEventListener('click', () => { selectedReason = button.dataset.v02Reason; render(); }));
     document.getElementById('v02-manual-shrink')?.addEventListener('click', (event) => run(event.currentTarget, async () => { const value = document.getElementById('v02-smaller-action').value.trim(); if (!value) { document.getElementById('v02-smaller-action').focus(); return false; } const step = Core.getSnapshot().steps.find((item) => item.status === 'active'); await Core.routeCurrentObstacle({ reason: selectedReason, route: 'manual_shrink', nextPhysicalAction: value, idempotencyKey: key(`obstacle:${selectedReason}:manual_shrink`, step.id) }); selectedReason = null; }));
     document.getElementById('v02-defer')?.addEventListener('click', (event) => run(event.currentTarget, async () => { const step = Core.getSnapshot().steps.find((item) => item.status === 'active'); await Core.routeCurrentObstacle({ reason: selectedReason, route: 'defer', idempotencyKey: key(`obstacle:${selectedReason}:defer`, step.id) }); selectedReason = null; }));
@@ -1304,7 +1337,7 @@ assert.ok(browserApp.includes("localStorage.getItem('stepquest_v02_active') === 
 assert.ok(v02Storage.includes("indexedDB.open(DB_NAME, DB_VERSION)"), 'v0.2 storage must open the versioned database');
 assert.ok(v02Storage.includes("const DB_VERSION = 2"), 'v0.2 database version must be 2');
 ['completed', 'partial', 'interrupted', 'not_started'].forEach((outcome) => assert.ok(v02Ui.includes(outcome), `return UI must include ${outcome}`));
-['v02-start-step', 'v02-return-report', 'v02-resume-anchor', 'v02-next-action'].forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 UI must include ${id}`));
+['v02-start-step', 'v02-return-report', 'v02-resume-anchor', 'v02-next-action', 'v02-undefer-step'].forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 UI must include ${id}`));
 ```
 
 - [ ] **Step 2: Run the persistence runner and confirm RED**
@@ -1375,7 +1408,7 @@ git commit -m "Verify StepQuest v0.2 local-first flow"
 
 ## Plan Self-Review Record
 
-- Spec coverage: Tasks 1-6 cover start, four outcomes, Resume Anchor, resume, IndexedDB, persistence request, JSON export, rolling snapshots, optional external backup, five-change manual-backup reminders, entry-segment idempotency, Gold cap, non-destructive guest migration, explicit account import, legacy write blocking, corrupt-record quarantine, the minimum obstacle router, PWA cache, and cross-browser verification.
-- Scope boundary: action-size adaptation, full reason-specific routing, long-return variants, central-camp spending, event compression, “already started” shortcut, cloud sync, and app-version migration remain outside this slice.
-- Type consistency: `stepCoin`, `gold`, `entrySegmentId`, `nextPhysicalAction`, `manual_shrink`, `defer`, `idempotencyKey`, and all public facade names are consistent across tasks.
+- Spec coverage: Tasks 1-6 cover start, four outcomes, Resume Anchor, resume, undefer, IndexedDB, persistence request, JSON export, rolling snapshots, optional external backup, five-change manual-backup reminders, entry-segment idempotency, replacement reward lineage, Gold cap, non-destructive guest migration, explicit account import, legacy write blocking, corrupt-record quarantine, the minimum obstacle router, PWA cache, and cross-browser verification.
+- Scope boundary: action-size adaptation, full reason-specific routing, long-return variants, Gold lineage hardening, central-camp spending, event compression, “already started” shortcut, cloud sync, and app-version migration remain outside this slice.
+- Type consistency: `stepCoin`, `gold`, `entrySegmentId`, `rewardLineage`, `nextPhysicalAction`, `manual_shrink`, `defer`, `undeferStep`, `idempotencyKey`, and all public facade names are consistent across tasks.
 - Test order: every production unit begins with a runner or browser test that fails because the feature is absent, then implements the minimum behavior and reruns regression checks.
