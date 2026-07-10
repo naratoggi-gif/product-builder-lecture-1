@@ -20,6 +20,7 @@
   <script src="/assets/js/stepquest-v02-backup.js?v=0.1.1-alpha"></script>
   <script src="/assets/js/app.js?v=0.1.1-alpha"></script>
   <script src="/assets/js/stepquest-v02-app.js?v=0.1.1-alpha"></script>
+  <script src="/assets/js/stepquest-v02-ui.js?v=0.1.1-alpha"></script>
   <script>
     const App = window.StepQuestApp;
     const trackedReturnOffers = new Set();
@@ -1355,10 +1356,8 @@
       } catch (error) {
         App.log(`${ko.initFailed}: ${error.message}`);
       }
-      renderPage();
+      await window.StepQuestV02UI.mount({ App, Core: window.StepQuestV02App });
     });
-
-    window.addEventListener('stepquest:refresh', renderPage);
 
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
