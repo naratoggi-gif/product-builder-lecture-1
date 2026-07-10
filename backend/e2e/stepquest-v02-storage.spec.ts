@@ -184,3 +184,109 @@ test('exports normalized records and retains five committed snapshots', async ({
   ))[0];
   expect(latest.snapshot.goals).toHaveLength(6);
 });
+
+for (const profile of ['guest', 'signed-in'] as const) {
+  test(`creates a ${profile} goal locally without a server goal write`, async ({ page }) => {
+    let serverGoalPosts = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith('/stepquest/goals')) {
+        serverGoalPosts += 1;
+      }
+    });
+    await clearBrowserState(page);
+    const result = await page.evaluate(async (profileValue) => {
+      const App = (window as any).StepQuestApp;
+      const Core = (window as any).StepQuestV02App;
+      App.state.token = profileValue === 'signed-in' ? 'test-token' : '';
+      await Core.init({ App, forceRefresh: true });
+      await Core.createGoal({
+        title: profileValue === 'signed-in' ? '로그인 로컬 목표' : '게스트 로컬 목표',
+        category: 'writing',
+        burdenLevel: 4,
+        energyLevel: 'medium',
+      });
+      const snapshot = Core.getSnapshot();
+      return {
+        goals: snapshot.goals,
+        activeSteps: snapshot.steps.filter((item) => item.status === 'active'),
+      };
+    }, profile);
+
+    expect(result.goals).toHaveLength(1);
+    expect(result.goals[0].status).toBe('active');
+    expect(result.activeSteps).toHaveLength(1);
+    expect(serverGoalPosts).toBe(0);
+  });
+}
+
+test('imports account progress only after an explicit local choice', async ({ page }) => {
+  let serverGoalPosts = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/stepquest/goals')) {
+      serverGoalPosts += 1;
+    }
+  });
+  await clearBrowserState(page);
+  const result = await page.evaluate(async ({ now }) => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    App.state.token = 'test-token';
+    App.state.weekly = [{
+      id: 90,
+      title: '계정 목표',
+      category: 'writing',
+      status: 'ACTIVE',
+      createdAt: now,
+    }];
+    App.state.nextMicro = {
+      id: 91,
+      weeklyMissionId: 90,
+      title: '문서 열기',
+      category: 'writing',
+      status: 'OPEN',
+      createdAt: now,
+    };
+    await Core.init({ App, forceRefresh: true });
+    const before = Core.getStatus();
+    const emptyBeforeChoice = Core.getSnapshot().goals.length;
+    await Core.importAccountProgress();
+    return {
+      before,
+      emptyBeforeChoice,
+      after: Core.getSnapshot(),
+    };
+  }, { now: NOW });
+
+  expect(result.before.pendingAccountImport).toBe(true);
+  expect(result.emptyBeforeChoice).toBe(0);
+  expect(result.after.goals[0].title).toBe('계정 목표');
+  expect(result.after.steps[0].title).toBe('문서 열기');
+  expect(serverGoalPosts).toBe(0);
+});
+
+test('does not enable external file handles in localStorage fallback mode', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value() { throw new Error('INDEXED_DB_DISABLED_FOR_TEST'); },
+    });
+  });
+  await clearBrowserState(page);
+  const result = await page.evaluate(async () => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    let pickerCalls = 0;
+    (window as any).StepQuestV02Backup.chooseExternalFile = async () => {
+      pickerCalls += 1;
+      return { name: 'must-not-be-used.json' };
+    };
+    await Core.init({ App, forceRefresh: true });
+    return {
+      mode: Core.getStatus().mode,
+      enabled: await Core.enableExternalBackup(),
+      pickerCalls,
+    };
+  });
+
+  expect(result).toEqual({ mode: 'localStorage', enabled: false, pickerCalls: 0 });
+});
