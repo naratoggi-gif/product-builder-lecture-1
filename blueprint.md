@@ -54,7 +54,8 @@ Design source: `docs/superpowers/specs/2026-07-10-stepquest-v02-core-loop-design
 - [x] Read and compare v0.2 planning against the current repository.
 - [x] Choose incremental migration over guest-only layering or a separate rewrite.
 - [x] Approve architecture, state flow, storage, reward, and verification design.
-- [ ] Write and review the implementation plan.
+- [x] Write and self-review the implementation plan in `docs/superpowers/plans/2026-07-11-stepquest-v02-core-loop.md`.
+- [ ] Select an execution workflow and start test-first implementation.
 - [ ] Implement the v0.2 domain transitions test-first.
 - [ ] Implement the minimum not-started router with persisted reason, manual shrink, and defer.
 - [ ] Implement IndexedDB persistence, migration, persistent-storage request, JSON export, and backup rotation.
