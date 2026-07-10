@@ -308,6 +308,10 @@ test('promotes fallback progress when IndexedDB becomes available again', async 
 
   const fallback = await page.evaluate(async ({ now }) => {
     const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.setMeta('migrationComplete', {
+      idempotencyKey: 'legacy:v02:fallback-migration',
+      completedAt: now,
+    });
     await repository.importGoal({
       weekly: { id: 700, title: '폴백에서 만든 목표', createdAt: now },
       micro: [{ id: 701, title: '폴백 행동', phase: 'start', createdAt: now }],
@@ -316,6 +320,7 @@ test('promotes fallback progress when IndexedDB becomes available again', async 
       now,
       idFactory: (prefix) => `${prefix}-fallback-recovery`,
     });
+    localStorage.removeItem('stepquest_v02_active');
     return { mode: repository.mode, snapshot: await repository.getSnapshot() };
   }, { now: NOW });
   expect(fallback.mode).toBe('localStorage');
@@ -325,9 +330,15 @@ test('promotes fallback progress when IndexedDB becomes available again', async 
   await page.reload();
   const recovered = await page.evaluate(async () => {
     const repository = await (window as any).StepQuestV02Storage.openRepository();
-    return { mode: repository.mode, snapshot: await repository.getSnapshot() };
+    return {
+      mode: repository.mode,
+      snapshot: await repository.getSnapshot(),
+      migrationComplete: await repository.getMeta('migrationComplete'),
+    };
   });
   expect(recovered.mode).toBe('indexedDB');
+  expect(recovered.migrationComplete.idempotencyKey).toBe('legacy:v02:fallback-migration');
+  expect(await page.evaluate(() => localStorage.getItem('stepquest_v02_active'))).toBe('1');
   expect(recovered.snapshot.goals[0].title).toBe('폴백에서 만든 목표');
   expect(await page.evaluate(() => localStorage.getItem('stepquest_v02_repository_mode'))).toBe('indexedDB');
 });
@@ -345,3 +356,253 @@ test('repairs a missing legacy write guard from committed migration metadata', a
   await page.reload();
   await expect.poll(() => page.evaluate(() => localStorage.getItem('stepquest_v02_active'))).toBe('1');
 });
+
+test('repairs a missing legacy write guard while IndexedDB remains unavailable', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value() { throw new Error('INDEXED_DB_DISABLED_FOR_TEST'); },
+    });
+  });
+  await clearBrowserState(page);
+  await page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.setMeta('migrationComplete', {
+      idempotencyKey: 'legacy:v02:fallback-migration',
+      completedAt: '2026-07-11T00:00:00.000Z',
+    });
+    localStorage.removeItem('stepquest_v02_active');
+  });
+
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('stepquest_v02_active'))).toBe('1');
+});
+
+test('keeps stale fallback read-only instead of overwriting newer IndexedDB state', async ({ page }) => {
+  await clearBrowserState(page);
+  const result = await page.evaluate(async ({ now }) => {
+    const StorageApi = (window as any).StepQuestV02Storage;
+    const repository = await StorageApi.openRepository();
+    const command = (id) => ({
+      idempotencyKey: `goal:${id}:import`,
+      now,
+      idFactory: (prefix) => `${prefix}-${id}`,
+    });
+    const made = (id, title) => ({
+      weekly: { id, title, createdAt: now },
+      micro: [{ id: id + 1, title: `${title} 행동`, phase: 'start', createdAt: now }],
+    });
+    await repository.importGoal(made(800, '미러 기준 목표'), command(800));
+
+    const originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function setItemWithMirrorFailure(key, value) {
+      if (key === 'stepquest_v02_fallback_state') throw new Error('FALLBACK_QUOTA_EXCEEDED');
+      return originalSetItem.call(this, key, value);
+    };
+    await repository.importGoal(made(810, 'IndexedDB 최신 목표'), command(810));
+    Storage.prototype.setItem = originalSetItem;
+
+    const originalOpen = IDBFactory.prototype.open;
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value() { throw new Error('INDEXED_DB_TRANSIENT_FAILURE'); },
+    });
+    const fallback = await StorageApi.openRepository();
+    let fallbackWriteError = null;
+    try {
+      await fallback.importGoal(made(820, '쓰이면 안 되는 목표'), command(820));
+    } catch (error) {
+      fallbackWriteError = error.message;
+    }
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value: originalOpen,
+    });
+
+    const recovered = await StorageApi.openRepository();
+    return {
+      fallbackMode: fallback.mode,
+      fallbackWriteError,
+      titles: (await recovered.getSnapshot()).goals.map((goal) => goal.title),
+    };
+  }, { now: NOW });
+
+  expect(result.fallbackMode).toBe('localStorage');
+  expect(result.fallbackWriteError).toContain('FALLBACK_STALE_READ_ONLY');
+  expect(result.titles).toContain('미러 기준 목표');
+  expect(result.titles).toContain('IndexedDB 최신 목표');
+  expect(result.titles).not.toContain('쓰이면 안 되는 목표');
+});
+
+test('promotes revisionless fallback state created by the previous release', async ({ page }) => {
+  await clearBrowserState(page);
+  const result = await page.evaluate(async () => {
+    const Domain = (window as any).StepQuestV02Domain;
+    const state = Domain.createInitialState();
+    state.goals.push({
+      id: 'legacy-fallback-goal',
+      title: 'Previous fallback goal',
+      status: 'active',
+      createdAt: '2026-07-11T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+    });
+    state.steps.push({
+      id: 'legacy-fallback-step',
+      goalId: 'legacy-fallback-goal',
+      title: 'Previous fallback step',
+      phase: 'start',
+      rewardLineage: 'legacy-fallback-step',
+      status: 'active',
+      orderIndex: 0,
+      createdAt: '2026-07-11T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+    });
+    localStorage.setItem('stepquest_v02_fallback_state', JSON.stringify(state));
+    localStorage.setItem('stepquest_v02_repository_mode', 'localStorage');
+
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    return {
+      mode: repository.mode,
+      snapshot: await repository.getSnapshot(),
+      headRevision: localStorage.getItem('stepquest_v02_head_revision'),
+      fallbackRevision: localStorage.getItem('stepquest_v02_fallback_revision'),
+    };
+  });
+
+  expect(result.mode).toBe('indexedDB');
+  expect(result.snapshot.goals[0].title).toBe('Previous fallback goal');
+  expect(result.headRevision).toBe(result.fallbackRevision);
+});
+
+test('recovers a fallback commit when recording its authority fails', async ({ page }) => {
+  await clearBrowserState(page);
+  const result = await page.evaluate(async ({ now }) => {
+    const StorageApi = (window as any).StepQuestV02Storage;
+    const repository = await StorageApi.openRepository();
+    const made = (id, title) => ({
+      weekly: { id, title, createdAt: now },
+      micro: [{ id: id + 1, title: `${title} step`, phase: 'start', createdAt: now }],
+    });
+    const command = (id) => ({
+      idempotencyKey: `goal:${id}:import`,
+      now,
+      idFactory: (prefix) => `${prefix}-${id}`,
+    });
+    await repository.importGoal(made(830, 'IndexedDB base goal'), command(830));
+
+    const originalOpen = IDBFactory.prototype.open;
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value() { throw new Error('INDEXED_DB_TRANSIENT_FAILURE'); },
+    });
+    const fallback = await StorageApi.openRepository();
+    const originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function setItemWithAuthorityFailure(key, value) {
+      if (key === 'stepquest_v02_repository_mode') throw new Error('AUTHORITY_WRITE_FAILED');
+      return originalSetItem.call(this, key, value);
+    };
+    try {
+      await fallback.importGoal(made(840, 'Fallback committed goal'), command(840));
+    } catch (_error) {
+      // The state and revision were committed before the authority marker failed.
+    }
+    Storage.prototype.setItem = originalSetItem;
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value: originalOpen,
+    });
+
+    const recovered = await StorageApi.openRepository();
+    return (await recovered.getSnapshot()).goals.map((goal) => goal.title);
+  }, { now: NOW });
+
+  expect(result).toContain('IndexedDB base goal');
+  expect(result).toContain('Fallback committed goal');
+});
+
+test('promotes migration metadata even when fallback domain state is empty', async ({ page }) => {
+  await page.addInitScript(() => {
+    const originalOpen = IDBFactory.prototype.open;
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value(...args) {
+        if (localStorage.getItem('stepquest_test_allow_indexeddb') !== '1') {
+          throw new Error('INDEXED_DB_TRANSIENT_FAILURE');
+        }
+        return originalOpen.apply(this, args);
+      },
+    });
+  });
+  await clearBrowserState(page);
+  const fallbackResult = await page.evaluate(async ({ now }) => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const migrated = await repository.migrateLegacy({}, {
+      idempotencyKey: 'legacy:v02:empty-migration',
+      now,
+      idFactory: (prefix) => `${prefix}-empty-migration`,
+    });
+    localStorage.removeItem('stepquest_v02_active');
+    return { mode: repository.mode, migrated };
+  }, { now: NOW });
+  expect(fallbackResult.mode).toBe('localStorage');
+  expect(fallbackResult.migrated.migrated).toBe(true);
+
+  await page.evaluate(() => localStorage.setItem('stepquest_test_allow_indexeddb', '1'));
+  await page.reload();
+  const recovered = await page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    return {
+      mode: repository.mode,
+      migrationComplete: await repository.getMeta('migrationComplete'),
+      active: localStorage.getItem('stepquest_v02_active'),
+    };
+  });
+  expect(recovered.mode).toBe('indexedDB');
+  expect(recovered.migrationComplete.idempotencyKey).toBe('legacy:v02:empty-migration');
+  expect(recovered.active).toBe('1');
+});
+
+for (const failedKey of ['stepquest_v02_meta_migrationComplete', 'stepquest_v02_active']) {
+  test(`does not partially commit fallback migration when ${failedKey} cannot be written`, async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(IDBFactory.prototype, 'open', {
+        configurable: true,
+        value() { throw new Error('INDEXED_DB_DISABLED_FOR_TEST'); },
+      });
+    });
+    await clearBrowserState(page);
+    const result = await page.evaluate(async ({ now, keyToFail }) => {
+      const repository = await (window as any).StepQuestV02Storage.openRepository();
+      const legacy = {
+        weekly: [{ id: 950, title: 'Legacy migration goal', status: 'ACTIVE', createdAt: now }],
+        micro: [{
+          id: 951,
+          weeklyMissionId: 950,
+          title: 'Legacy migration step',
+          status: 'OPEN',
+          createdAt: now,
+        }],
+      };
+      const originalSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function setItemWithMigrationFailure(key, value) {
+        if (key === keyToFail) throw new Error('MIGRATION_WRITE_FAILED');
+        return originalSetItem.call(this, key, value);
+      };
+      const migrated = await repository.migrateLegacy(legacy, {
+        idempotencyKey: `legacy:v02:failed:${keyToFail}`,
+        now,
+        idFactory: (prefix) => `${prefix}-failed-migration`,
+      });
+      Storage.prototype.setItem = originalSetItem;
+      return {
+        migrated,
+        snapshot: await repository.getSnapshot(),
+        active: localStorage.getItem('stepquest_v02_active'),
+      };
+    }, { now: NOW, keyToFail: failedKey });
+
+    expect(result.migrated.migrated).toBe(false);
+    expect(result.snapshot.goals).toHaveLength(0);
+    expect(result.active).toBeNull();
+  });
+}

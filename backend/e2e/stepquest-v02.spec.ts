@@ -119,6 +119,58 @@ test('not started can defer and undefer with no wallet change', async ({ page })
   await expect(page.locator('#v02-wallet')).toHaveText(wallet);
 });
 
+test('legacy direct-retry history reopens its active return report', async ({ page }) => {
+  await resetV02(page);
+  await createAndStart(page, 'Legacy retry compatibility');
+  await page.reload();
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await expect(page.locator('[data-v02-reason="too_big"]')).toBeVisible();
+
+  await page.evaluate(async () => {
+    const state = (window as any).StepQuestV02App.getSnapshot();
+    const step = state.steps.find((item) => item.status === 'active');
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 2);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(['steps', 'expeditions', 'events'], 'readwrite');
+        transaction.objectStore('steps').put({
+          ...step,
+          status: 'started',
+          updatedAt: '2026-07-11T00:00:01.000Z',
+        });
+        transaction.objectStore('expeditions').put({
+          id: 'legacy-retry-expedition',
+          stepId: step.id,
+          status: 'active',
+          startedAt: '2026-07-11T00:00:01.000Z',
+          goldCap: 2,
+          goldGranted: 0,
+        });
+        transaction.objectStore('events').put({
+          idempotencyKey: 'legacy-direct-retry-start',
+          type: 'step_started',
+          stepId: step.id,
+          expeditionId: 'legacy-retry-expedition',
+          createdAt: '2026-07-11T00:00:01.000Z',
+          result: {
+            stepId: step.id,
+            expeditionId: 'legacy-retry-expedition',
+            stepCoinGranted: 0,
+          },
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  });
+
+  await page.reload();
+  await expect(page.locator('#v02-return-report')).toBeVisible();
+  await expect(page.locator('.v02-obstacle')).toHaveCount(0);
+});
+
 test('double click and elapsed time do not multiply rewards', async ({ page }) => {
   await resetV02(page);
   await createGoal(page, '문서 열기');

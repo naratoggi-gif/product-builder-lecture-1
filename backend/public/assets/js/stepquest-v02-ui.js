@@ -82,14 +82,19 @@
         String(right.createdAt).localeCompare(String(left.createdAt))
         || String(right.idempotencyKey).localeCompare(String(left.idempotencyKey))
       ));
-    const lastNotStarted = notStartedReports.find((report) => !state.events.some((event) => (
-      event.type === 'obstacle_routed'
-      && event.stepId === report.stepId
-      && (
-        event.resolvesEventKey === report.idempotencyKey
-        || (!event.resolvesEventKey && String(event.createdAt) >= String(report.createdAt))
-      )
-    ))) || null;
+    const lastNotStarted = notStartedReports.find((report) => !state.events.some((event) => {
+      const routed = event.type === 'obstacle_routed'
+        && event.stepId === report.stepId
+        && (
+          event.resolvesEventKey === report.idempotencyKey
+          || (!event.resolvesEventKey && String(event.createdAt) >= String(report.createdAt))
+        );
+      const legacyRetry = event.type === 'step_started'
+        && event.stepId === report.stepId
+        && event.expeditionId !== report.expeditionId
+        && String(event.createdAt || '') >= String(report.createdAt || '');
+      return routed || legacyRetry;
+    })) || null;
     return {
       state,
       active,

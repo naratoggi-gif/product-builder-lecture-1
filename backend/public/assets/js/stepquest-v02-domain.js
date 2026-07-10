@@ -75,6 +75,39 @@
     return step.rewardLineage || step.id;
   }
 
+  function notStartedReportIsResolved(state, report) {
+    const explicitlyRouted = state.events.some((event) => (
+      event.type === 'obstacle_routed'
+      && event.stepId === report.stepId
+      && (
+        event.resolvesEventKey === report.idempotencyKey
+        || (
+          !event.resolvesEventKey
+          && String(event.createdAt || '') >= String(report.createdAt || '')
+        )
+      )
+    ));
+    if (explicitlyRouted) return true;
+
+    // v0.2 briefly allowed a direct retry before obstacle routing became mandatory.
+    // Preserve those histories while preventing new direct retries.
+    return state.events.some((event) => (
+      event.type === 'step_started'
+      && event.stepId === report.stepId
+      && event.expeditionId !== report.expeditionId
+      && String(event.createdAt || '') >= String(report.createdAt || '')
+    ));
+  }
+
+  function hasUnresolvedNotStartedReport(state, stepId) {
+    return state.events.some((event) => (
+      event.type === 'expedition_reported'
+      && event.outcome === 'not_started'
+      && event.stepId === stepId
+      && !notStartedReportIsResolved(state, event)
+    ));
+  }
+
   function startStep(source, command) {
     const repeated = replay(source, command.idempotencyKey);
     if (repeated) return repeated;
@@ -82,6 +115,9 @@
     const state = clone(source);
     const step = state.steps.find((item) => item.id === command.stepId && item.status === 'active');
     if (!step) throw domainError('STEP_NOT_ACTIVE');
+    if (hasUnresolvedNotStartedReport(state, step.id)) {
+      throw domainError('OBSTACLE_ROUTE_REQUIRED');
+    }
     if (state.expeditions.some((item) => item.status === 'active')) {
       throw domainError('EXPEDITION_ALREADY_ACTIVE');
     }

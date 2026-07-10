@@ -238,6 +238,65 @@ function testOutcomeRules() {
   assert.equal(transition.state.goals[0].status, 'completed');
 }
 
+function testNotStartedRequiresObstacleRouteBeforeRestart() {
+  let transition = Domain.startStep(makeState(['start']), {
+    stepId: 'step-1',
+    idempotencyKey: 'blocked-start',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'blocked-report',
+    now: NOW,
+    idFactory,
+  });
+
+  assert.throws(() => Domain.startStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'blocked-retry',
+    now: NOW,
+    idFactory,
+  }), /OBSTACLE_ROUTE_REQUIRED/);
+}
+
+function testLegacyObstacleRouteWithoutLinkAllowsRestart() {
+  let transition = Domain.startStep(makeState(['start']), {
+    stepId: 'step-1',
+    idempotencyKey: 'legacy-route-start',
+    now: '2026-07-11T00:00:00.000Z',
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'legacy-route-report',
+    now: '2026-07-11T00:00:01.000Z',
+    idFactory,
+  });
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'not_now',
+    route: 'defer',
+    idempotencyKey: 'legacy-route-defer',
+    now: '2026-07-11T00:00:02.000Z',
+    idFactory,
+  });
+  transition = Domain.undeferStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'legacy-route-undefer',
+    now: '2026-07-11T00:00:03.000Z',
+  });
+
+  assert.doesNotThrow(() => Domain.startStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'legacy-route-restart',
+    now: '2026-07-11T00:00:04.000Z',
+    idFactory,
+  }));
+}
+
 function testDeferCanBeUndeferredWithoutReward() {
   let transition = Domain.routeObstacle(makeState(['start']), {
     stepId: 'step-1',
@@ -282,6 +341,8 @@ testEntrySegmentsPayOnce();
 testPartialProgressAndResumeAnchor();
 testReplacementLineageCannotMintStartReward();
 testOutcomeRules();
+testNotStartedRequiresObstacleRouteBeforeRestart();
+testLegacyObstacleRouteWithoutLinkAllowsRestart();
 testDeferCanBeUndeferredWithoutReward();
 testOnlyOneExpeditionCanBeActive();
 

@@ -6,6 +6,8 @@
   const FALLBACK_BACKUPS_KEY = 'stepquest_v02_fallback_backups';
   const FALLBACK_META_PREFIX = 'stepquest_v02_meta_';
   const REPOSITORY_MODE_KEY = 'stepquest_v02_repository_mode';
+  const HEAD_REVISION_KEY = 'stepquest_v02_head_revision';
+  const FALLBACK_REVISION_KEY = 'stepquest_v02_fallback_revision';
   const STATE_STORES = [
     'goals',
     'steps',
@@ -17,6 +19,11 @@
   ];
   const ALL_STORES = [...STATE_STORES, 'meta', 'backups'];
   const SIGNIFICANT_OPERATIONS = new Set(['reportOutcome', 'routeObstacle', 'importGoal']);
+  const FALLBACK_RECOVERY_META_KEYS = [
+    'legacySnapshot',
+    'migrationComplete',
+    'migrationError',
+  ];
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -132,11 +139,59 @@
     );
   }
 
-  function mirrorFallbackState(state) {
+  function readLocalRevision(key) {
+    const raw = root.localStorage.getItem(key);
+    if (raw === null) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+
+  function fallbackMirrorHealthy() {
+    const headRevision = readLocalRevision(HEAD_REVISION_KEY);
+    const fallbackRevision = readLocalRevision(FALLBACK_REVISION_KEY);
+    return Boolean(
+      root.localStorage.getItem(FALLBACK_STATE_KEY)
+      && headRevision !== null
+      && headRevision === fallbackRevision,
+    );
+  }
+
+  function adoptRevisionlessFallback(authority) {
+    if (
+      authority !== 'localStorage'
+      || !root.localStorage.getItem(FALLBACK_STATE_KEY)
+      || readLocalRevision(HEAD_REVISION_KEY) !== null
+      || readLocalRevision(FALLBACK_REVISION_KEY) !== null
+    ) return false;
     try {
-      root.localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(state));
+      root.localStorage.setItem(HEAD_REVISION_KEY, '0');
+      root.localStorage.setItem(FALLBACK_REVISION_KEY, '0');
+      return true;
     } catch (_error) {
-      // IndexedDB remains authoritative when the emergency mirror is unavailable.
+      try { root.localStorage.removeItem(FALLBACK_REVISION_KEY); } catch (_removeError) { /* no-op */ }
+      return false;
+    }
+  }
+
+  function prepareMirrorRevision(revision) {
+    try {
+      root.localStorage.setItem(HEAD_REVISION_KEY, String(revision));
+      return true;
+    } catch (_error) {
+      try { root.localStorage.removeItem(FALLBACK_REVISION_KEY); } catch (_removeError) { /* no-op */ }
+      return false;
+    }
+  }
+
+  function mirrorFallbackState(state, revision) {
+    try {
+      root.localStorage.setItem(HEAD_REVISION_KEY, String(revision));
+      root.localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(state));
+      root.localStorage.setItem(FALLBACK_REVISION_KEY, String(revision));
+      return true;
+    } catch (_error) {
+      try { root.localStorage.removeItem(FALLBACK_REVISION_KEY); } catch (_removeError) { /* no-op */ }
+      return false;
     }
   }
 
@@ -344,11 +399,17 @@
       const transaction = database.transaction(ALL_STORES, 'readwrite');
       const done = transactionDone(transaction);
       try {
+        const revisionRequest = requestResult(transaction.objectStore('meta').get('stateRevision'));
         const { state, invalid } = partitionRecords(await readRecords(transaction));
+        const revisionRecord = await revisionRequest;
+        const currentRevision = Number(revisionRecord?.value || 0);
         putQuarantine(transaction, invalid, command.now || new Date().toISOString());
         const outcome = transition(state, command);
         if (!outcome.duplicate) {
+          const nextRevision = currentRevision + 1;
+          prepareMirrorRevision(nextRevision);
           writeState(transaction, outcome.state);
+          transaction.objectStore('meta').put({ key: 'stateRevision', value: nextRevision });
           if (SIGNIFICANT_OPERATIONS.has(operation)) {
             await rotateBackups(
               transaction,
@@ -359,7 +420,7 @@
           }
         }
         await done;
-        mirrorFallbackState(outcome.state);
+        mirrorFallbackState(outcome.state, outcome.duplicate ? currentRevision : currentRevision + 1);
         return { ...outcome, state: clone(outcome.state) };
       } catch (error) {
         abortQuietly(transaction);
@@ -376,21 +437,26 @@
       const transaction = database.transaction(ALL_STORES, 'readwrite');
       const done = transactionDone(transaction);
       try {
+        const revisionRequest = requestResult(transaction.objectStore('meta').get('stateRevision'));
         const records = await readRecords(transaction);
+        const revisionRecord = await revisionRequest;
         const { state: existing } = partitionRecords(records);
         if (existing.goals.length) {
           await done;
           return { migrated: false, reason: 'LOCAL_STATE_EXISTS' };
         }
         const next = buildLegacyState(legacy, command, Domain);
+        const nextRevision = Number(revisionRecord?.value || 0) + 1;
+        prepareMirrorRevision(nextRevision);
         writeState(transaction, next);
+        transaction.objectStore('meta').put({ key: 'stateRevision', value: nextRevision });
         transaction.objectStore('meta').put({ key: 'legacySnapshot', value: clone(legacy) });
         transaction.objectStore('meta').put({
           key: 'migrationComplete',
           value: { idempotencyKey: command.idempotencyKey, completedAt: command.now },
         });
         await done;
-        mirrorFallbackState(next);
+        mirrorFallbackState(next, nextRevision);
         root.localStorage.setItem(ACTIVE_KEY, '1');
         return { migrated: true, snapshot: clone(next) };
       } catch (error) {
@@ -410,7 +476,7 @@
       return { ...state, backups };
     }
 
-    async function recoverFallback(state, backups = []) {
+    async function recoverFallback(state, backups = [], revision = 0, metadata = {}) {
       const transaction = database.transaction(ALL_STORES, 'readwrite');
       const done = transactionDone(transaction);
       try {
@@ -435,8 +501,12 @@
           key: 'fallbackRecovery',
           value: { completedAt: new Date().toISOString() },
         });
+        transaction.objectStore('meta').put({ key: 'stateRevision', value: revision });
+        Object.entries(metadata).forEach(([key, value]) => {
+          if (value !== undefined) transaction.objectStore('meta').put({ key, value: clone(value) });
+        });
         await done;
-        mirrorFallbackState(state);
+        mirrorFallbackState(state, revision);
         return clone(state);
       } catch (error) {
         abortQuietly(transaction);
@@ -481,6 +551,10 @@
   }
 
   function createFallbackRepository(Domain, options = {}) {
+    function assertWritable() {
+      if (options.writable === false) throw new Error('FALLBACK_STALE_READ_ONLY');
+    }
+
     function setMeta(key, value) {
       root.localStorage.setItem(`${FALLBACK_META_PREFIX}${key}`, JSON.stringify(value));
       return Promise.resolve(value);
@@ -501,13 +575,20 @@
       if (invalid.length) {
         await setMeta('lastQuarantineCount', invalid.length);
         await setMeta(`quarantine:${new Date().toISOString()}`, invalid);
-        saveState(state);
+        if (options.writable !== false) saveState(state);
       }
       return state;
     }
 
     function saveState(state) {
+      assertWritable();
+      const revision = Math.max(
+        readLocalRevision(HEAD_REVISION_KEY) || 0,
+        readLocalRevision(FALLBACK_REVISION_KEY) || 0,
+      ) + 1;
+      root.localStorage.setItem(HEAD_REVISION_KEY, String(revision));
       root.localStorage.setItem(FALLBACK_STATE_KEY, JSON.stringify(state));
+      root.localStorage.setItem(FALLBACK_REVISION_KEY, String(revision));
       if (options.markAuthorityOnWrite !== false) {
         root.localStorage.setItem(REPOSITORY_MODE_KEY, 'localStorage');
       }
@@ -526,6 +607,7 @@
     }
 
     async function execute(operation, command) {
+      assertWritable();
       const transition = Domain[operation];
       if (typeof transition !== 'function') throw new Error(`UNKNOWN_DOMAIN_OPERATION:${operation}`);
       const state = await getSnapshot();
@@ -548,17 +630,18 @@
     }
 
     async function migrateLegacy(legacy, command) {
+      assertWritable();
       try {
         const existing = await getSnapshot();
         if (existing.goals.length) return { migrated: false, reason: 'LOCAL_STATE_EXISTS' };
         const next = buildLegacyState(legacy, command, Domain);
-        saveState(next);
         await setMeta('legacySnapshot', clone(legacy));
         await setMeta('migrationComplete', {
           idempotencyKey: command.idempotencyKey,
           completedAt: command.now,
         });
         root.localStorage.setItem(ACTIVE_KEY, '1');
+        saveState(next);
         return { migrated: true, snapshot: clone(next) };
       } catch (error) {
         await setMeta('migrationError', { message: error.message, failedAt: command.now });
@@ -589,18 +672,55 @@
       const database = await openDatabase();
       const repository = createIndexedDbRepository(database, Domain);
       const authority = root.localStorage.getItem(REPOSITORY_MODE_KEY);
-      const fallbackRepository = createFallbackRepository(Domain, { markAuthorityOnWrite: false });
-      const [indexedState, fallbackState] = await Promise.all([
+      adoptRevisionlessFallback(authority);
+      const fallbackRepository = createFallbackRepository(Domain, {
+        markAuthorityOnWrite: false,
+        writable: fallbackMirrorHealthy() || !root.localStorage.getItem(FALLBACK_STATE_KEY),
+      });
+      const [indexedState, fallbackState, indexedRevisionValue] = await Promise.all([
         repository.getSnapshot(),
         fallbackRepository.getSnapshot(),
+        repository.getMeta('stateRevision'),
       ]);
+      const fallbackMetadataValues = await Promise.all(
+        FALLBACK_RECOVERY_META_KEYS.map((key) => fallbackRepository.getMeta(key)),
+      );
+      const fallbackMetadata = FALLBACK_RECOVERY_META_KEYS.reduce((result, key, index) => {
+        result[key] = fallbackMetadataValues[index];
+        return result;
+      }, {});
+      const indexedRevision = Number(indexedRevisionValue || 0);
+      const fallbackRevision = readLocalRevision(FALLBACK_REVISION_KEY) || 0;
+      const fallbackAhead = fallbackRevision > indexedRevision;
+      const fallbackHasMigration = fallbackMetadata.migrationComplete !== undefined;
       if (
-        hasDomainState(fallbackState)
-        && (authority === 'localStorage' || (!authority && !hasDomainState(indexedState)))
+        authority === 'localStorage'
+        && hasDomainState(fallbackState)
+        && !fallbackMirrorHealthy()
       ) {
-        await repository.recoverFallback(fallbackState, readFallbackBackups());
+        database.close();
+        return createFallbackRepository(Domain, {
+          markAuthorityOnWrite: false,
+          writable: false,
+        });
+      }
+      if (
+        fallbackMirrorHealthy()
+        && (hasDomainState(fallbackState) || fallbackHasMigration || fallbackAhead)
+        && (
+          authority === 'localStorage'
+          || fallbackAhead
+          || (!authority && !hasDomainState(indexedState))
+        )
+      ) {
+        await repository.recoverFallback(
+          fallbackState,
+          readFallbackBackups(),
+          fallbackRevision,
+          fallbackMetadata,
+        );
       } else {
-        mirrorFallbackState(indexedState);
+        mirrorFallbackState(indexedState, indexedRevision);
       }
       root.localStorage.setItem(REPOSITORY_MODE_KEY, 'indexedDB');
       if (
@@ -611,7 +731,20 @@
       }
       return repository;
     } catch (_error) {
-      return createFallbackRepository(Domain, { markAuthorityOnWrite: true });
+      const authority = root.localStorage.getItem(REPOSITORY_MODE_KEY);
+      adoptRevisionlessFallback(authority);
+      const hasFallback = Boolean(root.localStorage.getItem(FALLBACK_STATE_KEY));
+      const fallbackRepository = createFallbackRepository(Domain, {
+        markAuthorityOnWrite: true,
+        writable: !hasFallback || !authority || fallbackMirrorHealthy(),
+      });
+      if (
+        root.localStorage.getItem(ACTIVE_KEY) !== '1'
+        && await fallbackRepository.getMeta('migrationComplete')
+      ) {
+        root.localStorage.setItem(ACTIVE_KEY, '1');
+      }
+      return fallbackRepository;
     }
   }
 

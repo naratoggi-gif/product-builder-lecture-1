@@ -379,6 +379,8 @@ assert.ok(goalsHtml.includes('returnCompleted'), 'completion feedback must ackno
 assert.ok(goalsHtml.includes('recent-trace'), 'stats panel must render recent attempts');
 assert.ok(goalsHtml.includes('v=0.1.1-alpha'), 'shell asset cache version must be bumped');
 assert.ok(serviceWorker.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must follow the app version');
+assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-2'"), 'service worker cache build must change when v0.2 shell assets change');
+assert.ok(goalsHtml.includes('&build=v02-core-2'), 'v0.2 shell asset URLs must bypass the previous HTTP cache');
 assert.ok(serviceWorker.includes('self.skipWaiting()'), 'service worker must activate updated deploys promptly');
 assert.ok(serviceWorker.includes('self.clients.claim()'), 'service worker must claim open clients after activation');
 assert.ok(serviceWorker.includes('caches.delete(key)'), 'service worker must delete old cache versions');
