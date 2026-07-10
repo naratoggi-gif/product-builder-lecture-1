@@ -5,6 +5,11 @@ const APP_SHELL = [
   '/goals.html',
   '/assets/css/app.css?v=0.1.1-alpha',
   '/assets/js/app.js?v=0.1.1-alpha',
+  '/assets/js/stepquest-v02-domain.js?v=0.1.1-alpha',
+  '/assets/js/stepquest-v02-storage.js?v=0.1.1-alpha',
+  '/assets/js/stepquest-v02-backup.js?v=0.1.1-alpha',
+  '/assets/js/stepquest-v02-app.js?v=0.1.1-alpha',
+  '/assets/js/stepquest-v02-ui.js?v=0.1.1-alpha',
   '/assets/icons/stepquest.svg',
   '/manifest.webmanifest',
 ];

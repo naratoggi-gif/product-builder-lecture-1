@@ -56,12 +56,14 @@ Design source: `docs/superpowers/specs/2026-07-10-stepquest-v02-core-loop-design
 - [x] Choose incremental migration over guest-only layering or a separate rewrite.
 - [x] Approve architecture, state flow, storage, reward, and verification design.
 - [x] Write and self-review the implementation plan in `docs/superpowers/plans/2026-07-11-stepquest-v02-core-loop.md`.
-- [ ] Select an execution workflow and start test-first implementation.
-- [ ] Implement the v0.2 domain transitions test-first.
-- [ ] Implement the minimum not-started router with persisted reason, lineage-preserving manual shrink, defer, and undefer.
-- [ ] Implement IndexedDB persistence, migration, persistent-storage request, JSON export, and backup rotation.
-- [ ] Replace the primary UI with start, expedition, four-outcome return, and Resume Anchor flow.
-- [ ] Verify reload recovery and regressions in the built PWA.
+- [x] Select an execution workflow and start test-first implementation.
+- [x] Implement the v0.2 domain transitions test-first.
+- [x] Implement the minimum not-started router with persisted reason, lineage-preserving manual shrink, defer, and undefer.
+- [x] Implement IndexedDB persistence, migration, persistent-storage request, JSON export, and backup rotation.
+- [x] Replace the primary UI with start, expedition, four-outcome return, and Resume Anchor flow.
+- [x] Verify reload recovery and regressions in the built PWA.
+
+Verification: `npm run build`, `npm run test:domain`, `npm run audit:ci`, and `npm run test:e2e` from `backend/`.
 
 ## Deferred Roadmap
 

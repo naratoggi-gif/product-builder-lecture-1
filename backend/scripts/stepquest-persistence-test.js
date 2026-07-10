@@ -31,6 +31,8 @@ const mainTs = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf8');
 const safeLogger = fs.readFileSync(path.join(root, 'src/shared/safe-logger.middleware.ts'), 'utf8');
 const stateModule = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.state.ts'), 'utf8');
 const browserApp = fs.readFileSync(path.join(root, 'public/assets/js/app.js'), 'utf8');
+const v02Storage = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-storage.js'), 'utf8');
+const v02Ui = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-ui.js'), 'utf8');
 const goalsHtml = fs.readFileSync(path.join(root, 'public/goals.html'), 'utf8');
 const appCss = fs.readFileSync(path.join(root, 'public/assets/css/app.css'), 'utf8');
 const manifest = fs.readFileSync(path.join(root, 'public/manifest.webmanifest'), 'utf8');
@@ -431,5 +433,35 @@ Object.entries(redirectPages).forEach(([file, text]) => {
 const debugErrorLabel = "'ERR" + "OR'";
 const debugOkLabel = "'O" + "K'";
 assert.ok(!browserApp.includes(debugErrorLabel) && !browserApp.includes(debugOkLabel), 'debug-style log labels must not be shown to users');
+
+const v02Assets = [
+  'stepquest-v02-domain.js',
+  'stepquest-v02-storage.js',
+  'stepquest-v02-backup.js',
+  'stepquest-v02-app.js',
+  'stepquest-v02-ui.js',
+];
+let priorAssetIndex = -1;
+v02Assets.forEach((asset) => {
+  const assetUrl = `/assets/js/${asset}?v=0.1.1-alpha`;
+  const assetIndex = goalsHtml.indexOf(assetUrl);
+  assert.ok(assetIndex > priorAssetIndex, `goals shell must load ${asset} in dependency order`);
+  assert.ok(serviceWorker.includes(assetUrl), `service worker must cache ${asset}`);
+  priorAssetIndex = assetIndex;
+});
+assert.ok(
+  browserApp.includes("localStorage.getItem('stepquest_v02_active') === '1'"),
+  'legacy guest writes need the committed migration guard',
+);
+assert.ok(
+  v02Storage.includes('indexedDB.open(DB_NAME, DB_VERSION)'),
+  'v0.2 storage must open the versioned database',
+);
+assert.ok(v02Storage.includes('const DB_VERSION = 2'), 'v0.2 database version must be 2');
+['completed', 'partial', 'interrupted', 'not_started'].forEach((outcome) => {
+  assert.ok(v02Ui.includes(outcome), `return UI must include ${outcome}`);
+});
+['v02-start-step', 'v02-return-report', 'v02-resume-anchor', 'v02-next-action', 'v02-undefer-step']
+  .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 UI must include ${id}`));
 
 console.log(JSON.stringify({ ok: true, checked: 'stepquest-persistence' }, null, 2));
