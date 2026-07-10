@@ -41,8 +41,10 @@ Some existing behavior conflicts with v0.2: the start button is a UI timer rathe
 - Pure browser domain transitions for start, outcome reporting, Resume Anchor, and resume.
 - IndexedDB as the browser source of truth for all users.
 - Immutable events and reward ledger with idempotency keys.
+- Entry rewards keyed by contiguous preparation segment so finer decomposition cannot mint extra currency.
 - JSON export, rolling snapshots, optional user-authorized external automatic backup, and persistent-storage status in the MVP.
 - Existing server and account data retained for later synchronization, not used as the first-slice source of truth.
+- A committed migration guard makes the old guest-state writer read-only.
 - Conflicting productized systems hidden from the primary flow without destructive deletion.
 
 ## Current Change: v0.2 Start and Return Core
@@ -54,6 +56,7 @@ Design source: `docs/superpowers/specs/2026-07-10-stepquest-v02-core-loop-design
 - [x] Approve architecture, state flow, storage, reward, and verification design.
 - [ ] Write and review the implementation plan.
 - [ ] Implement the v0.2 domain transitions test-first.
+- [ ] Implement the minimum not-started router with persisted reason, manual shrink, and defer.
 - [ ] Implement IndexedDB persistence, migration, persistent-storage request, JSON export, and backup rotation.
 - [ ] Replace the primary UI with start, expedition, four-outcome return, and Resume Anchor flow.
 - [ ] Verify reload recovery and regressions in the built PWA.

@@ -53,7 +53,10 @@ On the first v0.2 launch, when the IndexedDB database is empty:
 2. Copy the current goal, current micro step, wallet values, and relevant attempts into v0.2 records. Legacy `player.goalCoin` becomes StepCoin, and the sum of legacy village material becomes Gold.
 3. Save the complete legacy payload under a metadata record for recovery.
 4. Mark the migration as complete only after the IndexedDB transaction commits.
-5. Leave the original `localStorage` key untouched.
+5. Set the synchronous `stepquest_v02_active` guard only after that commit.
+6. Leave the original `localStorage` key untouched.
+
+After `stepquest_v02_active` is set, the legacy `saveGuest()` path becomes read-only: attempts to write `stepquest_guest_state` are no-ops and emit one diagnostic event. All legacy guest-state writes already pass through `saveGuest()`, so this guard prevents the old and new stores from diverging. Authentication, settings, and other unrelated localStorage keys remain writable.
 
 If no usable legacy state exists, the v0.2 store starts empty and the existing goal creation flow supplies the first goal and step.
 
@@ -137,12 +140,15 @@ interface Step {
   title: string;
   nextPhysicalAction: string;
   phase: "orient" | "prepare" | "open" | "start" | "continue" | "close";
+  entrySegmentId?: string;
   status: StepStatus;
   orderIndex: number;
   createdAt: string;
   updatedAt: string;
 }
 ```
+
+During chain creation, each contiguous run of `orient`, `prepare`, and `open` Steps receives one shared `entrySegmentId`; a `start`, `continue`, or `close` Step ends that run. This grouping is persisted and does not change when the chain is displayed again.
 
 ### Expedition
 
@@ -208,7 +214,14 @@ The user records the next physical action. The expedition becomes `reported`, th
 
 ### Not started
 
-The expedition becomes `reported` and the step returns to `active`. No progress reward or Gold is granted. The UI asks one question, “지금 무엇이 막고 있나요?”, and hands the selected reason to the obstacle router.
+The expedition becomes `reported` and the step returns to `active`. No progress reward or Gold is granted. The UI asks one question, “지금 무엇이 막고 있나요?”, and records the selected reason as an `obstacle_reported` event.
+
+This slice then offers exactly two routes:
+
+- `manual_shrink`: require one smaller physical action from the user, mark the original Step `replaced`, and insert that action as the new `active` Step at the same chain position.
+- `defer`: change the original Step to `deferred` so it is preserved for later without a penalty.
+
+The fuller reason-specific obstacle strategies remain deferred, but every not-started report therefore ends in a persisted, recoverable state.
 
 ### Resume
 
@@ -225,12 +238,12 @@ The planning ratio 10/25/35/30 is represented by integer weights `2/5/7/6`:
 
 The mapping is exact:
 
-- `startStep` on `orient`, `prepare`, or `open` grants the 2-StepCoin entry reward once for that Step.
+- `startStep` on `orient`, `prepare`, or `open` grants the 2-StepCoin entry reward once for the shared `entrySegmentId`. Later Steps in the same contiguous entry segment record their start but grant no additional entry reward.
 - `startStep` on `start`, `continue`, or `close` grants the 5-StepCoin actual-work-start reward once for that Step.
 - `reportOutcome` with `partial` or `completed` grants the 7-StepCoin progress reward once when the Step phase is `start`, `continue`, or `close`.
 - Completing the final Step grants the 6-StepCoin Goal milestone once.
 
-Each stage reward has a stable key derived from Goal, Step, and stage, so repeated clicks, reloads, or repeated partial returns cannot mint the same reward twice. Entry steps do not also receive the meaningful-progress reward.
+Actual-work and progress rewards use stable keys derived from Goal, Step, and stage. Entry reward uses `goal:{goalId}:entry:{entrySegmentId}`, so splitting one entrance into several preparation Steps cannot increase its reward. Repeated clicks, reloads, or repeated partial returns cannot mint the same reward twice. Entry Steps do not also receive the meaningful-progress reward.
 
 Gold is tied to the reported expedition outcome, never elapsed time:
 
@@ -292,6 +305,11 @@ Visible copy never uses failure, loss, streak-reset, or guilt language.
 - Each of the four outcomes produces the exact specified state.
 - Partial and interrupted outcomes require `nextPhysicalAction`.
 - Not-started produces no reward and no penalty.
+- A contiguous entry segment grants exactly 2 StepCoin regardless of how many entry Steps it contains.
+- Separate entry segments use separate persisted segment identifiers.
+- Every not-started reason is recorded before manual shrink or defer completes.
+- Manual shrink replaces the original Step with one user-entered smaller action.
+- Defer preserves the original Step without a reward or penalty.
 - Resume displays and consumes the latest anchor.
 - Reward keys prevent duplicate StepCoin and Gold.
 - Elapsed time does not change any reward.
@@ -306,6 +324,7 @@ Visible copy never uses failure, loss, streak-reset, or guilt language.
 - Significant commits rotate the five-snapshot recovery history.
 - A granted external file handle receives the latest valid JSON after a significant commit.
 - Existing guest state imports once and the original localStorage key remains unchanged.
+- Once migration commits, legacy `saveGuest()` calls cannot change `stepquest_guest_state`.
 - Existing account progress is imported only after explicit choice and leaves the server source unchanged.
 
 ### Regression tests
