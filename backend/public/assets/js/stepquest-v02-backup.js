@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, () => {
   function buildExport(records, now = new Date().toISOString()) {
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       exportedAt: now,
       goals: records.goals || [],
       steps: records.steps || [],
@@ -15,6 +15,15 @@
       rewards: records.rewards || [],
       wallet: records.wallet || { stepCoin: 0, gold: 0 },
       camp: records.camp || { level: 0 },
+      characters: records.characters || [],
+    };
+  }
+
+  function buildFullExport(records, encodedAssets, now = new Date().toISOString()) {
+    return {
+      ...buildExport(records, now),
+      exportType: 'full-with-images',
+      assets: Array.isArray(encodedAssets) ? encodedAssets : [],
     };
   }
 
@@ -69,6 +78,7 @@
 
   return {
     buildExport,
+    buildFullExport,
     serializeExport,
     requestPersistentStorage,
     chooseExternalFile,

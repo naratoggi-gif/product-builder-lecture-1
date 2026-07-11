@@ -13,11 +13,22 @@ async function run() {
     rewards: [{ idempotencyKey: 'reward-1' }],
     wallet: { stepCoin: 12, gold: 2 },
     camp: { level: 2 },
+    characters: [{
+      id: 'local-primary',
+      name: '나의 모험가',
+      imageBlobKey: 'character:local-primary:image',
+      skillPreset: 'impact',
+      skillName: '첫걸음',
+      accentColor: '#65d9ff',
+      createdAt: now,
+      updatedAt: now,
+    }],
+    assets: [{ id: 'character:local-primary:image', base64: 'must-not-leak' }],
     backups: [{ id: 'internal-only' }],
   };
   const exported = Backup.buildExport(records, now);
   assert.deepEqual(exported, {
-    schemaVersion: 2,
+    schemaVersion: 3,
     exportedAt: now,
     goals: records.goals,
     steps: records.steps,
@@ -27,9 +38,25 @@ async function run() {
     rewards: records.rewards,
     wallet: records.wallet,
     camp: records.camp,
+    characters: records.characters,
   });
+  assert.equal('assets' in exported, false);
+  assert.equal(JSON.stringify(exported).includes('must-not-leak'), false);
+  assert.equal(JSON.stringify(exported).includes('base64'), false);
   assert.deepEqual(JSON.parse(Backup.serializeExport(exported)), exported);
   assert.deepEqual(Backup.buildExport({ ...records, camp: undefined }, now).camp, { level: 0 });
+  assert.deepEqual(Backup.buildExport({ ...records, characters: undefined }, now).characters, []);
+
+  const encodedAssets = [{
+    id: 'character:local-primary:image',
+    mimeType: 'image/png',
+    base64: 'AA==',
+  }];
+  const full = Backup.buildFullExport(records, encodedAssets, now);
+  assert.equal(full.schemaVersion, 3);
+  assert.equal(full.exportType, 'full-with-images');
+  assert.deepEqual(full.characters, records.characters);
+  assert.deepEqual(full.assets, encodedAssets);
 
   assert.deepEqual(await Backup.requestPersistentStorage(undefined), {
     supported: false,
