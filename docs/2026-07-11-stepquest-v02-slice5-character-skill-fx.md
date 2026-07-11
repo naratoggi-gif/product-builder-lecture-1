@@ -123,3 +123,7 @@ Browser tests:
 ## 6. Completion Criteria (Phase A)
 
 The user can register any single image and immediately see it perform all four skill presets with technique-name cut-ins, at the correct loop moments, skippable, motion-reduced when asked, with zero change to rewards, domain state, or backup size.
+
+### Implementation status — complete (2026-07-12)
+
+Phase A is implemented on `codex/stepquest-v02-slice5`. The shipped shell uses `v02-core-4`, precaches all seven v0.2 modules, and keeps character image bytes outside domain state and ordinary backups. Final verification passed the unchanged domain suite, the CI-equivalent command, and the full Playwright matrix: 147 passed, 3 environment-dependent skips, 0 failures across desktop Chrome, mobile Chrome, and mobile Safari.

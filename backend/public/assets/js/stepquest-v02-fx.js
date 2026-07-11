@@ -17,6 +17,12 @@
     slash: Object.freeze(['translate:leap', 'arc', 'flash:0.75', 'shake']),
     cast: Object.freeze(['translate:hover', 'summoning-circle', 'shockring', 'flash:0.65']),
   });
+  const COMPOSITION_DELAYS = Object.freeze({
+    impact: Object.freeze([0, 110, 240, 350, 430]),
+    dash: Object.freeze([0, 100, 220, 220, 410]),
+    slash: Object.freeze([0, 170, 330, 430]),
+    cast: Object.freeze([0, 130, 300, 450]),
+  });
 
   let activeSession = null;
 
@@ -52,10 +58,11 @@
     return node;
   }
 
-  function addLayer(session, className, stepName, tagName = 'span') {
+  function addLayer(session, className, stepName, delay = 0, tagName = 'span') {
     const node = session.document.createElement(tagName);
     node.className = className;
     setStep(node, stepName);
+    node.setAttribute('data-v02-fx-delay', String(delay));
     node.setAttribute('aria-hidden', 'true');
     session.overlay.append(node);
     session.nodes.push(node);
@@ -64,36 +71,43 @@
 
   function animate(session, node, keyframes, options = {}) {
     if (!node?.animate) return Promise.resolve();
+    const delay = Math.max(0, Number(options.delay || 0));
     const animation = node.animate(keyframes, {
-      duration: Math.min(Number(options.duration || session.plan.duration), session.plan.duration),
+      duration: Math.max(1, Math.min(
+        Number(options.duration || session.plan.duration),
+        session.plan.duration - delay,
+      )),
+      delay,
       easing: options.easing || 'cubic-bezier(.2,.8,.2,1)',
-      fill: options.fill || 'both',
+      fill: options.fill || 'forwards',
       iterations: options.iterations || 1,
     });
     session.animations.push(animation);
     return animation.finished.catch(() => undefined);
   }
 
-  function flash(session, intensity, ms) {
-    const node = addLayer(session, 'v02-fx-layer v02-fx-flash', 'flash');
+  function flash(session, intensity, ms, delay = 0) {
+    const node = addLayer(session, 'v02-fx-layer v02-fx-flash', 'flash', delay);
     return animate(session, node, [
       { opacity: 0 },
       { opacity: Math.max(0, Math.min(Number(intensity), 1)), offset: 0.28 },
       { opacity: 0 },
-    ], { duration: ms || Math.min(260, session.plan.duration) });
+    ], { duration: ms || Math.min(260, session.plan.duration), delay });
   }
 
-  function shake(session, px = 8, ms = 360) {
+  function shake(session, px = 8, ms = 360, delay = 0) {
     const amount = Number(px) || 8;
-    setStep(session.stage, 'shake');
-    session.markedStage = true;
-    return animate(session, session.stage, [
+    const target = session.stage.querySelector?.('.v02-character-art') || session.character;
+    setStep(target, 'shake');
+    target.setAttribute('data-v02-fx-delay', String(delay));
+    session.shakeTarget = target;
+    return animate(session, target, [
       { transform: 'translate3d(0,0,0)' },
       { transform: `translate3d(${amount}px,${-amount / 2}px,0)` },
       { transform: `translate3d(${-amount}px,${amount / 3}px,0)` },
       { transform: `translate3d(${amount / 2}px,${amount / 2}px,0)` },
       { transform: 'translate3d(0,0,0)' },
-    ], { duration: Math.min(ms, session.plan.duration), easing: 'linear' });
+    ], { duration: Math.min(ms, session.plan.duration), delay, easing: 'linear' });
   }
 
   function placeFromCharacter(session, node) {
@@ -107,7 +121,7 @@
     });
   }
 
-  function afterimage(session, count = 3) {
+  function afterimage(session, count = 3, delay = 0) {
     const promises = [];
     for (let index = 0; index < count; index += 1) {
       const clone = session.character.cloneNode(true);
@@ -115,6 +129,7 @@
       clone.querySelectorAll?.('[id]').forEach((node) => node.removeAttribute('id'));
       clone.classList.add('v02-fx-afterimage');
       setStep(clone, 'afterimage');
+      clone.setAttribute('data-v02-fx-delay', String(delay));
       clone.setAttribute('aria-hidden', 'true');
       placeFromCharacter(session, clone);
       session.overlay.append(clone);
@@ -122,34 +137,35 @@
       promises.push(animate(session, clone, [
         { opacity: 0.44 - (index * 0.1), transform: `translateX(${-18 - (index * 16)}px)` },
         { opacity: 0, transform: `translateX(${18 + (index * 12)}px)` },
-      ], { duration: Math.min(520, session.plan.duration) }));
+      ], { duration: Math.min(520, session.plan.duration), delay }));
     }
     return Promise.all(promises);
   }
 
-  function shockring(session, color) {
-    const node = addLayer(session, 'v02-fx-layer v02-fx-shockring', 'shockring');
+  function shockring(session, color, delay = 0) {
+    const node = addLayer(session, 'v02-fx-layer v02-fx-shockring', 'shockring', delay);
     node.style.borderColor = color;
     return animate(session, node, [
       { opacity: 0.9, transform: 'translate(-50%,-50%) scale(.15)' },
       { opacity: 0, transform: 'translate(-50%,-50%) scale(2.25)' },
-    ], { duration: Math.min(620, session.plan.duration) });
+    ], { duration: Math.min(620, session.plan.duration), delay });
   }
 
-  function svgLayer(session, className, stepName) {
+  function svgLayer(session, className, stepName, delay = 0) {
     const svg = session.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 100 100');
     svg.setAttribute('preserveAspectRatio', 'none');
     svg.setAttribute('aria-hidden', 'true');
     svg.classList.add('v02-fx-layer', className);
     setStep(svg, stepName);
+    svg.setAttribute('data-v02-fx-delay', String(delay));
     session.overlay.append(svg);
     session.nodes.push(svg);
     return svg;
   }
 
-  function bolt(session, color) {
-    const svg = svgLayer(session, 'v02-fx-bolt', 'bolt');
+  function bolt(session, color, delay = 0) {
+    const svg = svgLayer(session, 'v02-fx-bolt', 'bolt', delay);
     const line = session.document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
     line.setAttribute('points', '8,8 43,38 29,49 71,92 58,57 77,48');
     line.setAttribute('stroke', color);
@@ -158,11 +174,11 @@
       { opacity: 0, transform: 'scale(.9)' },
       { opacity: 1, transform: 'scale(1)', offset: 0.2 },
       { opacity: 0, transform: 'scale(1.04)' },
-    ], { duration: Math.min(460, session.plan.duration), easing: 'steps(3, end)' });
+    ], { duration: Math.min(460, session.plan.duration), delay, easing: 'steps(3, end)' });
   }
 
-  function arc(session, color) {
-    const svg = svgLayer(session, 'v02-fx-arc', 'arc');
+  function arc(session, color, delay = 0) {
+    const svg = svgLayer(session, 'v02-fx-arc', 'arc', delay);
     const path = session.document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', 'M 8 78 Q 48 5 94 31');
     path.setAttribute('stroke', color);
@@ -172,11 +188,11 @@
       { strokeDashoffset: 1, opacity: 0.2 },
       { strokeDashoffset: 0, opacity: 1, offset: 0.58 },
       { strokeDashoffset: 0, opacity: 0 },
-    ], { duration: Math.min(620, session.plan.duration) });
+    ], { duration: Math.min(620, session.plan.duration), delay });
   }
 
-  function cutin(session, text, color) {
-    const node = addLayer(session, 'v02-fx-layer v02-fx-cutin', 'cutin');
+  function cutin(session, text, color, delay = 0) {
+    const node = addLayer(session, 'v02-fx-layer v02-fx-cutin', 'cutin', delay);
     const label = session.document.createElement('strong');
     label.textContent = String(text || '첫걸음').slice(0, 40);
     label.style.color = color;
@@ -186,20 +202,20 @@
       { opacity: 1, transform: 'translateX(0) skewX(-8deg)', offset: 0.28 },
       { opacity: 1, transform: 'translateX(0) skewX(-8deg)', offset: 0.72 },
       { opacity: 0, transform: 'translateX(10%) skewX(-8deg)' },
-    ], { duration: session.plan.duration });
+    ], { duration: session.plan.duration, delay });
   }
 
-  function speedLines(session) {
-    const node = addLayer(session, 'v02-fx-layer v02-fx-speedlines', 'speedlines');
+  function speedLines(session, delay = 0) {
+    const node = addLayer(session, 'v02-fx-layer v02-fx-speedlines', 'speedlines', delay);
     for (let index = 0; index < 12; index += 1) node.append(session.document.createElement('i'));
     return animate(session, node, [
       { opacity: 0, transform: 'scale(.92)' },
       { opacity: 0.75, transform: 'scale(1.04)', offset: 0.35 },
       { opacity: 0, transform: 'scale(1.12)' },
-    ], { duration: Math.min(500, session.plan.duration) });
+    ], { duration: Math.min(500, session.plan.duration), delay });
   }
 
-  function transformCharacter(session, kind) {
+  function transformCharacter(session, kind, delay = 0) {
     const frames = {
       dash: [
         { transform: 'translateX(-16%) scale(.96)' },
@@ -218,18 +234,63 @@
       ],
     }[kind] || [{ transform: 'none' }, { transform: 'none' }];
     setStep(session.character, 'translate');
+    session.character.setAttribute('data-v02-fx-delay', String(delay));
     session.markedCharacter = true;
-    return animate(session, session.character, frames, { duration: Math.min(600, session.plan.duration) });
+    return animate(session, session.character, frames, {
+      duration: Math.min(600, session.plan.duration),
+      delay,
+    });
   }
 
-  function summoningCircle(session, color) {
-    const node = addLayer(session, 'v02-fx-layer v02-fx-summoning-circle', 'summoning-circle');
+  function summoningCircle(session, color, delay = 0) {
+    const node = addLayer(
+      session,
+      'v02-fx-layer v02-fx-summoning-circle',
+      'summoning-circle',
+      delay,
+    );
     node.style.borderColor = color;
     return animate(session, node, [
       { opacity: 0, transform: 'translate(-50%,-50%) rotate(0) scale(.55)' },
       { opacity: 0.85, transform: 'translate(-50%,-50%) rotate(130deg) scale(1)', offset: 0.52 },
       { opacity: 0, transform: 'translate(-50%,-50%) rotate(260deg) scale(1.18)' },
-    ], { duration: Math.min(760, session.plan.duration), easing: 'linear' });
+    ], { duration: Math.min(760, session.plan.duration), delay, easing: 'linear' });
+  }
+
+  function compositionDelay(plan, rawStep, index) {
+    const [stepName] = rawStep.split(':');
+    if (plan.reducedMotion || stepName === 'cutin') return 0;
+    return Math.min(
+      COMPOSITION_DELAYS[plan.preset][index] || 0,
+      Math.max(0, plan.duration - 1),
+    );
+  }
+
+  function runPrimitive(session, rawStep, options, delay) {
+    const [stepName, stepValue] = rawStep.split(':');
+    const color = options.color || '#65d9ff';
+    if (stepName === 'flash') {
+      return flash(session, Number(stepValue), session.plan.reducedMotion ? 120 : undefined, delay);
+    }
+    if (stepName === 'shake') return shake(session, 8, 360, delay);
+    if (stepName === 'afterimage') return afterimage(session, 3, delay);
+    if (stepName === 'shockring') return shockring(session, color, delay);
+    if (stepName === 'bolt') return bolt(session, color, delay);
+    if (stepName === 'arc') return arc(session, color, delay);
+    if (stepName === 'cutin') return cutin(session, options.skillName, color, delay);
+    if (stepName === 'speedlines') return speedLines(session, delay);
+    if (stepName === 'translate') return transformCharacter(session, stepValue, delay);
+    if (stepName === 'summoning-circle') return summoningCircle(session, color, delay);
+    return Promise.resolve();
+  }
+
+  function composePreset(session, options) {
+    return session.plan.steps.map((rawStep, index) => runPrimitive(
+      session,
+      rawStep,
+      options,
+      compositionDelay(session.plan, rawStep, index),
+    ));
   }
 
   function finish(session, skipped) {
@@ -239,11 +300,21 @@
     session.animations.forEach((animation) => {
       try { animation.cancel(); } catch (_error) { /* no-op */ }
     });
-    if (session.markedStage) session.stage.removeAttribute('data-v02-fx-step');
-    if (session.markedCharacter) session.character.removeAttribute('data-v02-fx-step');
+    if (session.shakeTarget) {
+      session.shakeTarget.removeAttribute('data-v02-fx-step');
+      session.shakeTarget.removeAttribute('data-v02-fx-delay');
+    }
+    if (session.markedCharacter) {
+      session.character.removeAttribute('data-v02-fx-step');
+      session.character.removeAttribute('data-v02-fx-delay');
+    }
     session.document.removeEventListener('keydown', session.keyHandler, true);
     session.overlay.remove();
     if (activeSession === session) activeSession = null;
+    const focusTarget = session.focusReturnTarget;
+    if (focusTarget?.isConnected && typeof focusTarget.focus === 'function') {
+      try { focusTarget.focus({ preventScroll: true }); } catch (_error) { focusTarget.focus(); }
+    }
     session.resolve?.({ skipped, mode: session.plan.mode, preset: session.plan.preset });
   }
 
@@ -256,11 +327,16 @@
     const stage = options.stage;
     const character = options.character;
     const plan = buildPlan(options.preset, options.mode, Boolean(options.reducedMotion));
+    cancel();
     if (!documentValue?.createElement || !stage?.append || !character) {
       return Promise.resolve({ skipped: true, mode: plan.mode, preset: plan.preset });
     }
 
-    cancel();
+    const priorFocus = documentValue.activeElement;
+    const logicalControl = stage.closest?.('section')?.querySelector('button');
+    const focusReturnTarget = options.restoreFocus || (
+      priorFocus && priorFocus !== documentValue.body ? priorFocus : logicalControl
+    );
     const overlay = documentValue.createElement('div');
     overlay.className = 'v02-fx-overlay';
     overlay.tabIndex = -1;
@@ -285,11 +361,12 @@
       animations: [],
       nodes: [],
       finished: false,
-      markedStage: false,
+      shakeTarget: null,
       markedCharacter: false,
       timer: null,
       resolve: null,
       keyHandler: null,
+      focusReturnTarget,
     };
     activeSession = session;
 
@@ -311,25 +388,9 @@
     };
     documentValue.addEventListener('keydown', session.keyHandler, true);
     stage.append(overlay);
-    try { overlay.focus({ preventScroll: true }); } catch (_error) { overlay.focus?.(); }
+    try { skip.focus({ preventScroll: true }); } catch (_error) { skip.focus?.(); }
 
-    const color = options.color || '#65d9ff';
-    const effects = plan.steps.map((rawStep) => {
-      const [stepName, stepValue] = rawStep.split(':');
-      if (stepName === 'flash') {
-        return flash(session, Number(stepValue), plan.reducedMotion ? 120 : undefined);
-      }
-      if (stepName === 'shake') return shake(session);
-      if (stepName === 'afterimage') return afterimage(session);
-      if (stepName === 'shockring') return shockring(session, color);
-      if (stepName === 'bolt') return bolt(session, color);
-      if (stepName === 'arc') return arc(session, color);
-      if (stepName === 'cutin') return cutin(session, options.skillName, color);
-      if (stepName === 'speedlines') return speedLines(session);
-      if (stepName === 'translate') return transformCharacter(session, stepValue);
-      if (stepName === 'summoning-circle') return summoningCircle(session, color);
-      return Promise.resolve();
-    });
+    const effects = composePreset(session, options);
     Promise.allSettled(effects).catch(() => undefined);
 
     return new Promise((resolve) => {

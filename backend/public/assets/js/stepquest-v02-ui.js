@@ -199,7 +199,7 @@
     `;
   }
 
-  function characterSettings(status) {
+  function characterSettings(status, previewAvailable) {
     const character = Core.getCharacter();
     const Character = root.StepQuestV02Character;
     const palette = Character?.PALETTE || ['#65d9ff'];
@@ -241,9 +241,10 @@
             </label>
             <div class="v02-fx-previews" role="group" aria-label="기술 연출 미리보기">
               ${presets.map(([value, label]) => (
-                `<button type="button" class="ghost" data-v02-fx-preview="${value}">${label} 미리보기</button>`
+                `<button type="button" class="ghost" data-v02-fx-preview="${value}" ${previewAvailable ? '' : 'disabled'}>${label} 미리보기</button>`
               )).join('')}
             </div>
+            ${previewAvailable ? '' : '<small class="v02-character-notice">현재 행동이나 원정 화면으로 돌아가면 연출을 미리 볼 수 있습니다.</small>'}
             <button id="v02-save-character">이 캐릭터 저장</button>
             ${character.usingDefault ? '' : '<button id="v02-export-character-full" class="ghost">이미지 포함 전체 내보내기</button>'}
           </div>
@@ -290,6 +291,7 @@
   }
 
   function render() {
+    root.StepQuestV02FX?.cancel();
     App.renderShell('지금 할 한 동작');
     document.body.classList.add('v02-mode');
     const rootNode = document.getElementById('page-root');
@@ -308,6 +310,7 @@
       </div>
     `;
     let body;
+    let hasCharacterStage = false;
 
     if (status.pendingAccountImport) {
       body = `
@@ -360,6 +363,7 @@
       `;
     } else if (vm.expedition) {
       const step = vm.state.steps.find((item) => item.id === vm.expedition.stepId);
+      hasCharacterStage = true;
       body = `
         <section id="v02-expedition-active" class="panel v02-expedition">
           <span class="v02-kicker">원정 진행 중</span>
@@ -380,6 +384,7 @@
         </section>
       `;
     } else if (vm.active) {
+      hasCharacterStage = true;
       body = `
         <section class="panel v02-runner">
           <span class="v02-kicker">지금 할 하나</span>
@@ -411,6 +416,7 @@
         </section>
       `;
     } else {
+      hasCharacterStage = true;
       body = `
         <section class="panel v02-runner">
           <span class="v02-kicker">큰 목표는 한 줄이면 충분합니다</span>
@@ -441,11 +447,11 @@
         ` : ''}
       </section>
     ` : '';
-    rootNode.innerHTML = `${wallet}${body}${campPanel}${characterSettings(status)}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
+    rootNode.innerHTML = `${wallet}${body}${campPanel}${characterSettings(status, hasCharacterStage)}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
     wire();
   }
 
-  function playCharacterFx(mode, preset) {
+  function playCharacterFx(mode, preset, restoreFocus) {
     const stage = document.querySelector('[data-v02-character-stage]');
     const characterElement = stage?.querySelector('#v02-character-image, .v02-default-character');
     const characterValue = Core.getCharacter();
@@ -461,6 +467,7 @@
       color: characterValue.accentColor,
       mode,
       reducedMotion,
+      restoreFocus,
     });
   }
 
@@ -531,7 +538,7 @@
     document.querySelectorAll('[data-v02-fx-preview]').forEach((button) => {
       button.addEventListener('click', () => {
         characterPanelOpen = true;
-        playCharacterFx('preview', button.dataset.v02FxPreview)?.catch(() => {});
+        playCharacterFx('preview', button.dataset.v02FxPreview, button)?.catch(() => {});
       });
     });
     document.getElementById('v02-create-goal')?.addEventListener('click', (event) => (

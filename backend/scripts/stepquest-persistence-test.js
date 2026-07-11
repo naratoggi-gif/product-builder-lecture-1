@@ -381,18 +381,21 @@ assert.ok(goalsHtml.includes('returnCompleted'), 'completion feedback must ackno
 assert.ok(goalsHtml.includes('recent-trace'), 'stats panel must render recent attempts');
 assert.ok(goalsHtml.includes('v=0.1.1-alpha'), 'shell asset cache version must be bumped');
 assert.ok(serviceWorker.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must follow the app version');
-assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-3'"), 'service worker cache build must change when v0.2 shell assets change');
-[
-  'stepquest-v02-domain.js',
-  'stepquest-v02-storage.js',
-  'stepquest-v02-backup.js',
-  'stepquest-v02-app.js',
-  'stepquest-v02-ui.js',
-].forEach((asset) => {
-  const assetUrl = `/assets/js/${asset}?v=0.1.1-alpha&build=v02-core-3`;
-  assert.ok(goalsHtml.includes(`src="${assetUrl}"`), `goals shell cache key is stale for ${asset}`);
-  assert.ok(serviceWorker.includes(`'${assetUrl}'`), `service worker precache key is stale for ${asset}`);
+assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-4'"), 'service worker cache build must change when v0.2 shell assets change');
+const v02Modules = ['domain', 'storage', 'backup', 'character', 'fx', 'app', 'ui'];
+v02Modules.forEach((name) => {
+  const assetUrl = `/assets/js/stepquest-v02-${name}.js?v=0.1.1-alpha&build=v02-core-4`;
+  assert.ok(goalsHtml.includes(`src="${assetUrl}"`), `goals shell cache key is stale for ${name}`);
+  assert.ok(serviceWorker.includes(`'${assetUrl}'`), `service worker precache key is stale for ${name}`);
 });
+const shellModuleOffsets = v02Modules.map((name) => goalsHtml.indexOf(`/stepquest-v02-${name}.js`));
+assert.deepEqual(
+  [...shellModuleOffsets].sort((left, right) => left - right),
+  shellModuleOffsets,
+  'v0.2 shell modules must load in dependency order',
+);
+assert.ok(!goalsHtml.includes('v02-core-3'), 'goals shell must not retain the previous v0.2 cache key');
+assert.ok(!serviceWorker.includes('v02-core-3'), 'service worker must not retain the previous v0.2 cache key');
 assert.ok(!goalsHtml.includes('v02-core-2'), 'goals shell must not retain the previous v0.2 cache key');
 assert.ok(!serviceWorker.includes('v02-core-2'), 'service worker must not retain the previous v0.2 cache key');
 assert.ok(serviceWorker.includes('self.skipWaiting()'), 'service worker must activate updated deploys promptly');

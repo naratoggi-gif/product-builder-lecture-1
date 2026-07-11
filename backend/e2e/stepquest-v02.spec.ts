@@ -5,9 +5,25 @@ async function resetV02(page) {
   await page.evaluate(async () => {
     localStorage.clear();
     sessionStorage.clear();
-    await new Promise<void>((resolve) => {
-      const request = indexedDB.deleteDatabase('stepquest');
-      request.onsuccess = request.onerror = request.onblocked = () => resolve();
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 3);
+      request.onsuccess = () => {
+        const database = request.result;
+        const storeNames = Array.from(database.objectStoreNames);
+        if (!storeNames.length) {
+          database.close();
+          resolve();
+          return;
+        }
+        const transaction = database.transaction(storeNames, 'readwrite');
+        storeNames.forEach((name) => transaction.objectStore(name).clear());
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
     });
   });
   await page.reload();
@@ -24,6 +40,11 @@ async function createAndStart(page, title) {
   await createGoal(page, title);
   await page.locator('#v02-start-step').click();
   await expect(page.locator('#v02-expedition-active')).toContainText('앱을 닫아도 됩니다.');
+}
+
+async function cancelFx(page) {
+  await page.evaluate(() => (window as any).StepQuestV02FX.cancel());
+  await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
 }
 
 test('partial progress restores a Resume Anchor after reload', async ({ page }) => {
@@ -181,13 +202,45 @@ test('skill FX previews all presets and remains skippable by tap and keyboard', 
   await createGoal(page, '연출 미리보기');
   await page.locator('#v02-character-settings > summary').click();
 
+  const delayedBaseline = await page.evaluate(() => {
+    (document.querySelector('[data-v02-fx-preview="dash"]') as HTMLButtonElement).click();
+    const overlay = document.querySelector('[data-v02-fx-overlay]');
+    const shockring = overlay.querySelector('[data-v02-fx-step="shockring"]');
+    const afterimage = overlay.querySelector('[data-v02-fx-step="afterimage"]');
+    const character = document.querySelector('.v02-default-character, #v02-character-image');
+    return {
+      shockringOpacity: getComputedStyle(shockring).opacity,
+      afterimageOpacity: getComputedStyle(afterimage).opacity,
+      characterTransform: getComputedStyle(character).transform,
+    };
+  });
+  expect(delayedBaseline).toEqual({
+    shockringOpacity: '0',
+    afterimageOpacity: '0',
+    characterTransform: 'none',
+  });
+  await cancelFx(page);
+
   for (const preset of ['impact', 'dash', 'slash', 'cast']) {
     await page.locator(`[data-v02-fx-preview="${preset}"]`).click();
     const overlay = page.locator(`[data-v02-fx-mode="preview"][data-v02-fx-preset="${preset}"]`);
     await expect(overlay).toBeVisible();
     await expect(overlay.locator('[data-v02-fx-step="cutin"]')).toBeVisible();
+    await expect(overlay.locator('[data-v02-fx-skip]')).toBeFocused();
+    if (preset === 'dash') {
+      const timeline = await overlay.locator('[data-v02-fx-step][data-v02-fx-delay]').evaluateAll((nodes) => (
+        Object.fromEntries(nodes.map((node) => [
+          node.getAttribute('data-v02-fx-step'),
+          Number(node.getAttribute('data-v02-fx-delay')),
+        ]))
+      ));
+      expect(timeline.flash).toBeLessThan(timeline.bolt);
+      expect(timeline.bolt).toBeLessThan(timeline.afterimage);
+      expect(timeline.afterimage).toBeLessThan(timeline.shockring);
+    }
     await overlay.locator('[data-v02-fx-skip]').click();
     await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+    await expect(page.locator(`[data-v02-fx-preview="${preset}"]`)).toBeFocused();
   }
 
   await page.locator('[data-v02-fx-preview="impact"]').click();
@@ -204,20 +257,43 @@ test('skill FX previews all presets and remains skippable by tap and keyboard', 
   }
 });
 
+test('skill FX render replacement cancels the prior session before keyboard input', async ({ page }) => {
+  await resetV02(page);
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('[data-v02-fx-preview="impact"]').click();
+  await expect(page.locator('[data-v02-fx-overlay]')).toBeVisible();
+  await page.locator('#v02-goal-title').fill('렌더 취소 테스트');
+  await page.locator('#v02-create-goal').click();
+  await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+
+  await page.locator('#v02-start-step').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="departure"]')).toBeVisible();
+  await cancelFx(page);
+  await expect(page.locator('#v02-open-report')).toBeFocused();
+});
+
 test('skill FX runs only after departure and completed state renders', async ({ page }) => {
   await resetV02(page);
   await createGoal(page, '완료 연출 테스트');
   await page.locator('#v02-start-step').click();
   await expect(page.locator('#v02-expedition-active')).toBeVisible();
   await expect(page.locator('[data-v02-fx-mode="departure"]')).toBeVisible();
-  await page.locator('[data-v02-fx-skip]').click();
+  await cancelFx(page);
   await page.locator('#v02-open-report').click();
+  await page.locator('#v02-character-settings > summary').click();
+  await expect(page.locator('[data-v02-fx-preview]:not(:disabled)')).toHaveCount(0);
+  await page.locator('#v02-character-settings > summary').click();
   await page.locator('[data-v02-outcome="completed"]').click();
   await expect(page.locator('[data-v02-current-step]')).toBeVisible();
   await expect(page.locator('[data-v02-fx-mode="completed"]')).toBeVisible();
   await expect(page.locator('[data-v02-fx-mode="milestone"]')).toHaveCount(0);
-  await page.locator('[data-v02-fx-skip]').click();
+  await cancelFx(page);
+  await expect(page.locator('#v02-start-step')).toBeFocused();
+});
 
+test('skill FX uses one milestone cut-in on final completion', async ({ page }) => {
   await resetV02(page);
   await page.evaluate(async () => {
     const now = '2026-07-12T00:00:00.000Z';
@@ -237,7 +313,7 @@ test('skill FX runs only after departure and completed state renders', async ({ 
     (window as any).StepQuestV02UI.render();
   });
   await page.locator('#v02-start-step').click();
-  await page.locator('[data-v02-fx-skip]').click();
+  await cancelFx(page);
   await page.locator('#v02-open-report').click();
   await page.locator('[data-v02-outcome="completed"]').click();
   const milestone = page.locator('[data-v02-fx-mode="milestone"]');
@@ -246,12 +322,12 @@ test('skill FX runs only after departure and completed state renders', async ({ 
   await expect(page.locator('[data-v02-fx-mode="completed"]')).toHaveCount(0);
 });
 
-test('skill FX stays absent for partial, interrupted, and not started outcomes', async ({ page }) => {
-  for (const outcome of ['partial', 'interrupted', 'not_started']) {
+for (const outcome of ['partial', 'interrupted', 'not_started']) {
+  test(`skill FX stays absent for ${outcome} outcome`, async ({ page }) => {
     await resetV02(page);
     await createGoal(page, `연출 제외 ${outcome}`);
     await page.locator('#v02-start-step').click();
-    await page.locator('[data-v02-fx-skip]').click();
+    await cancelFx(page);
     await page.locator('#v02-open-report').click();
     await page.locator(`[data-v02-outcome="${outcome}"]`).click();
     if (outcome === 'partial' || outcome === 'interrupted') {
@@ -259,8 +335,8 @@ test('skill FX stays absent for partial, interrupted, and not started outcomes',
       await page.locator('#v02-save-outcome').click();
     }
     await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
-  }
-});
+  });
+}
 
 test('skill FX reduced motion uses only cut-in and a soft 120ms flash', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });

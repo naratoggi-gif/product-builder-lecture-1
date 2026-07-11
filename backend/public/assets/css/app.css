@@ -1816,6 +1816,11 @@ input, select {
   font-size: 12px;
 }
 
+.v02-fx-overlay [data-v02-fx-skip]:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
 .v02-fx-layer {
   z-index: 32;
   pointer-events: none;
@@ -1834,6 +1839,7 @@ input, select {
   border: 5px solid var(--v02-fx-color);
   border-radius: 50%;
   box-shadow: 0 0 20px var(--v02-fx-color), inset 0 0 18px var(--v02-fx-color);
+  opacity: 0;
 }
 
 .v02-fx-bolt,
@@ -1843,6 +1849,10 @@ input, select {
   overflow: visible;
   fill: none;
   filter: drop-shadow(0 0 5px var(--v02-fx-color));
+}
+
+.v02-fx-bolt {
+  opacity: 0;
 }
 
 .v02-fx-bolt polyline {
@@ -1857,6 +1867,7 @@ input, select {
   stroke-width: 6;
   stroke-linecap: round;
   stroke-dasharray: 1;
+  opacity: 0;
 }
 
 .v02-fx-afterimage {
@@ -1865,6 +1876,7 @@ input, select {
   object-fit: contain;
   pointer-events: none;
   filter: sepia(1) saturate(3) hue-rotate(145deg) drop-shadow(0 0 8px var(--v02-fx-color));
+  opacity: 0;
 }
 
 .v02-fx-cutin {
@@ -1873,6 +1885,7 @@ input, select {
   place-items: center;
   padding: 24px;
   background: linear-gradient(100deg, transparent 0 8%, rgba(5, 8, 11, .92) 18% 82%, transparent 92%);
+  opacity: 0;
 }
 
 .v02-fx-cutin strong {
@@ -1887,6 +1900,7 @@ input, select {
 .v02-fx-speedlines {
   display: grid;
   place-items: center;
+  opacity: 0;
 }
 
 .v02-fx-speedlines i {
@@ -1919,6 +1933,7 @@ input, select {
   border: 4px dashed var(--v02-fx-color);
   border-radius: 50%;
   box-shadow: 0 0 16px var(--v02-fx-color), inset 0 0 20px var(--v02-fx-color);
+  opacity: 0;
 }
 
 #v02-live {
