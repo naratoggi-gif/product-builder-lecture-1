@@ -119,6 +119,51 @@ test('not started can defer and undefer with no wallet change', async ({ page })
   await expect(page.locator('#v02-wallet')).toHaveText(wallet);
 });
 
+test('mis-tap retry returns to start repeatedly without wallet changes', async ({ page }) => {
+  await resetV02(page);
+  await createAndStart(page, 'Retry the same step');
+  const wallet = await page.locator('#v02-wallet').innerText();
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt === 0) await page.reload();
+    else await page.locator('#v02-open-report').click();
+    await expect(page.locator('#v02-return-report')).toBeVisible();
+    await page.locator('[data-v02-outcome="not_started"]').click();
+    await page.locator('#v02-retry-step').click();
+    await expect(page.locator('#v02-start-step')).toBeVisible();
+    await expect(page.locator('#v02-wallet')).toHaveText(wallet);
+    await page.locator('#v02-start-step').click();
+    await expect(page.locator('#v02-expedition-active')).toBeVisible();
+    await expect(page.locator('#v02-wallet')).toHaveText(wallet);
+  }
+
+  const obstacleEvents = await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().events
+      .filter((item) => item.type === 'obstacle_reported')
+  ));
+  expect(obstacleEvents).toEqual([]);
+});
+
+test('return report can go back before committing', async ({ page }) => {
+  await resetV02(page);
+  await createAndStart(page, 'Keep expedition active');
+  await page.reload();
+  await expect(page.locator('#v02-return-report')).toBeVisible();
+  const eventsBefore = await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().events.length
+  ));
+
+  await page.locator('#v02-cancel-report').click();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  const eventsAfter = await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().events.length
+  ));
+  expect(eventsAfter).toBe(eventsBefore);
+
+  await page.reload();
+  await expect(page.locator('#v02-return-report')).toBeVisible();
+});
+
 test('legacy direct-retry history reopens its active return report', async ({ page }) => {
   await resetV02(page);
   await createAndStart(page, 'Legacy retry compatibility');

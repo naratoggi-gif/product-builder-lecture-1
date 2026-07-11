@@ -189,6 +189,100 @@ function testReplacementLineageCannotMintStartReward() {
   assert.equal(transition.state.wallet.stepCoin, walletAfterFirstStart, 'two shrink replacements cannot mint start rewards');
 }
 
+function testReplacementLineageCannotMintExtraGold() {
+  let transition = Domain.startStep(makeState(['start']), {
+    stepId: 'step-1',
+    idempotencyKey: 'gold-lineage-start-original',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'partial',
+    anchor: { nextPhysicalAction: 'smaller action' },
+    idempotencyKey: 'gold-lineage-partial-original',
+    now: NOW,
+    idFactory,
+  });
+  assert.equal(transition.state.wallet.gold, 1);
+
+  transition = Domain.resumeStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'gold-lineage-resume-original',
+    now: NOW,
+  });
+  transition = Domain.startStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'gold-lineage-restart-original',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'gold-lineage-not-started-original',
+    now: NOW,
+    idFactory,
+  });
+
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'too_big',
+    route: 'manual_shrink',
+    nextPhysicalAction: 'smaller replacement',
+    reportIdempotencyKey: 'gold-lineage-not-started-original',
+    idempotencyKey: 'gold-lineage-shrink',
+    now: NOW,
+    idFactory,
+  });
+  let replacement = activeStep(transition.state);
+  transition = Domain.startStep(transition.state, {
+    stepId: replacement.id,
+    idempotencyKey: 'gold-lineage-start-replacement',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'gold-lineage-not-started-replacement',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: replacement.id,
+    reason: 'too_big',
+    route: 'manual_shrink',
+    nextPhysicalAction: 'smallest replacement',
+    reportIdempotencyKey: 'gold-lineage-not-started-replacement',
+    idempotencyKey: 'gold-lineage-shrink-again',
+    now: NOW,
+    idFactory,
+  });
+  replacement = activeStep(transition.state);
+  transition = Domain.startStep(transition.state, {
+    stepId: replacement.id,
+    idempotencyKey: 'gold-lineage-start-final-replacement',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'completed',
+    idempotencyKey: 'gold-lineage-complete-final-replacement',
+    now: NOW,
+    idFactory,
+  });
+
+  const goldRows = transition.state.rewards.filter((item) => item.currency === 'gold');
+  assert.equal(transition.state.wallet.gold, 2, 'replacement completion fills only the lineage remainder');
+  assert.deepEqual(goldRows.map((item) => item.amount), [1, 1]);
+  assert.equal(
+    goldRows[1].idempotencyKey,
+    'goal:goal-1:lineage:step-1:gold:1',
+  );
+}
+
 function testOutcomeRules() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
@@ -259,6 +353,86 @@ function testNotStartedRequiresObstacleRouteBeforeRestart() {
     now: NOW,
     idFactory,
   }), /OBSTACLE_ROUTE_REQUIRED/);
+}
+
+function testRetryRouteResolvesMisTapWithoutRewards() {
+  let transition = Domain.startStep(makeState(['start']), {
+    stepId: 'step-1',
+    idempotencyKey: 'retry-start-1',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'retry-report-1',
+    now: NOW,
+    idFactory,
+  });
+  const walletBeforeRetry = { ...transition.state.wallet };
+
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'mis_tap',
+    route: 'retry',
+    reportIdempotencyKey: 'retry-report-1',
+    idempotencyKey: 'retry-route-1',
+    now: NOW,
+    idFactory,
+  });
+  assert.deepEqual(transition.state.wallet, walletBeforeRetry);
+  assert.equal(transition.state.steps[0].status, 'active');
+  assert.equal(
+    transition.state.events.filter((event) => event.type === 'obstacle_reported').length,
+    0,
+  );
+  assert.equal(
+    transition.state.events.find((event) => event.idempotencyKey === 'retry-route-1').resolvesEventKey,
+    'retry-report-1',
+  );
+
+  const replay = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'mis_tap',
+    route: 'retry',
+    reportIdempotencyKey: 'retry-report-1',
+    idempotencyKey: 'retry-route-1',
+    now: NOW,
+    idFactory,
+  });
+  assert.equal(replay.duplicate, true);
+  assert.deepEqual(replay.state.wallet, walletBeforeRetry);
+
+  transition = Domain.startStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'retry-start-2',
+    now: NOW,
+    idFactory,
+  });
+  assert.deepEqual(transition.state.wallet, walletBeforeRetry);
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'retry-report-2',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'mis_tap',
+    route: 'retry',
+    reportIdempotencyKey: 'retry-report-2',
+    idempotencyKey: 'retry-route-2',
+    now: NOW,
+    idFactory,
+  });
+  assert.doesNotThrow(() => Domain.startStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'retry-start-3',
+    now: NOW,
+    idFactory,
+  }));
+  assert.deepEqual(transition.state.wallet, walletBeforeRetry);
 }
 
 function testLegacyObstacleRouteWithoutLinkAllowsRestart() {
@@ -340,8 +514,10 @@ function testOnlyOneExpeditionCanBeActive() {
 testEntrySegmentsPayOnce();
 testPartialProgressAndResumeAnchor();
 testReplacementLineageCannotMintStartReward();
+testReplacementLineageCannotMintExtraGold();
 testOutcomeRules();
 testNotStartedRequiresObstacleRouteBeforeRestart();
+testRetryRouteResolvesMisTapWithoutRewards();
 testLegacyObstacleRouteWithoutLinkAllowsRestart();
 testDeferCanBeUndeferredWithoutReward();
 testOnlyOneExpeditionCanBeActive();

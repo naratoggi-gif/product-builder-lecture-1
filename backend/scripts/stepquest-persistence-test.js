@@ -32,6 +32,7 @@ const safeLogger = fs.readFileSync(path.join(root, 'src/shared/safe-logger.middl
 const stateModule = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.state.ts'), 'utf8');
 const browserApp = fs.readFileSync(path.join(root, 'public/assets/js/app.js'), 'utf8');
 const v02Storage = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-storage.js'), 'utf8');
+const v02Domain = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-domain.js'), 'utf8');
 const v02Ui = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-ui.js'), 'utf8');
 const goalsHtml = fs.readFileSync(path.join(root, 'public/goals.html'), 'utf8');
 const appCss = fs.readFileSync(path.join(root, 'public/assets/css/app.css'), 'utf8');
@@ -463,7 +464,11 @@ assert.ok(v02Storage.includes('const DB_VERSION = 2'), 'v0.2 database version mu
 ['completed', 'partial', 'interrupted', 'not_started'].forEach((outcome) => {
   assert.ok(v02Ui.includes(outcome), `return UI must include ${outcome}`);
 });
-['v02-start-step', 'v02-return-report', 'v02-resume-anchor', 'v02-next-action', 'v02-undefer-step']
+['v02-start-step', 'v02-return-report', 'v02-resume-anchor', 'v02-next-action', 'v02-undefer-step', 'v02-retry-step', 'v02-cancel-report']
   .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 UI must include ${id}`));
+assert.ok(
+  v02Domain.includes('goal:${step.goalId}:lineage:${step.rewardLineage}:gold:${priorGold}'),
+  'v0.2 gold grants must use the reward lineage key',
+);
 
 console.log(JSON.stringify({ ok: true, checked: 'stepquest-persistence' }, null, 2));

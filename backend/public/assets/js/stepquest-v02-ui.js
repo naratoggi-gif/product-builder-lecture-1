@@ -2,6 +2,7 @@
   let App;
   let Core;
   let reporting = false;
+  let reportDismissed = false;
   let selectedOutcome = null;
   let selectedReason = null;
 
@@ -173,6 +174,7 @@
         <section class="panel v02-obstacle">
           <span class="v02-kicker">멈춘 이유를 탓하지 않습니다</span>
           <h2>지금 무엇이 막고 있나요?</h2>
+          <button id="v02-retry-step" class="ghost">잘못 눌렀어요 → 지금 다시 시작</button>
           <div class="reason-grid">
             ${Object.entries(reasons).map(([value, label]) => (
               `<button class="reason-button" data-v02-reason="${value}">${label}</button>`
@@ -187,11 +189,12 @@
           ` : ''}
         </section>
       `;
-    } else if (vm.expedition && (reporting || status.recoveredExpedition)) {
+    } else if (vm.expedition && (reporting || (status.recoveredExpedition && !reportDismissed))) {
       body = `
         <section id="v02-return-report" class="panel v02-runner">
           <span class="v02-kicker">평가가 아니라 다음 위치를 정합니다</span>
           <h2>어떻게 돌아왔나요?</h2>
+          <button id="v02-cancel-report" class="ghost">아직 진행 중이에요 → 돌아가기</button>
           <div class="v02-outcome-grid">
             ${Object.entries(outcomeLabels).map(([value, label]) => (
               `<button data-v02-outcome="${value}">${label}</button>`
@@ -294,13 +297,25 @@
     ));
     document.getElementById('v02-start-step')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
-        const step = Core.getSnapshot().steps.find((item) => item.status === 'active');
-        await Core.startCurrentStep(key('start', step.id));
+        const state = Core.getSnapshot();
+        const step = state.steps.find((item) => item.status === 'active');
+        const attempt = state.events.filter((item) => (
+          item.type === 'step_started' && item.stepId === step.id
+        )).length;
+        await Core.startCurrentStep(key('start', `${step.id}:${attempt}`));
         reporting = false;
+        reportDismissed = false;
       })
     ));
     document.getElementById('v02-open-report')?.addEventListener('click', () => {
       reporting = true;
+      reportDismissed = false;
+      render();
+    });
+    document.getElementById('v02-cancel-report')?.addEventListener('click', () => {
+      reporting = false;
+      reportDismissed = true;
+      selectedOutcome = null;
       render();
     });
     document.querySelectorAll('[data-v02-outcome]').forEach((button) => {
@@ -373,6 +388,18 @@
         render();
       });
     });
+    document.getElementById('v02-retry-step')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        const report = viewModel().pendingObstacle;
+        await Core.routeCurrentObstacle({
+          reason: 'mis_tap',
+          route: 'retry',
+          reportIdempotencyKey: report.idempotencyKey,
+          idempotencyKey: key('obstacle:mis_tap:retry', report.idempotencyKey),
+        });
+        selectedReason = null;
+      })
+    ));
     document.getElementById('v02-manual-shrink')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
         const field = document.getElementById('v02-smaller-action');
@@ -428,6 +455,7 @@
     Core = options.Core;
     await Core.init({ App });
     reporting = Core.getStatus().recoveredExpedition;
+    reportDismissed = false;
     const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
     const draft = readAnchorDraft(expedition?.id);
     selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)

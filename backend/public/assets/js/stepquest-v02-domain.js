@@ -6,7 +6,7 @@
   const ENTRY_PHASES = new Set(['orient', 'prepare', 'open']);
   const WORK_PHASES = new Set(['start', 'continue', 'close']);
   const OUTCOMES = new Set(['completed', 'partial', 'interrupted', 'not_started']);
-  const OBSTACLE_ROUTES = new Set(['manual_shrink', 'defer']);
+  const OBSTACLE_ROUTES = new Set(['manual_shrink', 'defer', 'retry']);
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -221,7 +221,10 @@
     }
 
     const priorGold = state.rewards
-      .filter((item) => item.currency === 'gold' && item.sourceStepId === step.id)
+      .filter((item) => (
+        item.currency === 'gold'
+        && (item.rewardLineage || item.sourceStepId) === step.rewardLineage
+      ))
       .reduce((sum, item) => sum + item.amount, 0);
     const requestedGold = command.outcome === 'completed'
       ? Math.max(0, 2 - priorGold)
@@ -230,7 +233,7 @@
         : 0;
     const goldGranted = requestedGold > 0
       ? grantReward(state, {
-        idempotencyKey: `step:${step.id}:gold:${priorGold}`,
+        idempotencyKey: `goal:${step.goalId}:lineage:${step.rewardLineage}:gold:${priorGold}`,
         currency: 'gold',
         amount: requestedGold,
         sourceGoalId: step.goalId,
@@ -386,20 +389,22 @@
       if (!title) throw domainError('NEXT_PHYSICAL_ACTION_REQUIRED');
     }
 
-    state.events.push({
-      idempotencyKey: `${command.idempotencyKey}:reason`,
-      type: 'obstacle_reported',
-      stepId: step.id,
-      reason,
-      createdAt: command.now,
-      result: { stepId: step.id, reason },
-    });
+    if (command.route !== 'retry') {
+      state.events.push({
+        idempotencyKey: `${command.idempotencyKey}:reason`,
+        type: 'obstacle_reported',
+        stepId: step.id,
+        reason,
+        createdAt: command.now,
+        result: { stepId: step.id, reason },
+      });
+    }
 
     let replacementStepId = null;
     if (command.route === 'defer') {
       step.status = 'deferred';
       step.updatedAt = command.now;
-    } else {
+    } else if (command.route === 'manual_shrink') {
       const originalIndex = step.orderIndex;
       state.steps
         .filter(
