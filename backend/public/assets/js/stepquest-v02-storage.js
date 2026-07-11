@@ -445,6 +445,10 @@
 
     async function saveCharacter(metadata, blob) {
       if (!metadata?.id || !metadata?.imageBlobKey) throw new Error('CHARACTER_METADATA_INVALID');
+      if (metadata.id !== 'local-primary') throw new Error('CHARACTER_ID_INVALID');
+      if (metadata.imageBlobKey !== 'character:local-primary:image') {
+        throw new Error('CHARACTER_IMAGE_BLOB_KEY_INVALID');
+      }
       if (!blob || typeof blob.arrayBuffer !== 'function') throw new Error('CHARACTER_IMAGE_BLOB_INVALID');
       const [state, previous, existingBackups] = await Promise.all([
         getSnapshot(),
@@ -516,7 +520,9 @@
       return {
         characters: clone(characters),
         assets: assets.map((asset) => ({
-          ...asset,
+          id: asset.id,
+          mimeType: asset.mimeType || asset.blob?.type || 'image/png',
+          updatedAt: asset.updatedAt,
           blob: asset.blob || (asset.bytes && root.Blob
             ? new root.Blob([asset.bytes], { type: asset.mimeType || 'image/png' })
             : null),

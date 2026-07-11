@@ -113,6 +113,18 @@ test('persists local character blobs outside ordinary exports', async ({ page })
       createdAt: now,
       updatedAt: now,
     };
+    let invalidIdError = null;
+    let invalidBlobKeyError = null;
+    try {
+      await repository.saveCharacter({ ...metadata, id: 'another-character' }, new Blob(['x']));
+    } catch (error) {
+      invalidIdError = error.message;
+    }
+    try {
+      await repository.saveCharacter({ ...metadata, imageBlobKey: 'another-asset' }, new Blob(['x']));
+    } catch (error) {
+      invalidBlobKeyError = error.message;
+    }
     await repository.saveCharacter(metadata, new Blob(['local-image'], { type: 'image/png' }));
     const saved = await repository.getCharacter();
     const blob = await repository.getCharacterBlob(metadata.imageBlobKey);
@@ -127,6 +139,9 @@ test('persists local character blobs outside ordinary exports', async ({ page })
       fullCharacterCount: fullRecords.characters.length,
       fullAssetCount: fullRecords.assets.length,
       fullAssetSize: fullRecords.assets[0]?.blob?.size,
+      fullAssetKeys: Object.keys(fullRecords.assets[0] || {}).sort(),
+      invalidIdError,
+      invalidBlobKeyError,
     };
   }, { now: NOW });
 
@@ -138,6 +153,9 @@ test('persists local character blobs outside ordinary exports', async ({ page })
   expect(result.fullCharacterCount).toBe(1);
   expect(result.fullAssetCount).toBe(1);
   expect(result.fullAssetSize).toBe(11);
+  expect(result.fullAssetKeys).toEqual(['blob', 'id', 'mimeType', 'updatedAt']);
+  expect(result.invalidIdError).toBe('CHARACTER_ID_INVALID');
+  expect(result.invalidBlobKeyError).toBe('CHARACTER_IMAGE_BLOB_KEY_INVALID');
 });
 
 test('migrates legacy state once and blocks legacy rewrites', async ({ page }) => {
