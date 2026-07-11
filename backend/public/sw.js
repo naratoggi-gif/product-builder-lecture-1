@@ -4,7 +4,7 @@ const CACHE_NAME = `${CACHE_VERSION}-${CACHE_BUILD}-shell`;
 const APP_SHELL = [
   '/',
   '/goals.html',
-  '/assets/css/app.css?v=0.1.1-alpha',
+  '/assets/css/app.css?v=0.1.1-alpha&build=v02-core-4',
   '/assets/js/app.js?v=0.1.1-alpha',
   '/assets/js/stepquest-v02-domain.js?v=0.1.1-alpha&build=v02-core-4',
   '/assets/js/stepquest-v02-storage.js?v=0.1.1-alpha&build=v02-core-4',

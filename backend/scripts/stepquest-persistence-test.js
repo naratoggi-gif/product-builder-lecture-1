@@ -382,6 +382,9 @@ assert.ok(goalsHtml.includes('recent-trace'), 'stats panel must render recent at
 assert.ok(goalsHtml.includes('v=0.1.1-alpha'), 'shell asset cache version must be bumped');
 assert.ok(serviceWorker.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must follow the app version');
 assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-4'"), 'service worker cache build must change when v0.2 shell assets change');
+const v02CssUrl = '/assets/css/app.css?v=0.1.1-alpha&build=v02-core-4';
+assert.ok(goalsHtml.includes(`href="${v02CssUrl}"`), 'goals shell must cache-bust changed v0.2 CSS');
+assert.ok(serviceWorker.includes(`'${v02CssUrl}'`), 'service worker must precache the same v0.2 CSS URL');
 const v02Modules = ['domain', 'storage', 'backup', 'character', 'fx', 'app', 'ui'];
 v02Modules.forEach((name) => {
   const assetUrl = `/assets/js/stepquest-v02-${name}.js?v=0.1.1-alpha&build=v02-core-4`;
