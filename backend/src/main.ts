@@ -18,7 +18,7 @@ async function bootstrap(): Promise<void> {
         scriptSrc: ["'self'", "'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
-        imgSrc: ["'self'", 'data:'],
+        imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'"],
         manifestSrc: ["'self'"],
         workerSrc: ["'self'"],

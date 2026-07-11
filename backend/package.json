@@ -17,7 +17,7 @@
     "smoke:cleanup": "node scripts/cleanup-staging-smoke-data.js",
     "test": "npm run test:domain",
     "test:ci": "npm run build && npm run test:domain && npm run test:e2e",
-    "test:domain": "npm run build && node scripts/health-test.js && node scripts/version-consistency-test.js && node scripts/production-env-test.js && node scripts/request-logger-test.js && node scripts/product-event-dto-test.js && node scripts/product-event-auth-test.js && node scripts/timezone-test.js && node scripts/stepquest-domain-test.js && node scripts/stepquest-v02-domain-test.js && node scripts/stepquest-v02-backup-test.js && node scripts/stepquest-state-test.js && node scripts/stepquest-persistence-test.js",
+    "test:domain": "npm run build && node scripts/health-test.js && node scripts/version-consistency-test.js && node scripts/production-env-test.js && node scripts/request-logger-test.js && node scripts/product-event-dto-test.js && node scripts/product-event-auth-test.js && node scripts/timezone-test.js && node scripts/stepquest-domain-test.js && node scripts/stepquest-v02-domain-test.js && node scripts/stepquest-v02-character-test.js && node scripts/stepquest-v02-fx-test.js && node scripts/stepquest-v02-backup-test.js && node scripts/stepquest-state-test.js && node scripts/stepquest-persistence-test.js",
     "test:e2e": "npm run build && node scripts/run-playwright.js",
     "start:dev": "nest start --watch",
     "build": "nest build",

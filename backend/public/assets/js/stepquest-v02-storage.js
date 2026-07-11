@@ -1,6 +1,6 @@
 (function exposeStorage(root) {
   const DB_NAME = 'stepquest';
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   const ACTIVE_KEY = 'stepquest_v02_active';
   const FALLBACK_STATE_KEY = 'stepquest_v02_fallback_state';
   const FALLBACK_BACKUPS_KEY = 'stepquest_v02_fallback_backups';
@@ -17,7 +17,8 @@
     'rewards',
     'wallet',
   ];
-  const ALL_STORES = [...STATE_STORES, 'meta', 'backups'];
+  const PRESENTATION_STORES = ['characters', 'assets'];
+  const ALL_STORES = [...STATE_STORES, 'meta', 'backups', 'characters'];
   const SIGNIFICANT_OPERATIONS = new Set([
     'reportOutcome',
     'routeObstacle',
@@ -87,6 +88,8 @@
         createStore(database, 'rewards', { keyPath: 'idempotencyKey' });
         createStore(database, 'wallet', { keyPath: 'id' });
         createStore(database, 'backups', { keyPath: 'id' });
+        createStore(database, 'characters', { keyPath: 'id' });
+        createStore(database, 'assets', { keyPath: 'id' });
       };
       request.onsuccess = () => {
         request.result.onversionchange = () => request.result.close();
@@ -283,9 +286,19 @@
 
   async function rotateBackups(transaction, snapshot, operation, now) {
     const store = transaction.objectStore('backups');
+    const characters = Array.isArray(snapshot.characters)
+      ? snapshot.characters
+      : transaction.objectStoreNames.contains('characters')
+        ? await requestResult(transaction.objectStore('characters').getAll())
+        : [];
     const existing = await requestResult(store.getAll());
     const id = `${now}:${operation}:${Math.random().toString(16).slice(2)}`;
-    store.put({ id, operation, createdAt: now, snapshot: clone(snapshot) });
+    store.put({
+      id,
+      operation,
+      createdAt: now,
+      snapshot: clone({ ...snapshot, characters }),
+    });
     existing
       .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
       .slice(4)
@@ -409,6 +422,114 @@
       return record?.value;
     }
 
+    async function getCharacter() {
+      const transaction = database.transaction('characters', 'readonly');
+      const done = transactionDone(transaction);
+      const character = await requestResult(transaction.objectStore('characters').get('local-primary'));
+      await done;
+      return character ? clone(character) : null;
+    }
+
+    async function getCharacterBlob(key) {
+      if (!key) return null;
+      const transaction = database.transaction('assets', 'readonly');
+      const done = transactionDone(transaction);
+      const asset = await requestResult(transaction.objectStore('assets').get(key));
+      await done;
+      if (asset?.blob) return asset.blob;
+      if (asset?.bytes && root.Blob) {
+        return new root.Blob([asset.bytes], { type: asset.mimeType || 'image/png' });
+      }
+      return null;
+    }
+
+    async function saveCharacter(metadata, blob) {
+      if (!metadata?.id || !metadata?.imageBlobKey) throw new Error('CHARACTER_METADATA_INVALID');
+      if (metadata.id !== 'local-primary') throw new Error('CHARACTER_ID_INVALID');
+      if (metadata.imageBlobKey !== 'character:local-primary:image') {
+        throw new Error('CHARACTER_IMAGE_BLOB_KEY_INVALID');
+      }
+      if (!blob || typeof blob.arrayBuffer !== 'function') throw new Error('CHARACTER_IMAGE_BLOB_INVALID');
+      const [state, previous, existingBackups] = await Promise.all([
+        getSnapshot(),
+        getCharacter(),
+        (async () => {
+          const readTransaction = database.transaction('backups', 'readonly');
+          const readDone = transactionDone(readTransaction);
+          const backups = await requestResult(readTransaction.objectStore('backups').getAll());
+          await readDone;
+          return backups;
+        })(),
+      ]);
+      const commit = async (assetValue) => {
+        const transaction = database.transaction(['characters', 'assets', 'backups'], 'readwrite');
+        const done = transactionDone(transaction);
+        try {
+          const characterStore = transaction.objectStore('characters');
+          const assetStore = transaction.objectStore('assets');
+          const writes = [requestResult(assetStore.put({
+            id: metadata.imageBlobKey,
+            ...assetValue,
+            mimeType: blob.type || 'image/png',
+            updatedAt: metadata.updatedAt,
+          }))];
+          writes.push(requestResult(characterStore.put(clone(metadata))));
+          if (previous?.imageBlobKey && previous.imageBlobKey !== metadata.imageBlobKey) {
+            writes.push(requestResult(assetStore.delete(previous.imageBlobKey)));
+          }
+          const backupStore = transaction.objectStore('backups');
+          const createdAt = metadata.updatedAt || new Date().toISOString();
+          writes.push(requestResult(backupStore.put({
+            id: `${createdAt}:saveCharacter:${Math.random().toString(16).slice(2)}`,
+            operation: 'saveCharacter',
+            createdAt,
+            snapshot: clone({ ...state, characters: [clone(metadata)] }),
+          })));
+          existingBackups
+            .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
+            .slice(4)
+            .forEach((item) => writes.push(requestResult(backupStore.delete(item.id))));
+          await Promise.all(writes);
+          await done;
+        } catch (error) {
+          abortQuietly(transaction);
+          try { await done; } catch (_transactionError) { /* preserve the original error */ }
+          throw error;
+        }
+      };
+
+      try {
+        await commit({ blob, storageEncoding: 'blob' });
+      } catch (error) {
+        const blobStorageUnsupported = error?.name === 'UnknownError'
+          && String(error.message || '').includes('Blob/File');
+        if (!blobStorageUnsupported) throw error;
+        await commit({ bytes: await blob.arrayBuffer(), storageEncoding: 'arrayBuffer' });
+      }
+      return clone(metadata);
+    }
+
+    async function exportCharacterAssets() {
+      const transaction = database.transaction(PRESENTATION_STORES, 'readonly');
+      const done = transactionDone(transaction);
+      const [characters, assets] = await Promise.all([
+        requestResult(transaction.objectStore('characters').getAll()),
+        requestResult(transaction.objectStore('assets').getAll()),
+      ]);
+      await done;
+      return {
+        characters: clone(characters),
+        assets: assets.map((asset) => ({
+          id: asset.id,
+          mimeType: asset.mimeType || asset.blob?.type || 'image/png',
+          updatedAt: asset.updatedAt,
+          blob: asset.blob || (asset.bytes && root.Blob
+            ? new root.Blob([asset.bytes], { type: asset.mimeType || 'image/png' })
+            : null),
+        })),
+      };
+    }
+
     async function execute(operation, command) {
       const transition = Domain[operation];
       if (typeof transition !== 'function') throw new Error(`UNKNOWN_DOMAIN_OPERATION:${operation}`);
@@ -485,11 +606,14 @@
 
     async function exportRecords() {
       const state = await getSnapshot();
-      const transaction = database.transaction('backups', 'readonly');
+      const transaction = database.transaction(['backups', 'characters'], 'readonly');
       const done = transactionDone(transaction);
-      const backups = await requestResult(transaction.objectStore('backups').getAll());
+      const [backups, characters] = await Promise.all([
+        requestResult(transaction.objectStore('backups').getAll()),
+        requestResult(transaction.objectStore('characters').getAll()),
+      ]);
       await done;
-      return { ...state, backups };
+      return { ...state, backups, characters: clone(characters) };
     }
 
     async function recoverFallback(state, backups = [], revision = 0, metadata = {}) {
@@ -539,6 +663,10 @@
       migrateLegacy,
       getMeta,
       setMeta,
+      getCharacter,
+      getCharacterBlob,
+      saveCharacter,
+      exportCharacterAssets,
       exportRecords,
       recoverFallback,
     };
@@ -666,7 +794,19 @@
     }
 
     async function exportRecords() {
-      return { ...await getSnapshot(), backups: readFallbackBackups() };
+      return { ...await getSnapshot(), backups: readFallbackBackups(), characters: [] };
+    }
+
+    async function getCharacter() { return null; }
+
+    async function getCharacterBlob() { return null; }
+
+    async function saveCharacter() {
+      throw new Error('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
+    }
+
+    async function exportCharacterAssets() {
+      return { characters: [], assets: [] };
     }
 
     return {
@@ -677,6 +817,10 @@
       migrateLegacy,
       getMeta,
       setMeta,
+      getCharacter,
+      getCharacterBlob,
+      saveCharacter,
+      exportCharacterAssets,
       exportRecords,
     };
   }

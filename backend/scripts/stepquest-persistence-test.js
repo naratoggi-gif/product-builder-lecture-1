@@ -33,6 +33,7 @@ const stateModule = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.sta
 const browserApp = fs.readFileSync(path.join(root, 'public/assets/js/app.js'), 'utf8');
 const v02Storage = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-storage.js'), 'utf8');
 const v02Domain = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-domain.js'), 'utf8');
+const v02App = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-app.js'), 'utf8');
 const v02Ui = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-ui.js'), 'utf8');
 const goalsHtml = fs.readFileSync(path.join(root, 'public/goals.html'), 'utf8');
 const appCss = fs.readFileSync(path.join(root, 'public/assets/css/app.css'), 'utf8');
@@ -380,18 +381,24 @@ assert.ok(goalsHtml.includes('returnCompleted'), 'completion feedback must ackno
 assert.ok(goalsHtml.includes('recent-trace'), 'stats panel must render recent attempts');
 assert.ok(goalsHtml.includes('v=0.1.1-alpha'), 'shell asset cache version must be bumped');
 assert.ok(serviceWorker.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must follow the app version');
-assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-3'"), 'service worker cache build must change when v0.2 shell assets change');
-[
-  'stepquest-v02-domain.js',
-  'stepquest-v02-storage.js',
-  'stepquest-v02-backup.js',
-  'stepquest-v02-app.js',
-  'stepquest-v02-ui.js',
-].forEach((asset) => {
-  const assetUrl = `/assets/js/${asset}?v=0.1.1-alpha&build=v02-core-3`;
-  assert.ok(goalsHtml.includes(`src="${assetUrl}"`), `goals shell cache key is stale for ${asset}`);
-  assert.ok(serviceWorker.includes(`'${assetUrl}'`), `service worker precache key is stale for ${asset}`);
+assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-4'"), 'service worker cache build must change when v0.2 shell assets change');
+const v02CssUrl = '/assets/css/app.css?v=0.1.1-alpha&build=v02-core-4';
+assert.ok(goalsHtml.includes(`href="${v02CssUrl}"`), 'goals shell must cache-bust changed v0.2 CSS');
+assert.ok(serviceWorker.includes(`'${v02CssUrl}'`), 'service worker must precache the same v0.2 CSS URL');
+const v02Modules = ['domain', 'storage', 'backup', 'character', 'fx', 'app', 'ui'];
+v02Modules.forEach((name) => {
+  const assetUrl = `/assets/js/stepquest-v02-${name}.js?v=0.1.1-alpha&build=v02-core-4`;
+  assert.ok(goalsHtml.includes(`src="${assetUrl}"`), `goals shell cache key is stale for ${name}`);
+  assert.ok(serviceWorker.includes(`'${assetUrl}'`), `service worker precache key is stale for ${name}`);
 });
+const shellModuleOffsets = v02Modules.map((name) => goalsHtml.indexOf(`/stepquest-v02-${name}.js`));
+assert.deepEqual(
+  [...shellModuleOffsets].sort((left, right) => left - right),
+  shellModuleOffsets,
+  'v0.2 shell modules must load in dependency order',
+);
+assert.ok(!goalsHtml.includes('v02-core-3'), 'goals shell must not retain the previous v0.2 cache key');
+assert.ok(!serviceWorker.includes('v02-core-3'), 'service worker must not retain the previous v0.2 cache key');
 assert.ok(!goalsHtml.includes('v02-core-2'), 'goals shell must not retain the previous v0.2 cache key');
 assert.ok(!serviceWorker.includes('v02-core-2'), 'service worker must not retain the previous v0.2 cache key');
 assert.ok(serviceWorker.includes('self.skipWaiting()'), 'service worker must activate updated deploys promptly');
@@ -472,7 +479,21 @@ assert.ok(
   v02Storage.includes('indexedDB.open(DB_NAME, DB_VERSION)'),
   'v0.2 storage must open the versioned database',
 );
-assert.ok(v02Storage.includes('const DB_VERSION = 2'), 'v0.2 database version must be 2');
+assert.ok(v02Storage.includes('const DB_VERSION = 3'), 'v0.2 database version must be 3');
+assert.ok(
+  v02Storage.includes("createStore(database, 'characters', { keyPath: 'id' })"),
+  'v0.2 database must add the character metadata store',
+);
+assert.ok(
+  v02Storage.includes("createStore(database, 'assets', { keyPath: 'id' })"),
+  'v0.2 database must add the Blob asset store',
+);
+['getCharacter', 'getCharacterBlob', 'saveCharacter', 'exportCharacterAssets']
+  .forEach((name) => assert.ok(v02Storage.includes(name), `v0.2 storage must expose ${name}`));
+assert.ok(
+  v02Storage.includes('characters: [clone(metadata)]'),
+  'rolling snapshots must include character metadata without image bytes',
+);
 assert.ok(v02Storage.includes('normalizeCamp'), 'v0.2 storage must normalize legacy camp state');
 assert.ok(v02Storage.includes("objectStore('wallet').get('camp')"), 'v0.2 storage must read the camp singleton');
 assert.ok(v02Storage.includes("id: 'camp'"), 'v0.2 storage must write the camp singleton');
@@ -486,6 +507,20 @@ assert.ok(v02Storage.includes("id: 'camp'"), 'v0.2 storage must write the camp s
 ['v02-blocked-step', 'v02-waiting-step']
   .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 parked UI must include ${id}`));
 assert.ok(v02Ui.includes('v02-upgrade-camp'), 'v0.2 UI must expose the affordable camp upgrade');
+['v02-character-settings', 'v02-character-file', 'v02-save-character', 'v02-export-character-full']
+  .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 character UI must include ${id}`));
+assert.ok(
+  v02Ui.includes('가져온 이미지는 이 기기에만 저장되며 개인 사용 범위에서만 쓰세요.'),
+  'character import must show the local-only copyright posture',
+);
+assert.ok(
+  mainTs.includes("imgSrc: [\"'self'\", 'data:', 'blob:']"),
+  'CSP must allow device-local Blob image URLs only in img-src',
+);
+assert.ok(
+  v02App.includes('characters: records.characters'),
+  'full image export must keep character metadata paired with its atomic asset read',
+);
 assert.ok(appCss.includes('.v02-camp'), 'v0.2 camp visual styles are missing');
 assert.ok(
   v02Domain.includes('goal:${step.goalId}:lineage:${step.rewardLineage}:gold:${priorGold}'),

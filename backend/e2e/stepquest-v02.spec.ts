@@ -5,9 +5,25 @@ async function resetV02(page) {
   await page.evaluate(async () => {
     localStorage.clear();
     sessionStorage.clear();
-    await new Promise<void>((resolve) => {
-      const request = indexedDB.deleteDatabase('stepquest');
-      request.onsuccess = request.onerror = request.onblocked = () => resolve();
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 3);
+      request.onsuccess = () => {
+        const database = request.result;
+        const storeNames = Array.from(database.objectStoreNames);
+        if (!storeNames.length) {
+          database.close();
+          resolve();
+          return;
+        }
+        const transaction = database.transaction(storeNames, 'readwrite');
+        storeNames.forEach((name) => transaction.objectStore(name).clear());
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
     });
   });
   await page.reload();
@@ -24,6 +40,11 @@ async function createAndStart(page, title) {
   await createGoal(page, title);
   await page.locator('#v02-start-step').click();
   await expect(page.locator('#v02-expedition-active')).toContainText('앱을 닫아도 됩니다.');
+}
+
+async function cancelFx(page) {
+  await page.evaluate(() => (window as any).StepQuestV02FX.cancel());
+  await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
 }
 
 test('partial progress restores a Resume Anchor after reload', async ({ page }) => {
@@ -54,6 +75,281 @@ test('completed advances exactly one step', async ({ page }) => {
   await page.reload();
   await page.locator('[data-v02-outcome="completed"]').click();
   await expect(page.locator('[data-v02-current-step]')).not.toHaveText(before);
+});
+
+test('facade marks only the final completed step as a Goal milestone', async ({ page }) => {
+  await resetV02(page);
+  const result = await page.evaluate(async () => {
+    const now = '2026-07-12T00:00:00.000Z';
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.importGoal({
+      weekly: { id: 'milestone-goal', title: '마일스톤 목표', createdAt: now },
+      micro: [
+        { id: 'milestone-step-1', title: '첫 행동', phase: 'start', createdAt: now },
+        { id: 'milestone-step-2', title: '마지막 행동', phase: 'close', createdAt: now },
+      ],
+    }, {
+      idempotencyKey: 'milestone-goal:import',
+      now,
+      idFactory: (prefix) => `${prefix}-milestone`,
+    });
+    const Core = (window as any).StepQuestV02App;
+    await Core.init({ App: (window as any).StepQuestApp, forceRefresh: true });
+    await Core.startCurrentStep('milestone:first:start');
+    const first = await Core.reportCurrentExpedition({
+      outcome: 'completed',
+      idempotencyKey: 'milestone:first:report',
+    });
+    await Core.startCurrentStep('milestone:last:start');
+    const last = await Core.reportCurrentExpedition({
+      outcome: 'completed',
+      idempotencyKey: 'milestone:last:report',
+    });
+    return { first, last };
+  });
+
+  expect(result.first.goalMilestone).toBe(false);
+  expect(result.last.goalMilestone).toBe(true);
+});
+
+test('local character import renders, replaces, reloads, and exports safely', async ({ page }) => {
+  const tinyPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await resetV02(page);
+  await createGoal(page, '캐릭터 원정 테스트');
+  await page.locator('#v02-character-settings > summary').click();
+  const characterNetworkWrites: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() !== 'GET' && ['fetch', 'xhr'].includes(request.resourceType())) {
+      characterNetworkWrites.push(`${request.method()} ${request.url()}`);
+    }
+  });
+  await page.locator('#v02-character-file').setInputFiles({
+    name: 'hero.png', mimeType: 'image/png', buffer: tinyPng,
+  });
+  await page.locator('#v02-character-name').fill('<b>나의 영웅</b>');
+  await page.locator('#v02-character-preset').selectOption('dash');
+  await page.locator('#v02-character-skill-name').fill('벽력일섬');
+  await page.locator('#v02-character-color').selectOption('#a78bfa');
+  await page.locator('#v02-save-character').click();
+
+  await expect(page.locator('#v02-character-image')).toHaveAttribute('src', /^blob:/);
+  await expect(page.locator('[data-v02-character-name]')).toHaveText('<b>나의 영웅</b>');
+  await expect(page.locator('[data-v02-character-name] b')).toHaveCount(0);
+  expect(characterNetworkWrites).toEqual([]);
+
+  await page.reload();
+  await expect(page.locator('#v02-character-image')).toHaveAttribute('src', /^blob:/);
+  await expect(page.locator('[data-v02-character-name]')).toHaveText('<b>나의 영웅</b>');
+
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('#v02-character-file').setInputFiles({
+    name: 'hero-replacement.png', mimeType: 'image/png', buffer: tinyPng,
+  });
+  await page.locator('#v02-character-name').fill('교체한 영웅');
+  await page.locator('#v02-save-character').click();
+  await expect(page.locator('[data-v02-character-name]')).toHaveText('교체한 영웅');
+
+  const exported = await page.evaluate(async () => {
+    const Core = (window as any).StepQuestV02App;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const rawStoreCounts = await new Promise<{ characters: number; assets: number }>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 3);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(['characters', 'assets'], 'readonly');
+        const charactersRequest = transaction.objectStore('characters').count();
+        const assetsRequest = transaction.objectStore('assets').count();
+        transaction.oncomplete = () => {
+          database.close();
+          resolve({ characters: charactersRequest.result, assets: assetsRequest.result });
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    return {
+      ordinary: JSON.parse(await Core.exportJson()),
+      full: JSON.parse(await Core.exportFullJson()),
+      assets: await repository.exportCharacterAssets(),
+      rawStoreCounts,
+    };
+  });
+  expect(exported.ordinary.characters).toEqual([expect.objectContaining({ name: '교체한 영웅' })]);
+  expect(JSON.stringify(exported.ordinary)).not.toContain('base64');
+  expect(JSON.stringify(exported.ordinary)).not.toContain('data:image');
+  expect(exported.full.exportType).toBe('full-with-images');
+  expect(exported.full.assets).toEqual([
+    expect.objectContaining({ mimeType: 'image/png', base64: expect.any(String) }),
+  ]);
+  expect(exported.assets.characters).toHaveLength(1);
+  expect(exported.assets.assets).toHaveLength(1);
+  expect(exported.rawStoreCounts).toEqual({ characters: 1, assets: 1 });
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.locator('#v02-export-character-full').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('stepquest-full-backup-with-images.json');
+
+  await page.locator('#v02-start-step').click();
+  await expect(page.locator('#v02-expedition-active #v02-character-image')).toHaveAttribute('src', /^blob:/);
+});
+
+test('skill FX previews all presets and remains skippable by tap and keyboard', async ({ page }) => {
+  await resetV02(page);
+  await createGoal(page, '연출 미리보기');
+  await page.locator('#v02-character-settings > summary').click();
+
+  const delayedBaseline = await page.evaluate(() => {
+    (document.querySelector('[data-v02-fx-preview="dash"]') as HTMLButtonElement).click();
+    const overlay = document.querySelector('[data-v02-fx-overlay]');
+    const shockring = overlay.querySelector('[data-v02-fx-step="shockring"]');
+    const afterimage = overlay.querySelector('[data-v02-fx-step="afterimage"]');
+    const character = document.querySelector('.v02-default-character, #v02-character-image');
+    return {
+      shockringOpacity: getComputedStyle(shockring).opacity,
+      afterimageOpacity: getComputedStyle(afterimage).opacity,
+      characterTransform: getComputedStyle(character).transform,
+    };
+  });
+  expect(delayedBaseline).toEqual({
+    shockringOpacity: '0',
+    afterimageOpacity: '0',
+    characterTransform: 'none',
+  });
+  await cancelFx(page);
+
+  for (const preset of ['impact', 'dash', 'slash', 'cast']) {
+    await page.locator(`[data-v02-fx-preview="${preset}"]`).click();
+    const overlay = page.locator(`[data-v02-fx-mode="preview"][data-v02-fx-preset="${preset}"]`);
+    await expect(overlay).toBeVisible();
+    await expect(overlay.locator('[data-v02-fx-step="cutin"]')).toBeVisible();
+    await expect(overlay.locator('[data-v02-fx-skip]')).toBeFocused();
+    if (preset === 'dash') {
+      const timeline = await overlay.locator('[data-v02-fx-step][data-v02-fx-delay]').evaluateAll((nodes) => (
+        Object.fromEntries(nodes.map((node) => [
+          node.getAttribute('data-v02-fx-step'),
+          Number(node.getAttribute('data-v02-fx-delay')),
+        ]))
+      ));
+      expect(timeline.flash).toBeLessThan(timeline.bolt);
+      expect(timeline.bolt).toBeLessThan(timeline.afterimage);
+      expect(timeline.afterimage).toBeLessThan(timeline.shockring);
+    }
+    await overlay.locator('[data-v02-fx-skip]').click({ force: true });
+    await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+    await expect(page.locator(`[data-v02-fx-preview="${preset}"]`)).toBeFocused();
+  }
+
+  await page.locator('[data-v02-fx-preview="impact"]').click();
+  await page.locator('[data-v02-fx-overlay]').click({ position: { x: 8, y: 8 } });
+  await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+
+  for (const keyName of ['Escape', 'Enter', 'Space']) {
+    await page.locator('[data-v02-fx-preview="slash"]').click();
+    await expect(page.locator('[data-v02-fx-overlay]')).toBeVisible();
+    await page.keyboard.press(keyName);
+    await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+    await expect(page.locator('#v02-expedition-active')).toHaveCount(0);
+  }
+});
+
+test('skill FX render replacement cancels the prior session before keyboard input', async ({ page }) => {
+  await resetV02(page);
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('[data-v02-fx-preview="impact"]').click();
+  await expect(page.locator('[data-v02-fx-overlay]')).toBeVisible();
+  await page.locator('#v02-goal-title').fill('렌더 취소 테스트');
+  await page.locator('#v02-create-goal').click();
+  await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+
+  await page.locator('#v02-start-step').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="departure"]')).toBeVisible();
+  await cancelFx(page);
+  await expect(page.locator('#v02-open-report')).toBeFocused();
+});
+
+test('skill FX runs only after departure and completed state renders', async ({ page }) => {
+  await resetV02(page);
+  await createGoal(page, '완료 연출 테스트');
+  await page.locator('#v02-start-step').click();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="departure"]')).toBeVisible();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('#v02-character-settings > summary').click();
+  await expect(page.locator('[data-v02-fx-preview]:not(:disabled)')).toHaveCount(0);
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await expect(page.locator('[data-v02-current-step]')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="completed"]')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="milestone"]')).toHaveCount(0);
+  await cancelFx(page);
+  await expect(page.locator('#v02-start-step')).toBeFocused();
+});
+
+test('skill FX uses one milestone cut-in on final completion', async ({ page }) => {
+  await resetV02(page);
+  await page.evaluate(async () => {
+    const now = '2026-07-12T00:00:00.000Z';
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.importGoal({
+      weekly: { id: 'fx-milestone-goal', title: '한 단계 목표', createdAt: now },
+      micro: [{ id: 'fx-milestone-step', title: '마지막 행동', phase: 'close', createdAt: now }],
+    }, {
+      idempotencyKey: 'fx-milestone:import',
+      now,
+      idFactory: (prefix) => `${prefix}-fx-milestone`,
+    });
+    await (window as any).StepQuestV02App.init({
+      App: (window as any).StepQuestApp,
+      forceRefresh: true,
+    });
+    (window as any).StepQuestV02UI.render();
+  });
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  const milestone = page.locator('[data-v02-fx-mode="milestone"]');
+  await expect(milestone).toBeVisible();
+  await expect(milestone.locator('[data-v02-fx-step="cutin"]')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="completed"]')).toHaveCount(0);
+});
+
+for (const outcome of ['partial', 'interrupted', 'not_started']) {
+  test(`skill FX stays absent for ${outcome} outcome`, async ({ page }) => {
+    await resetV02(page);
+    await createGoal(page, `연출 제외 ${outcome}`);
+    await page.locator('#v02-start-step').click();
+    await cancelFx(page);
+    await page.locator('#v02-open-report').click();
+    await page.locator(`[data-v02-outcome="${outcome}"]`).click();
+    if (outcome === 'partial' || outcome === 'interrupted') {
+      await page.locator('#v02-next-action').fill('다음 손동작');
+      await page.locator('#v02-save-outcome').click();
+    }
+    await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+  });
+}
+
+test('skill FX reduced motion uses only cut-in and a soft 120ms flash', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await resetV02(page);
+  await createGoal(page, '축소 모션 연출');
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('[data-v02-fx-preview="cast"]').click();
+  const overlay = page.locator('[data-v02-fx-overlay]');
+  await expect(overlay).toHaveAttribute('data-v02-fx-duration', '120');
+  const steps = await overlay.locator('[data-v02-fx-step]').evaluateAll((nodes) => (
+    nodes.map((node) => node.getAttribute('data-v02-fx-step')).sort()
+  ));
+  expect(steps).toEqual(['cutin', 'flash']);
 });
 
 test('interrupted requires and restores a Resume Anchor', async ({ page }) => {
@@ -241,7 +537,7 @@ test('legacy direct-retry history reopens its active return report', async ({ pa
     if (!report) throw new Error('Expected a not-started report for the legacy retry fixture');
     const retryAt = new Date(new Date(report.createdAt).getTime() + 1).toISOString();
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('stepquest', 2);
+      const request = indexedDB.open('stepquest', 3);
       request.onsuccess = () => {
         const database = request.result;
         const transaction = database.transaction(['steps', 'expeditions', 'events'], 'readwrite');
@@ -353,7 +649,7 @@ test('completed expedition can upgrade and persist the base camp', async ({ page
 
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('stepquest', 2);
+      const request = indexedDB.open('stepquest', 3);
       request.onsuccess = () => {
         const database = request.result;
         const transaction = database.transaction('wallet', 'readwrite');
@@ -369,7 +665,7 @@ test('completed expedition can upgrade and persist the base camp', async ({ page
 
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('stepquest', 2);
+      const request = indexedDB.open('stepquest', 3);
       request.onsuccess = () => {
         const database = request.result;
         const transaction = database.transaction('wallet', 'readwrite');
@@ -393,7 +689,7 @@ test('exports valid JSON and rotates five recovery snapshots', async ({ page }) 
     await page.locator('[data-v02-outcome="completed"]').click();
   }
   const exported = await page.evaluate(() => (window as any).StepQuestV02App.exportJson());
-  expect(JSON.parse(exported).schemaVersion).toBe(2);
+  expect(JSON.parse(exported).schemaVersion).toBe(3);
   const backupCount = await page.evaluate(async () => (
     await (await (window as any).StepQuestV02Storage.openRepository()).exportRecords()
   ).backups.length);

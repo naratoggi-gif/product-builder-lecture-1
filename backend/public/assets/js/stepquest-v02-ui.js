@@ -7,6 +7,7 @@
   let selectedReason = null;
   let tiredShrink = false;
   let campMessage = null;
+  let characterPanelOpen = false;
 
   const outcomeLabels = {
     completed: '완료',
@@ -181,6 +182,79 @@
     `;
   }
 
+  function characterStage() {
+    const character = Core.getCharacter();
+    const art = character.imageUrl
+      ? `<img id="v02-character-image" src="${h(character.imageUrl)}" alt="${h(character.name)}" />`
+      : '<span class="v02-default-character" aria-hidden="true"><i></i></span>';
+    return `
+      <div class="v02-character-stage" data-v02-character-stage style="--v02-character-accent:${h(character.accentColor)}">
+        <div class="v02-character-art">${art}</div>
+        <div class="v02-character-caption">
+          <strong data-v02-character-name>${h(character.name)}</strong>
+          <small>${h(character.skillName)} · ${h(character.skillPreset)}</small>
+        </div>
+        ${character.missingImage ? '<p class="v02-character-notice">저장된 이미지를 찾지 못해 기본 캐릭터를 표시합니다.</p>' : ''}
+      </div>
+    `;
+  }
+
+  function characterSettings(status, previewAvailable) {
+    const character = Core.getCharacter();
+    const Character = root.StepQuestV02Character;
+    const palette = Character?.PALETTE || ['#65d9ff'];
+    const presets = [
+      ['impact', '임팩트'],
+      ['dash', '대시'],
+      ['slash', '참격'],
+      ['cast', '마법'],
+    ];
+    const supported = status.characterStorageSupported;
+    return `
+      <details id="v02-character-settings" class="panel v02-character-settings" ${characterPanelOpen ? 'open' : ''}>
+        <summary>캐릭터와 기술 연출</summary>
+        <p>가져온 이미지는 이 기기에만 저장되며 개인 사용 범위에서만 쓰세요.</p>
+        ${supported ? `
+          <div class="v02-character-form">
+            <label>캐릭터 이미지
+              <input id="v02-character-file" type="file" accept="image/png,image/webp,image/jpeg" />
+            </label>
+            <label>캐릭터 이름
+              <input id="v02-character-name" maxlength="40" value="${h(character.name)}" autocomplete="off" />
+            </label>
+            <label>기술 프리셋
+              <select id="v02-character-preset">
+                ${presets.map(([value, label]) => (
+                  `<option value="${value}" ${character.skillPreset === value ? 'selected' : ''}>${label}</option>`
+                )).join('')}
+              </select>
+            </label>
+            <label>기술명
+              <input id="v02-character-skill-name" maxlength="40" value="${h(character.skillName)}" autocomplete="off" />
+            </label>
+            <label>강조색
+              <select id="v02-character-color">
+                ${palette.map((value, index) => (
+                  `<option value="${value}" ${character.accentColor === value ? 'selected' : ''}>색상 ${index + 1}</option>`
+                )).join('')}
+              </select>
+            </label>
+            <div class="v02-fx-previews" role="group" aria-label="기술 연출 미리보기">
+              ${presets.map(([value, label]) => (
+                `<button type="button" class="ghost" data-v02-fx-preview="${value}" ${previewAvailable ? '' : 'disabled'}>${label} 미리보기</button>`
+              )).join('')}
+            </div>
+            ${previewAvailable ? '' : '<small class="v02-character-notice">현재 행동이나 원정 화면으로 돌아가면 연출을 미리 볼 수 있습니다.</small>'}
+            <button id="v02-save-character">이 캐릭터 저장</button>
+            ${character.usingDefault ? '' : '<button id="v02-export-character-full" class="ghost">이미지 포함 전체 내보내기</button>'}
+          </div>
+        ` : `
+          <p class="v02-character-notice">이 브라우저에서는 캐릭터 이미지를 저장할 수 없어 기본 캐릭터를 사용합니다.</p>
+        `}
+      </details>
+    `;
+  }
+
   function storagePanel(status) {
     const backupTime = status.lastExternalBackupAt
       ? `마지막 외부 파일 백업: ${h(status.lastExternalBackupAt)}`
@@ -217,6 +291,7 @@
   }
 
   function render() {
+    root.StepQuestV02FX?.cancel();
     App.renderShell('지금 할 한 동작');
     document.body.classList.add('v02-mode');
     const rootNode = document.getElementById('page-root');
@@ -226,6 +301,7 @@
     const campLevel = vm.state.camp?.level || 0;
     const nextCampCost = 2 + campLevel;
     const canUpgradeCamp = campLevel < 5 && vm.state.wallet.gold >= nextCampCost;
+    const stage = characterStage();
     const wallet = `
       <div id="v02-wallet" class="v02-wallet" aria-label="보유 재화">
         <span>스텝코인 <b>${vm.state.wallet.stepCoin}</b></span>
@@ -234,6 +310,7 @@
       </div>
     `;
     let body;
+    let hasCharacterStage = false;
 
     if (status.pendingAccountImport) {
       body = `
@@ -286,10 +363,12 @@
       `;
     } else if (vm.expedition) {
       const step = vm.state.steps.find((item) => item.id === vm.expedition.stepId);
+      hasCharacterStage = true;
       body = `
         <section id="v02-expedition-active" class="panel v02-expedition">
           <span class="v02-kicker">원정 진행 중</span>
           <h2>${h(step?.title)}</h2>
+          ${stage}
           <p>앱을 닫아도 됩니다.</p>
           <button id="v02-open-report">돌아왔어요</button>
         </section>
@@ -305,10 +384,12 @@
         </section>
       `;
     } else if (vm.active) {
+      hasCharacterStage = true;
       body = `
         <section class="panel v02-runner">
           <span class="v02-kicker">지금 할 하나</span>
           <h2 data-v02-current-step>${h(vm.active.title)}</h2>
+          ${stage}
           <p>완료를 약속하지 않아도 됩니다. 시작 위치만 남깁니다.</p>
           <button id="v02-start-step">시작</button>
         </section>
@@ -335,9 +416,11 @@
         </section>
       `;
     } else {
+      hasCharacterStage = true;
       body = `
         <section class="panel v02-runner">
           <span class="v02-kicker">큰 목표는 한 줄이면 충분합니다</span>
+          ${stage}
           <label class="v02-goal-label">목표 한 줄<input id="v02-goal-title" maxlength="140" autocomplete="off" /></label>
           <button id="v02-create-goal">첫 행동 만들기</button>
         </section>
@@ -364,17 +447,40 @@
         ` : ''}
       </section>
     ` : '';
-    rootNode.innerHTML = `${wallet}${body}${campPanel}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
+    rootNode.innerHTML = `${wallet}${body}${campPanel}${characterSettings(status, hasCharacterStage)}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
     wire();
   }
 
-  async function run(button, action) {
+  function playCharacterFx(mode, preset, restoreFocus) {
+    const stage = document.querySelector('[data-v02-character-stage]');
+    const characterElement = stage?.querySelector('#v02-character-image, .v02-default-character');
+    const characterValue = Core.getCharacter();
+    const reducedMotion = Boolean(
+      App.state?.reducedMotion
+      || root.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    );
+    return root.StepQuestV02FX?.play({
+      stage,
+      character: characterElement,
+      preset: preset || characterValue.skillPreset,
+      skillName: characterValue.skillName,
+      color: characterValue.accentColor,
+      mode,
+      reducedMotion,
+      restoreFocus,
+    });
+  }
+
+  async function run(button, action, afterRender) {
     if (button.disabled) return;
     button.disabled = true;
     try {
       const result = await action();
       if (result === false) button.disabled = false;
-      else render();
+      else {
+        render();
+        if (afterRender) Promise.resolve().then(() => afterRender(result)).catch(() => {});
+      }
     } catch (error) {
       button.disabled = false;
       App.toast(error.message, true);
@@ -395,6 +501,46 @@
   }
 
   function wire() {
+    document.getElementById('v02-character-settings')?.addEventListener('toggle', (event) => {
+      characterPanelOpen = event.currentTarget.open;
+    });
+    document.getElementById('v02-save-character')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        const fileField = document.getElementById('v02-character-file');
+        const file = fileField.files?.[0];
+        if (!file) {
+          fileField.focus();
+          App.toast('저장할 캐릭터 이미지를 먼저 선택해 주세요.', true);
+          return false;
+        }
+        characterPanelOpen = true;
+        await Core.importCharacter({
+          file,
+          name: document.getElementById('v02-character-name').value,
+          skillPreset: document.getElementById('v02-character-preset').value,
+          skillName: document.getElementById('v02-character-skill-name').value,
+          accentColor: document.getElementById('v02-character-color').value,
+        });
+        return true;
+      })
+    ));
+    document.getElementById('v02-export-character-full')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        root.StepQuestV02Backup.downloadJson(
+          await Core.exportFullJson(),
+          document,
+          root.URL,
+          'stepquest-full-backup-with-images.json',
+        );
+        return false;
+      })
+    ));
+    document.querySelectorAll('[data-v02-fx-preview]').forEach((button) => {
+      button.addEventListener('click', () => {
+        characterPanelOpen = true;
+        playCharacterFx('preview', button.dataset.v02FxPreview, button)?.catch(() => {});
+      });
+    });
     document.getElementById('v02-create-goal')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
         const field = document.getElementById('v02-goal-title');
@@ -419,10 +565,11 @@
         const attempt = state.events.filter((item) => (
           item.type === 'step_started' && item.stepId === step.id
         )).length;
-        await Core.startCurrentStep(key('start', `${step.id}:${attempt}`));
+        const result = await Core.startCurrentStep(key('start', `${step.id}:${attempt}`));
         reporting = false;
         reportDismissed = false;
-      })
+        return result;
+      }, () => playCharacterFx('departure'))
     ));
     document.getElementById('v02-open-report')?.addEventListener('click', () => {
       reporting = true;
@@ -437,24 +584,28 @@
     });
     document.querySelectorAll('[data-v02-outcome]').forEach((button) => {
       button.addEventListener('click', (event) => {
-        selectedOutcome = button.dataset.v02Outcome;
-        if (selectedOutcome === 'partial' || selectedOutcome === 'interrupted') {
+        const outcome = button.dataset.v02Outcome;
+        selectedOutcome = outcome;
+        if (outcome === 'partial' || outcome === 'interrupted') {
           const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-          writeAnchorDraft(expedition.id, { outcome: selectedOutcome });
+          writeAnchorDraft(expedition.id, { outcome });
           render();
           return;
         }
         run(event.currentTarget, async () => {
           const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-          await Core.reportCurrentExpedition({
-            outcome: selectedOutcome,
+          const result = await Core.reportCurrentExpedition({
+            outcome,
             idempotencyKey: key('report', expedition.id),
           });
           clearAnchorDraft(expedition.id);
           reporting = false;
           selectedOutcome = null;
           selectedReason = null;
-        });
+          return result;
+        }, outcome === 'completed'
+          ? (result) => playCharacterFx(result.goalMilestone ? 'milestone' : 'completed')
+          : null);
       });
     });
     document.getElementById('v02-save-outcome')?.addEventListener('click', (event) => (
@@ -631,6 +782,7 @@
     selectedReason = null;
     tiredShrink = false;
     campMessage = null;
+    characterPanelOpen = false;
     render();
   }
 

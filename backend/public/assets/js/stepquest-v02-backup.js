@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, () => {
   function buildExport(records, now = new Date().toISOString()) {
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       exportedAt: now,
       goals: records.goals || [],
       steps: records.steps || [],
@@ -15,6 +15,15 @@
       rewards: records.rewards || [],
       wallet: records.wallet || { stepCoin: 0, gold: 0 },
       camp: records.camp || { level: 0 },
+      characters: records.characters || [],
+    };
+  }
+
+  function buildFullExport(records, encodedAssets, now = new Date().toISOString()) {
+    return {
+      ...buildExport(records, now),
+      exportType: 'full-with-images',
+      assets: Array.isArray(encodedAssets) ? encodedAssets : [],
     };
   }
 
@@ -56,11 +65,16 @@
     await writable.close();
   }
 
-  function downloadJson(json, documentValue = document, urlApi = URL) {
+  function downloadJson(
+    json,
+    documentValue = document,
+    urlApi = URL,
+    filename = 'stepquest-backup.json',
+  ) {
     const url = urlApi.createObjectURL(new Blob([json], { type: 'application/json;charset=utf-8' }));
     const anchor = documentValue.createElement('a');
     anchor.href = url;
-    anchor.download = 'stepquest-backup.json';
+    anchor.download = filename;
     documentValue.body.append(anchor);
     anchor.click();
     anchor.remove();
@@ -69,6 +83,7 @@
 
   return {
     buildExport,
+    buildFullExport,
     serializeExport,
     requestPersistentStorage,
     chooseExternalFile,
