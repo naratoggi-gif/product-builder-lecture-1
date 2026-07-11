@@ -14,6 +14,7 @@
       events: records.events || [],
       rewards: records.rewards || [],
       wallet: records.wallet || { stepCoin: 0, gold: 0 },
+      camp: records.camp || { level: 0 },
     };
   }
 

@@ -189,6 +189,100 @@ function testReplacementLineageCannotMintStartReward() {
   assert.equal(transition.state.wallet.stepCoin, walletAfterFirstStart, 'two shrink replacements cannot mint start rewards');
 }
 
+function testReplacementLineageCannotMintExtraGold() {
+  let transition = Domain.startStep(makeState(['start']), {
+    stepId: 'step-1',
+    idempotencyKey: 'gold-lineage-start-original',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'partial',
+    anchor: { nextPhysicalAction: 'smaller action' },
+    idempotencyKey: 'gold-lineage-partial-original',
+    now: NOW,
+    idFactory,
+  });
+  assert.equal(transition.state.wallet.gold, 1);
+
+  transition = Domain.resumeStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'gold-lineage-resume-original',
+    now: NOW,
+  });
+  transition = Domain.startStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'gold-lineage-restart-original',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'gold-lineage-not-started-original',
+    now: NOW,
+    idFactory,
+  });
+
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'too_big',
+    route: 'manual_shrink',
+    nextPhysicalAction: 'smaller replacement',
+    reportIdempotencyKey: 'gold-lineage-not-started-original',
+    idempotencyKey: 'gold-lineage-shrink',
+    now: NOW,
+    idFactory,
+  });
+  let replacement = activeStep(transition.state);
+  transition = Domain.startStep(transition.state, {
+    stepId: replacement.id,
+    idempotencyKey: 'gold-lineage-start-replacement',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'gold-lineage-not-started-replacement',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: replacement.id,
+    reason: 'too_big',
+    route: 'manual_shrink',
+    nextPhysicalAction: 'smallest replacement',
+    reportIdempotencyKey: 'gold-lineage-not-started-replacement',
+    idempotencyKey: 'gold-lineage-shrink-again',
+    now: NOW,
+    idFactory,
+  });
+  replacement = activeStep(transition.state);
+  transition = Domain.startStep(transition.state, {
+    stepId: replacement.id,
+    idempotencyKey: 'gold-lineage-start-final-replacement',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'completed',
+    idempotencyKey: 'gold-lineage-complete-final-replacement',
+    now: NOW,
+    idFactory,
+  });
+
+  const goldRows = transition.state.rewards.filter((item) => item.currency === 'gold');
+  assert.equal(transition.state.wallet.gold, 2, 'replacement completion fills only the lineage remainder');
+  assert.deepEqual(goldRows.map((item) => item.amount), [1, 1]);
+  assert.equal(
+    goldRows[1].idempotencyKey,
+    'goal:goal-1:lineage:step-1:gold:1',
+  );
+}
+
 function testOutcomeRules() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
@@ -261,6 +355,86 @@ function testNotStartedRequiresObstacleRouteBeforeRestart() {
   }), /OBSTACLE_ROUTE_REQUIRED/);
 }
 
+function testRetryRouteResolvesMisTapWithoutRewards() {
+  let transition = Domain.startStep(makeState(['start']), {
+    stepId: 'step-1',
+    idempotencyKey: 'retry-start-1',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'retry-report-1',
+    now: NOW,
+    idFactory,
+  });
+  const walletBeforeRetry = { ...transition.state.wallet };
+
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'mis_tap',
+    route: 'retry',
+    reportIdempotencyKey: 'retry-report-1',
+    idempotencyKey: 'retry-route-1',
+    now: NOW,
+    idFactory,
+  });
+  assert.deepEqual(transition.state.wallet, walletBeforeRetry);
+  assert.equal(transition.state.steps[0].status, 'active');
+  assert.equal(
+    transition.state.events.filter((event) => event.type === 'obstacle_reported').length,
+    0,
+  );
+  assert.equal(
+    transition.state.events.find((event) => event.idempotencyKey === 'retry-route-1').resolvesEventKey,
+    'retry-report-1',
+  );
+
+  const replay = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'mis_tap',
+    route: 'retry',
+    reportIdempotencyKey: 'retry-report-1',
+    idempotencyKey: 'retry-route-1',
+    now: NOW,
+    idFactory,
+  });
+  assert.equal(replay.duplicate, true);
+  assert.deepEqual(replay.state.wallet, walletBeforeRetry);
+
+  transition = Domain.startStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'retry-start-2',
+    now: NOW,
+    idFactory,
+  });
+  assert.deepEqual(transition.state.wallet, walletBeforeRetry);
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'retry-report-2',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'mis_tap',
+    route: 'retry',
+    reportIdempotencyKey: 'retry-report-2',
+    idempotencyKey: 'retry-route-2',
+    now: NOW,
+    idFactory,
+  });
+  assert.doesNotThrow(() => Domain.startStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'retry-start-3',
+    now: NOW,
+    idFactory,
+  }));
+  assert.deepEqual(transition.state.wallet, walletBeforeRetry);
+}
+
 function testLegacyObstacleRouteWithoutLinkAllowsRestart() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
@@ -319,6 +493,280 @@ function testDeferCanBeUndeferredWithoutReward() {
   assert.ok(transition.state.events.some((event) => event.type === 'step_undeferred'));
 }
 
+function testBlockedStepCanBeUnblockedWithoutReward() {
+  let transition = Domain.routeObstacle(makeState(['start']), {
+    stepId: 'step-1',
+    reason: 'no_material',
+    route: 'block',
+    blockKind: 'material',
+    blockNote: 'USB cable',
+    idempotencyKey: 'block-material',
+    now: NOW,
+    idFactory,
+  });
+  assert.equal(transition.state.steps[0].status, 'blocked');
+  assert.deepEqual(transition.state.steps[0].blockContext, {
+    kind: 'material',
+    note: 'USB cable',
+    createdAt: NOW,
+  });
+  assert.deepEqual(transition.state.wallet, { stepCoin: 0, gold: 0 });
+
+  const replay = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'no_material',
+    route: 'block',
+    blockKind: 'material',
+    blockNote: 'USB cable',
+    idempotencyKey: 'block-material',
+    now: NOW,
+    idFactory,
+  });
+  assert.equal(replay.duplicate, true);
+
+  transition = Domain.unblockStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'unblock-material',
+    now: NOW,
+  });
+  assert.equal(transition.state.steps[0].status, 'active');
+  assert.equal(transition.state.steps[0].blockContext, undefined);
+  assert.deepEqual(transition.state.wallet, { stepCoin: 0, gold: 0 });
+  assert.ok(transition.state.events.some((event) => event.type === 'step_unblocked'));
+  const unblockReplay = Domain.unblockStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'unblock-material',
+    now: NOW,
+  });
+  assert.equal(unblockReplay.duplicate, true);
+}
+
+function testWaitingStepLifecycleAndBlockValidation() {
+  let transition = Domain.routeObstacle(makeState(['start']), {
+    stepId: 'step-1',
+    reason: 'waiting_person',
+    route: 'block',
+    blockKind: 'person',
+    blockNote: 'designer approval',
+    idempotencyKey: 'block-person',
+    now: NOW,
+    idFactory,
+  });
+  assert.equal(transition.state.steps[0].status, 'waiting');
+  assert.equal(transition.state.steps[0].blockContext.note, 'designer approval');
+  const unblocked = Domain.unblockStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'unblock-person',
+    now: NOW,
+  });
+  assert.equal(unblocked.state.steps[0].status, 'active');
+  assert.equal(Domain.unblockStep(unblocked.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'unblock-person',
+    now: NOW,
+  }).duplicate, true);
+
+  assert.throws(() => Domain.routeObstacle(makeState(['start']), {
+    stepId: 'step-1',
+    reason: 'no_material',
+    route: 'block',
+    blockKind: 'material',
+    blockNote: '  ',
+    idempotencyKey: 'block-empty-note',
+    now: NOW,
+    idFactory,
+  }), /BLOCK_NOTE_REQUIRED/);
+
+  const stateWithAnotherActive = transition.state;
+  stateWithAnotherActive.steps.push({
+    ...stateWithAnotherActive.steps[0],
+    id: 'step-2',
+    status: 'active',
+  });
+  assert.throws(() => Domain.unblockStep(stateWithAnotherActive, {
+    stepId: 'step-1',
+    idempotencyKey: 'unblock-with-active',
+    now: NOW,
+  }), /ANOTHER_STEP_ACTIVE/);
+}
+
+function testBlockRouteResolvesPendingReport() {
+  let transition = Domain.startStep(makeState(['start']), {
+    stepId: 'step-1',
+    idempotencyKey: 'block-resolution-start',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.reportOutcome(transition.state, {
+    expeditionId: transition.result.expeditionId,
+    outcome: 'not_started',
+    idempotencyKey: 'block-resolution-report',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.routeObstacle(transition.state, {
+    stepId: 'step-1',
+    reason: 'no_material',
+    route: 'block',
+    blockKind: 'material',
+    blockNote: 'cable',
+    reportIdempotencyKey: 'block-resolution-report',
+    idempotencyKey: 'block-resolution-route',
+    now: NOW,
+    idFactory,
+  });
+  transition = Domain.unblockStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'block-resolution-unblock',
+    now: NOW,
+  });
+  const restarted = Domain.startStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'block-resolution-restart',
+    now: NOW,
+    idFactory,
+  });
+  assert.equal(restarted.state.steps[0].status, 'started');
+  assert.deepEqual(restarted.state.wallet, { stepCoin: 5, gold: 0 });
+}
+
+function testDeferContextIsClearedOnUndefer() {
+  let transition = Domain.routeObstacle(makeState(['start']), {
+    stepId: 'step-1',
+    reason: 'wrong_place',
+    route: 'defer',
+    deferNote: 'library',
+    idempotencyKey: 'defer-with-context',
+    now: NOW,
+    idFactory,
+  });
+  assert.deepEqual(transition.state.steps[0].deferContext, {
+    note: 'library',
+    createdAt: NOW,
+  });
+  transition = Domain.undeferStep(transition.state, {
+    stepId: 'step-1',
+    idempotencyKey: 'undefer-with-context',
+    now: NOW,
+  });
+  assert.equal(transition.state.steps[0].deferContext, undefined);
+}
+
+function testObstacleRouteMatrixDoesNotChangeWallet() {
+  const cases = [
+    ['too_big', 'manual_shrink', 'replaced', { nextPhysicalAction: 'smaller' }],
+    ['unclear', 'manual_shrink', 'replaced', { nextPhysicalAction: 'first signal' }],
+    ['anxious', 'manual_shrink', 'replaced', { nextPhysicalAction: 'preview' }],
+    ['tired', 'manual_shrink', 'replaced', { nextPhysicalAction: 'lighter' }],
+    ['tired', 'defer', 'deferred', {}],
+    ['no_material', 'block', 'blocked', { blockKind: 'material', blockNote: 'cable' }],
+    ['waiting_person', 'block', 'waiting', { blockKind: 'person', blockNote: 'reply' }],
+    ['wrong_place', 'defer', 'deferred', { deferNote: 'library' }],
+    ['not_now', 'defer', 'deferred', {}],
+    ['mis_tap', 'retry', 'active', {}],
+  ];
+
+  cases.forEach(([reason, route, expectedStatus, extra], index) => {
+    const transition = Domain.routeObstacle(makeState(['start']), {
+      stepId: 'step-1',
+      reason,
+      route,
+      ...extra,
+      idempotencyKey: `route-matrix-${index}`,
+      now: NOW,
+      idFactory,
+    });
+    assert.equal(transition.state.steps[0].status, expectedStatus, `${reason} status`);
+    assert.deepEqual(transition.state.wallet, { stepCoin: 0, gold: 0 }, `${reason} wallet`);
+  });
+}
+
+function stateWithGold(amount) {
+  const state = Domain.createInitialState();
+  state.wallet.gold = amount;
+  state.rewards.push({
+    idempotencyKey: `seed-gold-${amount}`,
+    currency: 'gold',
+    amount,
+    stage: 'test_seed',
+    createdAt: NOW,
+  });
+  return state;
+}
+
+function testCampUpgradeUsesGoldLedgerAndCapsAtFive() {
+  let transition = Domain.upgradeCamp(stateWithGold(2), {
+    idempotencyKey: 'camp-upgrade-1',
+    now: NOW,
+  });
+  assert.equal(transition.state.camp.level, 1);
+  assert.equal(transition.state.wallet.gold, 0);
+  assert.deepEqual(
+    transition.state.rewards.filter((item) => item.stage === 'camp_upgrade'),
+    [{
+      idempotencyKey: 'camp:level:1',
+      currency: 'gold',
+      amount: -2,
+      stage: 'camp_upgrade',
+      createdAt: NOW,
+    }],
+  );
+  assert.equal(
+    transition.state.rewards
+      .filter((item) => item.currency === 'gold')
+      .reduce((sum, item) => sum + item.amount, 0),
+    transition.state.wallet.gold,
+  );
+
+  const replay = Domain.upgradeCamp(transition.state, {
+    idempotencyKey: 'camp-upgrade-1',
+    now: NOW,
+  });
+  assert.equal(replay.duplicate, true);
+  assert.equal(replay.state.wallet.gold, 0);
+  assert.equal(replay.state.camp.level, 1);
+
+  const insufficient = Domain.createInitialState();
+  assert.throws(() => Domain.upgradeCamp(insufficient, {
+    idempotencyKey: 'camp-insufficient',
+    now: NOW,
+  }), /GOLD_INSUFFICIENT/);
+  assert.deepEqual(insufficient.wallet, { stepCoin: 0, gold: 0 });
+  assert.deepEqual(insufficient.camp, { level: 0 });
+
+  const activeExpeditionState = stateWithGold(2);
+  activeExpeditionState.steps.push({ id: 'active-camp-step', status: 'started' });
+  activeExpeditionState.expeditions.push({
+    id: 'active-camp-expedition',
+    stepId: 'active-camp-step',
+    status: 'active',
+  });
+  const activeUpgrade = Domain.upgradeCamp(activeExpeditionState, {
+    idempotencyKey: 'camp-upgrade-during-expedition',
+    now: NOW,
+  });
+  assert.equal(activeUpgrade.state.camp.level, 1);
+  assert.equal(activeUpgrade.state.expeditions[0].status, 'active');
+
+  transition = { state: stateWithGold(20) };
+  const costs = [];
+  for (let level = 1; level <= 5; level += 1) {
+    const before = transition.state.wallet.gold;
+    transition = Domain.upgradeCamp(transition.state, {
+      idempotencyKey: `camp-sequence-${level}`,
+      now: NOW,
+    });
+    costs.push(before - transition.state.wallet.gold);
+    assert.equal(transition.state.camp.level, level);
+  }
+  assert.deepEqual(costs, [2, 3, 4, 5, 6]);
+  assert.equal(transition.state.wallet.gold, 0);
+  assert.throws(() => Domain.upgradeCamp(transition.state, {
+    idempotencyKey: 'camp-level-6',
+    now: NOW,
+  }), /CAMP_MAX_LEVEL_REACHED/);
+}
+
 function testOnlyOneExpeditionCanBeActive() {
   const state = makeState(['start', 'start']);
   state.steps[1].status = 'active';
@@ -340,10 +788,18 @@ function testOnlyOneExpeditionCanBeActive() {
 testEntrySegmentsPayOnce();
 testPartialProgressAndResumeAnchor();
 testReplacementLineageCannotMintStartReward();
+testReplacementLineageCannotMintExtraGold();
 testOutcomeRules();
 testNotStartedRequiresObstacleRouteBeforeRestart();
+testRetryRouteResolvesMisTapWithoutRewards();
 testLegacyObstacleRouteWithoutLinkAllowsRestart();
 testDeferCanBeUndeferredWithoutReward();
+testBlockedStepCanBeUnblockedWithoutReward();
+testWaitingStepLifecycleAndBlockValidation();
+testBlockRouteResolvesPendingReport();
+testDeferContextIsClearedOnUndefer();
+testObstacleRouteMatrixDoesNotChangeWallet();
+testCampUpgradeUsesGoldLedgerAndCapsAtFive();
 testOnlyOneExpeditionCanBeActive();
 
 console.log(JSON.stringify({ ok: true, checked: 'stepquest-v02-domain' }, null, 2));

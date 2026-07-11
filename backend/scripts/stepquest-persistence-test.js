@@ -32,6 +32,7 @@ const safeLogger = fs.readFileSync(path.join(root, 'src/shared/safe-logger.middl
 const stateModule = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.state.ts'), 'utf8');
 const browserApp = fs.readFileSync(path.join(root, 'public/assets/js/app.js'), 'utf8');
 const v02Storage = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-storage.js'), 'utf8');
+const v02Domain = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-domain.js'), 'utf8');
 const v02Ui = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-ui.js'), 'utf8');
 const goalsHtml = fs.readFileSync(path.join(root, 'public/goals.html'), 'utf8');
 const appCss = fs.readFileSync(path.join(root, 'public/assets/css/app.css'), 'utf8');
@@ -460,10 +461,25 @@ assert.ok(
   'v0.2 storage must open the versioned database',
 );
 assert.ok(v02Storage.includes('const DB_VERSION = 2'), 'v0.2 database version must be 2');
+assert.ok(v02Storage.includes('normalizeCamp'), 'v0.2 storage must normalize legacy camp state');
+assert.ok(v02Storage.includes("objectStore('wallet').get('camp')"), 'v0.2 storage must read the camp singleton');
+assert.ok(v02Storage.includes("id: 'camp'"), 'v0.2 storage must write the camp singleton');
 ['completed', 'partial', 'interrupted', 'not_started'].forEach((outcome) => {
   assert.ok(v02Ui.includes(outcome), `return UI must include ${outcome}`);
 });
-['v02-start-step', 'v02-return-report', 'v02-resume-anchor', 'v02-next-action', 'v02-undefer-step']
+['v02-start-step', 'v02-return-report', 'v02-resume-anchor', 'v02-next-action', 'v02-undefer-step', 'v02-retry-step', 'v02-cancel-report']
   .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 UI must include ${id}`));
+['too_big', 'unclear', 'anxious', 'tired', 'no_material', 'waiting_person', 'wrong_place', 'not_now', 'mis_tap']
+  .forEach((reason) => assert.ok(v02Ui.includes(reason), `v0.2 obstacle UI must include ${reason}`));
+['v02-blocked-step', 'v02-waiting-step']
+  .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 parked UI must include ${id}`));
+assert.ok(v02Ui.includes('v02-upgrade-camp'), 'v0.2 UI must expose the affordable camp upgrade');
+assert.ok(appCss.includes('.v02-camp'), 'v0.2 camp visual styles are missing');
+assert.ok(
+  v02Domain.includes('goal:${step.goalId}:lineage:${step.rewardLineage}:gold:${priorGold}'),
+  'v0.2 gold grants must use the reward lineage key',
+);
+assert.ok(v02Domain.includes('unblockStep'), 'v0.2 domain must expose blocked-step recovery');
+assert.ok(v02Domain.includes('CAMP_MAX_LEVEL'), 'v0.2 domain must cap camp progression');
 
 console.log(JSON.stringify({ ok: true, checked: 'stepquest-persistence' }, null, 2));

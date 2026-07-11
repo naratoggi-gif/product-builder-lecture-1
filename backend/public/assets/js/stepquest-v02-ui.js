@@ -2,8 +2,11 @@
   let App;
   let Core;
   let reporting = false;
+  let reportDismissed = false;
   let selectedOutcome = null;
   let selectedReason = null;
+  let tiredShrink = false;
+  let campMessage = null;
 
   const outcomeLabels = {
     completed: '완료',
@@ -12,6 +15,7 @@
     not_started: '시작 못 함',
   };
   const reasons = {
+    waiting_person: '다른 사람의 답을 기다림',
     too_big: '너무 큼',
     no_material: '준비물 없음',
     unclear: '무엇을 할지 모름',
@@ -20,6 +24,15 @@
     not_now: '지금은 아님',
     anxious: '불안·부담',
   };
+  const misTapReason = 'mis_tap';
+  const campLevels = [
+    ['⛺', '빈 야영지'],
+    ['🏕️', '작은 텐트'],
+    ['🔥', '모닥불 캠프'],
+    ['🛖', '정찰 기지'],
+    ['🏡', '환한 쉼터'],
+    ['🏰', '중앙 캠프'],
+  ];
   const h = (value) => App.h(String(value ?? ''));
   const key = (name, id) => `v02:${name}:${id}`;
   const anchorDraftKey = (expeditionId) => `stepquest_v02_anchor_draft_${expeditionId}`;
@@ -69,7 +82,9 @@
     const state = Core.getSnapshot();
     const active = state.steps.find((item) => item.status === 'active');
     const interrupted = state.steps.find((item) => item.status === 'interrupted');
-    const deferred = state.steps.find((item) => item.status === 'deferred');
+    const parked = state.steps
+      .filter((item) => ['deferred', 'blocked', 'waiting'].includes(item.status))
+      .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0];
     const expedition = state.expeditions.find((item) => item.status === 'active');
     const anchor = interrupted
       ? [...state.resumeAnchors]
@@ -99,11 +114,71 @@
       state,
       active,
       interrupted,
-      deferred,
+      parked,
       expedition,
       anchor,
       pendingObstacle: lastNotStarted,
     };
+  }
+
+  function shrinkPanel(reason) {
+    const placeholders = {
+      too_big: '지금 할 수 있는 가장 작은 행동',
+      unclear: '생각 말고 볼 수 있는 첫 신호',
+      anxious: '파일을 열어서 보기만 하기',
+      tired: '지금 가능한 더 가벼운 버전',
+    };
+    return `
+      ${reason === 'anxious' ? '<p id="v02-anxious-helper">결과를 만들지 않아도 됩니다. 보기만 하는 행동도 진행입니다.</p>' : ''}
+      <label>더 작은 행동<input id="v02-smaller-action" placeholder="${h(placeholders[reason])}" autocomplete="off" /></label>
+      <button id="v02-manual-shrink">이걸로 바꾸기</button>
+    `;
+  }
+
+  function obstacleActionPanel() {
+    if (['too_big', 'unclear', 'anxious'].includes(selectedReason)) {
+      return shrinkPanel(selectedReason);
+    }
+    if (selectedReason === 'tired') {
+      if (tiredShrink) return shrinkPanel('tired');
+      return `
+        <div class="primary-actions">
+          <button id="v02-tired-smaller">더 가벼운 버전으로</button>
+          <button id="v02-tired-defer" class="ghost">오늘은 쉬기</button>
+        </div>
+      `;
+    }
+    if (selectedReason === 'no_material') {
+      return `
+        <label>무엇이 필요한가요?<input id="v02-block-note" autocomplete="off" /></label>
+        <button id="v02-block-material">준비되면 다시 하기</button>
+      `;
+    }
+    if (selectedReason === 'waiting_person') {
+      return `
+        <label>누구의 어떤 답을 기다리나요?<input id="v02-block-note" autocomplete="off" /></label>
+        <button id="v02-block-person">답을 기다리는 중</button>
+      `;
+    }
+    if (selectedReason === 'wrong_place') {
+      return `
+        <label>어디에서 할 수 있나요?<input id="v02-defer-note" autocomplete="off" /></label>
+        <button id="v02-defer-place">그 장소에서 다시</button>
+      `;
+    }
+    if (selectedReason === 'not_now') return '<button id="v02-defer">나중에</button>';
+    return '';
+  }
+
+  function campVisual(level) {
+    const [icon, label] = campLevels[level] || campLevels[0];
+    return `
+      <div class="v02-camp-visual" data-camp-level="${level}">
+        <span aria-hidden="true">${icon}</span>
+        <strong>중앙 캠프 Lv.${level}</strong>
+        <small>${label}</small>
+      </div>
+    `;
   }
 
   function storagePanel(status) {
@@ -148,10 +223,14 @@
     const vm = viewModel();
     const status = Core.getStatus();
     const anchorDraft = vm.expedition ? readAnchorDraft(vm.expedition.id) : null;
+    const campLevel = vm.state.camp?.level || 0;
+    const nextCampCost = 2 + campLevel;
+    const canUpgradeCamp = campLevel < 5 && vm.state.wallet.gold >= nextCampCost;
     const wallet = `
       <div id="v02-wallet" class="v02-wallet" aria-label="보유 재화">
         <span>스텝코인 <b>${vm.state.wallet.stepCoin}</b></span>
         <span>골드 <b>${vm.state.wallet.gold}</b></span>
+        <span id="v02-camp-badge" class="v02-camp-badge" data-camp-level="${campLevel}">${campLevels[campLevel][0]} 캠프 Lv.${campLevel}</span>
       </div>
     `;
     let body;
@@ -173,25 +252,21 @@
         <section class="panel v02-obstacle">
           <span class="v02-kicker">멈춘 이유를 탓하지 않습니다</span>
           <h2>지금 무엇이 막고 있나요?</h2>
+          <button id="v02-retry-step" class="ghost">잘못 눌렀어요 → 지금 다시 시작</button>
           <div class="reason-grid">
             ${Object.entries(reasons).map(([value, label]) => (
               `<button class="reason-button" data-v02-reason="${value}">${label}</button>`
             )).join('')}
           </div>
-          ${selectedReason ? `
-            <label>더 작은 손동작<input id="v02-smaller-action" autocomplete="off" /></label>
-            <div class="primary-actions">
-              <button id="v02-manual-shrink">더 작게</button>
-              <button id="v02-defer" class="ghost">나중에</button>
-            </div>
-          ` : ''}
+          ${obstacleActionPanel()}
         </section>
       `;
-    } else if (vm.expedition && (reporting || status.recoveredExpedition)) {
+    } else if (vm.expedition && (reporting || (status.recoveredExpedition && !reportDismissed))) {
       body = `
         <section id="v02-return-report" class="panel v02-runner">
           <span class="v02-kicker">평가가 아니라 다음 위치를 정합니다</span>
           <h2>어떻게 돌아왔나요?</h2>
+          <button id="v02-cancel-report" class="ghost">아직 진행 중이에요 → 돌아가기</button>
           <div class="v02-outcome-grid">
             ${Object.entries(outcomeLabels).map(([value, label]) => (
               `<button data-v02-outcome="${value}">${label}</button>`
@@ -238,13 +313,25 @@
           <button id="v02-start-step">시작</button>
         </section>
       `;
-    } else if (vm.deferred) {
+    } else if (vm.parked) {
+      const panelId = {
+        deferred: 'v02-deferred-step',
+        blocked: 'v02-blocked-step',
+        waiting: 'v02-waiting-step',
+      }[vm.parked.status];
+      const statusText = {
+        deferred: '나중에 하기로 함',
+        blocked: '준비물을 기다리는 중',
+        waiting: '답을 기다리는 중',
+      }[vm.parked.status];
+      const context = vm.parked.blockContext?.note || vm.parked.deferContext?.note;
+      const actionId = vm.parked.status === 'deferred' ? 'v02-undefer-step' : 'v02-unblock-step';
       body = `
-        <section id="v02-deferred-step" class="panel v02-runner">
-          <span class="v02-kicker">보류됨</span>
-          <h2>이 행동은 나중을 위해 남겨두었습니다.</h2>
-          <p>${h(vm.deferred.title)}</p>
-          <button id="v02-undefer-step">다시 꺼내기</button>
+        <section id="${panelId}" class="panel v02-runner">
+          <span class="v02-kicker">${statusText}</span>
+          <h2>${h(vm.parked.title)}</h2>
+          ${context ? `<p>${h(context)}</p>` : ''}
+          <button id="${actionId}">다시 꺼내기</button>
         </section>
       `;
     } else {
@@ -257,7 +344,27 @@
       `;
     }
 
-    rootNode.innerHTML = `${wallet}${body}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
+    const showCamp = Boolean(
+      vm.expedition
+      || vm.parked
+      || !vm.state.goals.length
+      || canUpgradeCamp
+      || campMessage,
+    );
+    const campPanel = showCamp ? `
+      <section class="panel v02-camp">
+        ${campVisual(campLevel)}
+        ${vm.expedition ? '<p>캐릭터가 캠프에서 원정을 준비합니다.</p>' : ''}
+        ${canUpgradeCamp ? `<button id="v02-upgrade-camp" class="ghost">캠프 확장 · 골드 ${nextCampCost}</button>` : ''}
+        ${campMessage ? `
+          <div id="v02-camp-message" class="v02-camp-message" aria-live="polite">
+            <span>${h(campMessage)}</span>
+            <button id="v02-dismiss-camp-message" class="ghost" aria-label="캠프 알림 닫기">닫기</button>
+          </div>
+        ` : ''}
+      </section>
+    ` : '';
+    rootNode.innerHTML = `${wallet}${body}${campPanel}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
     wire();
   }
 
@@ -272,6 +379,19 @@
       button.disabled = false;
       App.toast(error.message, true);
     }
+  }
+
+  async function routeSelectedObstacle(route, extra = {}) {
+    const report = viewModel().pendingObstacle;
+    await Core.routeCurrentObstacle({
+      ...extra,
+      reason: selectedReason,
+      route,
+      reportIdempotencyKey: report.idempotencyKey,
+      idempotencyKey: key(`obstacle:${selectedReason}:${route}`, report.idempotencyKey),
+    });
+    selectedReason = null;
+    tiredShrink = false;
   }
 
   function wire() {
@@ -294,13 +414,25 @@
     ));
     document.getElementById('v02-start-step')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
-        const step = Core.getSnapshot().steps.find((item) => item.status === 'active');
-        await Core.startCurrentStep(key('start', step.id));
+        const state = Core.getSnapshot();
+        const step = state.steps.find((item) => item.status === 'active');
+        const attempt = state.events.filter((item) => (
+          item.type === 'step_started' && item.stepId === step.id
+        )).length;
+        await Core.startCurrentStep(key('start', `${step.id}:${attempt}`));
         reporting = false;
+        reportDismissed = false;
       })
     ));
     document.getElementById('v02-open-report')?.addEventListener('click', () => {
       reporting = true;
+      reportDismissed = false;
+      render();
+    });
+    document.getElementById('v02-cancel-report')?.addEventListener('click', () => {
+      reporting = false;
+      reportDismissed = true;
+      selectedOutcome = null;
       render();
     });
     document.querySelectorAll('[data-v02-outcome]').forEach((button) => {
@@ -363,16 +495,47 @@
     ));
     document.getElementById('v02-undefer-step')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
-        const step = Core.getSnapshot().steps.find((item) => item.status === 'deferred');
-        await Core.undeferCurrentStep(step.id, key('undefer', step.id));
+        const state = Core.getSnapshot();
+        const step = state.steps.find((item) => item.status === 'deferred');
+        const attempt = state.events.filter((item) => (
+          item.type === 'step_undeferred' && item.stepId === step.id
+        )).length;
+        await Core.undeferCurrentStep(step.id, key('undefer', `${step.id}:${attempt}`));
+      })
+    ));
+    document.getElementById('v02-unblock-step')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        const state = Core.getSnapshot();
+        const step = state.steps.find((item) => item.status === 'blocked' || item.status === 'waiting');
+        const attempt = state.events.filter((item) => (
+          item.type === 'step_unblocked' && item.stepId === step.id
+        )).length;
+        await Core.unblockCurrentStep(step.id, key('unblock', `${step.id}:${attempt}`));
       })
     ));
     document.querySelectorAll('[data-v02-reason]').forEach((button) => {
       button.addEventListener('click', () => {
         selectedReason = button.dataset.v02Reason;
+        tiredShrink = false;
         render();
       });
     });
+    document.getElementById('v02-tired-smaller')?.addEventListener('click', () => {
+      tiredShrink = true;
+      render();
+    });
+    document.getElementById('v02-retry-step')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        const report = viewModel().pendingObstacle;
+        await Core.routeCurrentObstacle({
+          reason: misTapReason,
+          route: 'retry',
+          reportIdempotencyKey: report.idempotencyKey,
+          idempotencyKey: key(`obstacle:${misTapReason}:retry`, report.idempotencyKey),
+        });
+        selectedReason = null;
+      })
+    ));
     document.getElementById('v02-manual-shrink')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
         const field = document.getElementById('v02-smaller-action');
@@ -381,31 +544,62 @@
           field.focus();
           return false;
         }
-        const step = Core.getSnapshot().steps.find((item) => item.status === 'active');
-        const report = viewModel().pendingObstacle;
-        await Core.routeCurrentObstacle({
-          reason: selectedReason,
-          route: 'manual_shrink',
-          nextPhysicalAction,
-          reportIdempotencyKey: report.idempotencyKey,
-          idempotencyKey: key(`obstacle:${selectedReason}:manual_shrink`, step.id),
-        });
-        selectedReason = null;
+        await routeSelectedObstacle('manual_shrink', { nextPhysicalAction });
       })
     ));
     document.getElementById('v02-defer')?.addEventListener('click', (event) => (
+      run(event.currentTarget, () => routeSelectedObstacle('defer'))
+    ));
+    document.getElementById('v02-tired-defer')?.addEventListener('click', (event) => (
+      run(event.currentTarget, () => routeSelectedObstacle('defer'))
+    ));
+    document.getElementById('v02-defer-place')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
-        const step = Core.getSnapshot().steps.find((item) => item.status === 'active');
-        const report = viewModel().pendingObstacle;
-        await Core.routeCurrentObstacle({
-          reason: selectedReason,
-          route: 'defer',
-          reportIdempotencyKey: report.idempotencyKey,
-          idempotencyKey: key(`obstacle:${selectedReason}:defer`, step.id),
-        });
-        selectedReason = null;
+        const field = document.getElementById('v02-defer-note');
+        const deferNote = field.value.trim();
+        if (!deferNote) {
+          field.focus();
+          return false;
+        }
+        await routeSelectedObstacle('defer', { deferNote });
+        return true;
       })
     ));
+    document.getElementById('v02-block-material')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        const field = document.getElementById('v02-block-note');
+        const blockNote = field.value.trim();
+        if (!blockNote) {
+          field.focus();
+          return false;
+        }
+        await routeSelectedObstacle('block', { blockKind: 'material', blockNote });
+        return true;
+      })
+    ));
+    document.getElementById('v02-block-person')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        const field = document.getElementById('v02-block-note');
+        const blockNote = field.value.trim();
+        if (!blockNote) {
+          field.focus();
+          return false;
+        }
+        await routeSelectedObstacle('block', { blockKind: 'person', blockNote });
+        return true;
+      })
+    ));
+    document.getElementById('v02-upgrade-camp')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        const level = Core.getSnapshot().camp?.level || 0;
+        await Core.upgradeCamp(key('camp-upgrade', level + 1));
+        campMessage = '캠프가 조금 더 편안해졌습니다.';
+      })
+    ));
+    document.getElementById('v02-dismiss-camp-message')?.addEventListener('click', () => {
+      campMessage = null;
+      render();
+    });
     document.getElementById('v02-import-account')?.addEventListener('click', (event) => (
       run(event.currentTarget, () => Core.importAccountProgress())
     ));
@@ -428,12 +622,15 @@
     Core = options.Core;
     await Core.init({ App });
     reporting = Core.getStatus().recoveredExpedition;
+    reportDismissed = false;
     const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
     const draft = readAnchorDraft(expedition?.id);
     selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
       ? draft.outcome
       : null;
     selectedReason = null;
+    tiredShrink = false;
+    campMessage = null;
     render();
   }
 

@@ -225,6 +225,17 @@
     return transition.result;
   }
 
+  async function unblockCurrentStep(stepId, idempotencyKey) {
+    requireRepository();
+    const transition = await repository.execute('unblockStep', {
+      stepId,
+      idempotencyKey,
+      now: now(),
+    });
+    snapshot = transition.state;
+    return transition.result;
+  }
+
   async function routeCurrentObstacle(command) {
     requireRepository();
     const step = snapshot.steps.find((item) => item.status === 'active');
@@ -234,6 +245,17 @@
       stepId: step.id,
       now: now(),
       idFactory: makeId,
+    });
+    snapshot = transition.state;
+    await afterSignificantCommit();
+    return transition.result;
+  }
+
+  async function upgradeCamp(idempotencyKey) {
+    requireRepository();
+    const transition = await repository.execute('upgradeCamp', {
+      idempotencyKey,
+      now: now(),
     });
     snapshot = transition.state;
     await afterSignificantCommit();
@@ -267,7 +289,9 @@
     reportCurrentExpedition,
     resumeCurrentStep,
     undeferCurrentStep,
+    unblockCurrentStep,
     routeCurrentObstacle,
+    upgradeCamp,
     exportJson,
     enableExternalBackup,
   };

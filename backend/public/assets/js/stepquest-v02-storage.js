@@ -18,7 +18,12 @@
     'wallet',
   ];
   const ALL_STORES = [...STATE_STORES, 'meta', 'backups'];
-  const SIGNIFICANT_OPERATIONS = new Set(['reportOutcome', 'routeObstacle', 'importGoal']);
+  const SIGNIFICANT_OPERATIONS = new Set([
+    'reportOutcome',
+    'routeObstacle',
+    'importGoal',
+    'upgradeCamp',
+  ]);
   const FALLBACK_RECOVERY_META_KEYS = [
     'legacySnapshot',
     'migrationComplete',
@@ -126,6 +131,13 @@
     };
   }
 
+  function normalizeCamp(value) {
+    const level = Number(value?.level);
+    return {
+      level: Number.isFinite(level) ? Math.max(0, Math.min(5, Math.trunc(level))) : 0,
+    };
+  }
+
   function hasDomainState(state) {
     return Boolean(
       state.goals?.length
@@ -135,7 +147,8 @@
       || state.events?.length
       || state.rewards?.length
       || Number(state.wallet?.stepCoin || 0)
-      || Number(state.wallet?.gold || 0),
+      || Number(state.wallet?.gold || 0)
+      || Number(state.camp?.level || 0),
     );
   }
 
@@ -206,6 +219,7 @@
       events: [],
       rewards: [],
       wallet: normalizeWallet(records.wallet),
+      camp: normalizeCamp(records.camp),
     };
     Object.keys(validators).forEach((storeName) => {
       (records[storeName] || []).forEach((value) => {
@@ -225,6 +239,7 @@
       events: requestResult(transaction.objectStore('events').getAll()),
       rewards: requestResult(transaction.objectStore('rewards').getAll()),
       wallet: requestResult(transaction.objectStore('wallet').get('main')),
+      camp: requestResult(transaction.objectStore('wallet').get('camp')),
     };
     const values = await Promise.all(Object.values(requests));
     return Object.keys(requests).reduce((result, key, index) => {
@@ -242,6 +257,7 @@
     state.events.forEach((value) => transaction.objectStore('events').put(clone(value)));
     state.rewards.forEach((value) => transaction.objectStore('rewards').put(clone(value)));
     transaction.objectStore('wallet').put({ id: 'main', ...normalizeWallet(state.wallet) });
+    transaction.objectStore('wallet').put({ id: 'camp', ...normalizeCamp(state.camp) });
   }
 
   function replaceState(transaction, state) {
