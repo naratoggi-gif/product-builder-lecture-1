@@ -65,6 +65,18 @@ Design source: `docs/superpowers/specs/2026-07-10-stepquest-v02-core-loop-design
 
 Verification: `npm run build`, `npm run test:domain`, `npm run audit:ci`, and `npm run test:e2e` from `backend/`.
 
+## Core-loop Validation Gate
+
+Do not select or build the next feature slice until the current loop has been used personally for one to two weeks with the phone-installed PWA, an authorized automatic backup file, and one real goal.
+
+Record whether the user actually starts after opening the app, returns to submit the expedition report, and finds the Resume Anchor sufficient to restart. Count the four return outcomes. Frequent `not_started` reports prioritize obstacle-router expansion; frequent partial-progress reports prioritize focus modes. Choose the next feature from observed friction rather than from the deferred roadmap.
+
+## Immediate Follow-up Slice
+
+- [ ] Key gold grants by inherited `rewardLineage` instead of replacement step ID, with a regression test proving repeated manual shrink cannot mint additional gold.
+- [ ] Add a `잘못 눌렀어요` action to cancel an accidental `not_started` return report without forcing the user through reason, defer, and undefer steps.
+- [ ] Disconnect the obsolete Cloudflare Workers Builds integration from this repository while retaining Cloudflare Pages as the deployment check.
+
 ## Deferred Roadmap
 
 - Action size adaptation and 5/10/25-minute focus modes.
