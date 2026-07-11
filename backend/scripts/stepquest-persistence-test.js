@@ -466,9 +466,14 @@ assert.ok(v02Storage.includes('const DB_VERSION = 2'), 'v0.2 database version mu
 });
 ['v02-start-step', 'v02-return-report', 'v02-resume-anchor', 'v02-next-action', 'v02-undefer-step', 'v02-retry-step', 'v02-cancel-report']
   .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 UI must include ${id}`));
+['too_big', 'unclear', 'anxious', 'tired', 'no_material', 'waiting_person', 'wrong_place', 'not_now', 'mis_tap']
+  .forEach((reason) => assert.ok(v02Ui.includes(reason), `v0.2 obstacle UI must include ${reason}`));
+['v02-blocked-step', 'v02-waiting-step']
+  .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 parked UI must include ${id}`));
 assert.ok(
   v02Domain.includes('goal:${step.goalId}:lineage:${step.rewardLineage}:gold:${priorGold}'),
   'v0.2 gold grants must use the reward lineage key',
 );
+assert.ok(v02Domain.includes('unblockStep'), 'v0.2 domain must expose blocked-step recovery');
 
 console.log(JSON.stringify({ ok: true, checked: 'stepquest-persistence' }, null, 2));

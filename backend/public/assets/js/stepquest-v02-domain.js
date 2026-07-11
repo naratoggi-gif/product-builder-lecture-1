@@ -6,7 +6,7 @@
   const ENTRY_PHASES = new Set(['orient', 'prepare', 'open']);
   const WORK_PHASES = new Set(['start', 'continue', 'close']);
   const OUTCOMES = new Set(['completed', 'partial', 'interrupted', 'not_started']);
-  const OBSTACLE_ROUTES = new Set(['manual_shrink', 'defer', 'retry']);
+  const OBSTACLE_ROUTES = new Set(['manual_shrink', 'defer', 'retry', 'block']);
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -350,10 +350,38 @@
       throw domainError('ANOTHER_STEP_ACTIVE');
     }
     step.status = 'active';
+    delete step.deferContext;
     step.updatedAt = command.now;
     return recordEvent(state, {
       idempotencyKey: command.idempotencyKey,
       type: 'step_undeferred',
+      stepId: step.id,
+      createdAt: command.now,
+      result: { stepId: step.id },
+    });
+  }
+
+  function unblockStep(source, command) {
+    const repeated = replay(source, command.idempotencyKey);
+    if (repeated) return repeated;
+    const state = clone(source);
+    const step = state.steps.find(
+      (item) => item.id === command.stepId
+        && (item.status === 'blocked' || item.status === 'waiting'),
+    );
+    if (!step) throw domainError('STEP_NOT_BLOCKED');
+    if (
+      state.steps.some((item) => item.status === 'active' || item.status === 'started')
+      || state.expeditions.some((item) => item.status === 'active')
+    ) {
+      throw domainError('ANOTHER_STEP_ACTIVE');
+    }
+    step.status = 'active';
+    delete step.blockContext;
+    step.updatedAt = command.now;
+    return recordEvent(state, {
+      idempotencyKey: command.idempotencyKey,
+      type: 'step_unblocked',
       stepId: step.id,
       createdAt: command.now,
       result: { stepId: step.id },
@@ -388,6 +416,16 @@
       title = String(command.nextPhysicalAction || '').trim();
       if (!title) throw domainError('NEXT_PHYSICAL_ACTION_REQUIRED');
     }
+    let blockKind = null;
+    let blockNote = null;
+    if (command.route === 'block') {
+      blockKind = String(command.blockKind || '').trim();
+      if (blockKind !== 'material' && blockKind !== 'person') {
+        throw domainError('BLOCK_KIND_INVALID');
+      }
+      blockNote = String(command.blockNote || '').trim();
+      if (!blockNote) throw domainError('BLOCK_NOTE_REQUIRED');
+    }
 
     if (command.route !== 'retry') {
       state.events.push({
@@ -403,6 +441,13 @@
     let replacementStepId = null;
     if (command.route === 'defer') {
       step.status = 'deferred';
+      const deferNote = String(command.deferNote || '').trim();
+      if (deferNote) step.deferContext = { note: deferNote, createdAt: command.now };
+      else delete step.deferContext;
+      step.updatedAt = command.now;
+    } else if (command.route === 'block') {
+      step.status = blockKind === 'material' ? 'blocked' : 'waiting';
+      step.blockContext = { kind: blockKind, note: blockNote, createdAt: command.now };
       step.updatedAt = command.now;
     } else if (command.route === 'manual_shrink') {
       const originalIndex = step.orderIndex;
@@ -533,6 +578,7 @@
     saveResumeAnchor,
     resumeStep,
     undeferStep,
+    unblockStep,
     routeObstacle,
     exportableState,
   };

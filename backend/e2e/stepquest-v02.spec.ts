@@ -164,6 +164,64 @@ test('return report can go back before committing', async ({ page }) => {
   await expect(page.locator('#v02-return-report')).toBeVisible();
 });
 
+test('missing material parks the step with context and restores it', async ({ page }) => {
+  await resetV02(page);
+  await createAndStart(page, 'Prepare a cable');
+  const wallet = await page.locator('#v02-wallet').innerText();
+  await page.reload();
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await page.locator('[data-v02-reason="no_material"]').click();
+  await page.locator('#v02-block-note').fill('USB cable');
+  await page.locator('#v02-block-material').click();
+  await expect(page.locator('#v02-blocked-step')).toContainText('USB cable');
+  await page.reload();
+  await expect(page.locator('#v02-blocked-step')).toContainText('USB cable');
+  await expect(page.locator('#v02-wallet')).toHaveText(wallet);
+  await page.locator('#v02-unblock-step').click();
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+  await expect(page.locator('#v02-wallet')).toHaveText(wallet);
+});
+
+test('waiting for a person persists the response context', async ({ page }) => {
+  await resetV02(page);
+  await createAndStart(page, 'Wait for review');
+  await page.reload();
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await page.locator('[data-v02-reason="waiting_person"]').click();
+  await page.locator('#v02-block-note').fill('designer approval');
+  await page.locator('#v02-block-person').click();
+  await expect(page.locator('#v02-waiting-step')).toContainText('designer approval');
+  await page.reload();
+  await expect(page.locator('#v02-waiting-step')).toContainText('designer approval');
+});
+
+test('tired route can defer and return in one tap', async ({ page }) => {
+  await resetV02(page);
+  await createAndStart(page, 'Tired route');
+  await page.reload();
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await page.locator('[data-v02-reason="tired"]').click();
+  await expect(page.locator('#v02-tired-smaller')).toBeVisible();
+  await page.locator('#v02-tired-defer').click();
+  await expect(page.locator('#v02-deferred-step')).toBeVisible();
+  await page.locator('#v02-undefer-step').click();
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+});
+
+test('anxious route offers a preview-sized replacement', async ({ page }) => {
+  await resetV02(page);
+  await createAndStart(page, 'Preview route');
+  const wallet = await page.locator('#v02-wallet').innerText();
+  await page.reload();
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await page.locator('[data-v02-reason="anxious"]').click();
+  await expect(page.locator('#v02-anxious-helper')).toBeVisible();
+  await page.locator('#v02-smaller-action').fill('Open the file preview');
+  await page.locator('#v02-manual-shrink').click();
+  await expect(page.locator('[data-v02-current-step]')).toHaveText('Open the file preview');
+  await expect(page.locator('#v02-wallet')).toHaveText(wallet);
+});
+
 test('legacy direct-retry history reopens its active return report', async ({ page }) => {
   await resetV02(page);
   await createAndStart(page, 'Legacy retry compatibility');

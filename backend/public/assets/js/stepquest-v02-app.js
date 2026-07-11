@@ -225,6 +225,17 @@
     return transition.result;
   }
 
+  async function unblockCurrentStep(stepId, idempotencyKey) {
+    requireRepository();
+    const transition = await repository.execute('unblockStep', {
+      stepId,
+      idempotencyKey,
+      now: now(),
+    });
+    snapshot = transition.state;
+    return transition.result;
+  }
+
   async function routeCurrentObstacle(command) {
     requireRepository();
     const step = snapshot.steps.find((item) => item.status === 'active');
@@ -267,6 +278,7 @@
     reportCurrentExpedition,
     resumeCurrentStep,
     undeferCurrentStep,
+    unblockCurrentStep,
     routeCurrentObstacle,
     exportJson,
     enableExternalBackup,
