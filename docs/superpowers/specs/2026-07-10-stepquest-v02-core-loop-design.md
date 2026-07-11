@@ -38,6 +38,7 @@ The v0.2 planning document dated 2026-07-10 is authoritative for product behavio
 - The complete obstacle router beyond the handoff from “not started.”
 - Goal-type-specific recurrence and the seven-day carry-over review.
 - Additional costumes, buildings, professions, variable rewards, AI decomposition, cloud synchronization, Tauri, and push notifications.
+- Derive the PWA shell cache build key from the commit SHA or app version at build time so HTML asset URLs, service-worker precache URLs, and the cache name cannot drift.
 
 Deferred features remain part of the v0.2 roadmap. They are not brought forward while the start-and-return hypothesis is unproven.
 
