@@ -1435,3 +1435,167 @@ input, select {
     transition-duration: .001ms !important;
   }
 }
+
+.v02-mode .hero,
+.v02-mode .nav-list {
+  display: none;
+}
+
+.v02-runner,
+.v02-expedition,
+.v02-anchor,
+.v02-obstacle,
+.v02-storage-warning,
+.v02-storage-status {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.v02-wallet,
+.v02-outcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto 16px;
+}
+
+.v02-wallet span {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, .04);
+  color: var(--muted);
+}
+
+.v02-wallet b {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font: 700 26px 'Rajdhani', sans-serif;
+}
+
+.v02-runner,
+.v02-anchor,
+.v02-obstacle {
+  display: grid;
+  gap: 16px;
+}
+
+.v02-runner h2,
+.v02-expedition h2,
+.v02-anchor h2,
+.v02-obstacle h2 {
+  margin: 0;
+  font-size: clamp(30px, 6vw, 52px);
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.v02-runner p,
+.v02-expedition p,
+.v02-anchor p,
+.v02-obstacle p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.v02-kicker {
+  color: var(--accent-2);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.v02-expedition {
+  min-height: 360px;
+  display: grid;
+  gap: 18px;
+  align-content: center;
+  text-align: center;
+}
+
+.v02-expedition button,
+.v02-runner > button,
+.v02-anchor > button,
+.v02-obstacle > button {
+  min-height: 54px;
+}
+
+.v02-anchor label,
+.v02-obstacle label,
+.v02-goal-label {
+  display: grid;
+  gap: 8px;
+  margin-block: 4px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.v02-anchor input,
+.v02-anchor textarea,
+.v02-obstacle input,
+.v02-goal-label input {
+  width: 100%;
+}
+
+.v02-anchor textarea {
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid #59645a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: rgba(14, 17, 16, .9);
+  font: inherit;
+}
+
+.v02-outcome-grid button,
+.v02-obstacle .reason-button {
+  min-height: 54px;
+}
+
+.v02-obstacle .reason-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.v02-storage-warning {
+  border-color: #a88445;
+}
+
+.v02-storage-warning p,
+.v02-storage-status small {
+  color: var(--muted);
+}
+
+.v02-storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+#v02-live {
+  width: 100%;
+  max-width: 760px;
+  min-height: 1px;
+  margin-inline: auto;
+}
+
+@media (max-width: 720px) {
+  .v02-wallet,
+  .v02-outcome-grid,
+  .v02-obstacle .reason-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .v02-mode button {
+    min-height: 44px;
+  }
+
+  .v02-expedition {
+    min-height: 280px;
+  }
+}

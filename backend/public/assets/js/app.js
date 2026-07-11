@@ -760,7 +760,12 @@
   }
 
   function saveGuest(guest) {
+    if (localStorage.getItem('stepquest_v02_active') === '1') {
+      window.dispatchEvent(new CustomEvent('stepquest:v02-legacy-write-blocked'));
+      return false;
+    }
     localStorage.setItem(guestStorageKey, JSON.stringify(guest));
+    return true;
   }
 
   function hasGuestProgress(guest) {
@@ -782,6 +787,9 @@
   }
 
   async function maybeImportGuestProgress() {
+    if (localStorage.getItem('stepquest_v02_active') === '1') {
+      return { status: 'v02_local_primary' };
+    }
     if (!state.token) return null;
     const guest = loadGuest();
     if (!hasGuestProgress(guest) || guest.migratedAt) return null;
@@ -2191,6 +2199,8 @@
     shrinkReasonInfo,
     costumeInfo,
     basicCostumes,
+    makeGuestGoal,
+    __testSaveGuest: saveGuest,
   };
   trackProductEvent('app_opened');
 })();
