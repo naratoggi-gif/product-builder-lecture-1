@@ -22,6 +22,7 @@
 - Reduced motion means technique cut-in plus one 120ms flash at intensity 0.3, whether requested by media query or the in-app setting.
 - Fixed cache build for this slice is `v02-core-4` across HTML, service worker, and assertions.
 - Use Korean, non-blaming copy and escape all character-provided text through `App.h()`.
+- Run every Node/npm/Playwright command below from `backend`; run every Git command from the worktree root.
 
 ---
 
@@ -41,6 +42,7 @@
 - Produces `StepQuestV02FX.buildPlan(preset, mode, reducedMotion)` and later `play(options)`/`cancel()`.
 - Extends `StepQuestV02Backup.buildExport(records, now)` with `schemaVersion: 3` and `characters` metadata.
 - Produces `StepQuestV02Backup.buildFullExport(records, encodedAssets, now)` for explicit manual image export.
+- Task 3 later extends `StepQuestV02Backup.downloadJson(json, documentValue, urlApi, filename)`; Task 1 leaves the current three-argument behavior unchanged.
 
 - [ ] **Step 1: Write failing character contract tests**
 
@@ -184,8 +186,18 @@ expect(await page.evaluate(async () => {
     version: db.version,
     stores: [...db.objectStoreNames],
     goal: await requestValue(db.transaction('goals').objectStore('goals').get('goal-v2')),
+    step: await requestValue(db.transaction('steps').objectStore('steps').get('step-v2')),
+    wallet: await requestValue(db.transaction('wallet').objectStore('wallet').get('main')),
+    backups: await requestValue(db.transaction('backups').objectStore('backups').getAll()),
   };
-})).toMatchObject({ version: 3, stores: expect.arrayContaining(['characters', 'assets']), goal: { id: 'goal-v2' } });
+})).toMatchObject({
+  version: 3,
+  stores: expect.arrayContaining(['characters', 'assets']),
+  goal: { id: 'goal-v2' },
+  step: { id: 'step-v2', goalId: 'goal-v2' },
+  wallet: { id: 'main', stepCoin: 9, gold: 2 },
+  backups: [{ id: 'backup-v2' }],
+});
 ```
 
 - [ ] **Step 2: Run focused tests and observe RED**
@@ -274,6 +286,7 @@ git commit -m "Persist local Slice 5 character assets"
 
 **Files:**
 - Modify: `backend/public/assets/js/stepquest-v02-character.js`
+- Modify: `backend/public/assets/js/stepquest-v02-backup.js`
 - Modify: `backend/public/assets/js/stepquest-v02-ui.js`
 - Modify: `backend/public/assets/css/app.css`
 - Modify: `backend/src/main.ts`
@@ -326,7 +339,7 @@ When `Core.getStatus().mode === 'localStorage'`, render the CSS default characte
 
 - [ ] **Step 5: Add manual full-export wiring**
 
-The button must call `Core.exportFullJson()` and `StepQuestV02Backup.downloadJson(json, document, URL, 'stepquest-full-backup-with-images.json')`. Keep `#v02-export` and automatic backup on `Core.exportJson()`.
+Extend `downloadJson` with an optional fourth `filename = 'stepquest-backup.json'` argument. The button must call `Core.exportFullJson()` and `StepQuestV02Backup.downloadJson(json, document, URL, 'stepquest-full-backup-with-images.json')`. Keep `#v02-export` and automatic backup on `Core.exportJson()`.
 
 - [ ] **Step 6: Permit only Blob images in CSP and verify no upload path exists**
 
@@ -353,7 +366,7 @@ Expected: import, reload, replacement, ordinary export exclusion, manual full ex
 - [ ] **Step 8: Commit the character UI**
 
 ```powershell
-git add backend/public/assets/js/stepquest-v02-character.js backend/public/assets/js/stepquest-v02-ui.js backend/public/assets/css/app.css backend/src/main.ts backend/scripts/stepquest-persistence-test.js backend/e2e/stepquest-v02.spec.ts backend/e2e/stepquest-v02-storage.spec.ts
+git add backend/public/assets/js/stepquest-v02-character.js backend/public/assets/js/stepquest-v02-backup.js backend/public/assets/js/stepquest-v02-ui.js backend/public/assets/css/app.css backend/src/main.ts backend/scripts/stepquest-persistence-test.js backend/e2e/stepquest-v02.spec.ts backend/e2e/stepquest-v02-storage.spec.ts
 git commit -m "Add local character import and stage"
 ```
 
@@ -386,6 +399,8 @@ await page.click('[data-v02-fx-skip]');
 await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
 ```
 
+Start a second preview, click a non-button point on `[data-v02-fx-overlay]`, and assert it is removed while the underlying StepQuest control receives no click. Repeat cancellation with Escape, Enter, and Space.
+
 Complete a non-final step and expect one `completed` overlay; complete a final step and expect one `milestone` overlay with a cut-in. Report partial, not-started, and interrupted in separate fixtures and assert no overlay is created. Emulate reduced motion and assert only `cutin` and `flash` step markers exist with `data-v02-fx-duration="120"`.
 
 - [ ] **Step 2: Run focused FX tests and observe RED**
@@ -406,7 +421,7 @@ Create one overlay per play. Keep all created nodes and `Animation` objects in a
 
 - [ ] **Step 4: Implement input-safe cancellation and reduced motion**
 
-The overlay must contain `<button type="button" data-v02-fx-skip>연출 건너뛰기</button>`, cover the stage, and stop pointer propagation. Add a temporary document key handler for Escape/Enter/Space and remove it in cleanup. Reduced mode must call only `cutin()` plus `flash(0.3, 120)` and skip every transform/shake/afterimage/bolt/arc/ring helper.
+The overlay must contain `<button type="button" data-v02-fx-skip>연출 건너뛰기</button>`, cover the stage, stop pointer propagation, and call `cancel()` when the overlay itself is tapped. Add a temporary document key handler for Escape/Enter/Space and remove it in cleanup. Reduced mode must call only `cutin()` plus `flash(0.3, 120)` and skip every transform/shake/afterimage/bolt/arc/ring helper.
 
 - [ ] **Step 5: Trigger effects only after committed state renders**
 
@@ -421,7 +436,7 @@ else {
 }
 ```
 
-Departure uses the selected preset with mode `departure`. A `completed` report uses `result.goalMilestone ? 'milestone' : 'completed'`. Every other outcome omits the callback. `play()` is never awaited by the command path.
+The start action must `return Core.startCurrentStep(...)`; completed report actions must `return Core.reportCurrentExpedition(...)`, and both call `run(button, action, afterRender)`. Departure uses the selected preset with mode `departure`. A `completed` report uses `result.goalMilestone ? 'milestone' : 'completed'`. Every other outcome omits the callback. `play()` is never awaited by the command path.
 
 - [ ] **Step 6: Run focused and full v0.2 browser tests for GREEN**
 
