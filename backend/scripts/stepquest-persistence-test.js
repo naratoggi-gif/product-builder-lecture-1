@@ -472,7 +472,21 @@ assert.ok(
   v02Storage.includes('indexedDB.open(DB_NAME, DB_VERSION)'),
   'v0.2 storage must open the versioned database',
 );
-assert.ok(v02Storage.includes('const DB_VERSION = 2'), 'v0.2 database version must be 2');
+assert.ok(v02Storage.includes('const DB_VERSION = 3'), 'v0.2 database version must be 3');
+assert.ok(
+  v02Storage.includes("createStore(database, 'characters', { keyPath: 'id' })"),
+  'v0.2 database must add the character metadata store',
+);
+assert.ok(
+  v02Storage.includes("createStore(database, 'assets', { keyPath: 'id' })"),
+  'v0.2 database must add the Blob asset store',
+);
+['getCharacter', 'getCharacterBlob', 'saveCharacter', 'exportCharacterAssets']
+  .forEach((name) => assert.ok(v02Storage.includes(name), `v0.2 storage must expose ${name}`));
+assert.ok(
+  v02Storage.includes('characters: [clone(metadata)]'),
+  'rolling snapshots must include character metadata without image bytes',
+);
 assert.ok(v02Storage.includes('normalizeCamp'), 'v0.2 storage must normalize legacy camp state');
 assert.ok(v02Storage.includes("objectStore('wallet').get('camp')"), 'v0.2 storage must read the camp singleton');
 assert.ok(v02Storage.includes("id: 'camp'"), 'v0.2 storage must write the camp singleton');

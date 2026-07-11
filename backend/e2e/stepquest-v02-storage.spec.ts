@@ -11,6 +11,135 @@ async function clearBrowserState(page) {
   });
 }
 
+test('upgrades v2 character stores without changing existing records', async ({ page }) => {
+  await clearBrowserState(page);
+  await page.evaluate(async ({ now }) => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase('stepquest');
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('DELETE_BLOCKED'));
+    });
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 2);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        database.createObjectStore('meta', { keyPath: 'key' });
+        database.createObjectStore('goals', { keyPath: 'id' });
+        database.createObjectStore('steps', { keyPath: 'id' });
+        database.createObjectStore('expeditions', { keyPath: 'id' });
+        database.createObjectStore('resumeAnchors', { keyPath: 'id' });
+        database.createObjectStore('events', { keyPath: 'idempotencyKey' });
+        database.createObjectStore('rewards', { keyPath: 'idempotencyKey' });
+        database.createObjectStore('wallet', { keyPath: 'id' });
+        database.createObjectStore('backups', { keyPath: 'id' });
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(['goals', 'steps', 'wallet', 'backups'], 'readwrite');
+        transaction.objectStore('goals').put({
+          id: 'goal-v2', title: 'v2 목표', status: 'active', createdAt: now, updatedAt: now,
+        });
+        transaction.objectStore('steps').put({
+          id: 'step-v2',
+          goalId: 'goal-v2',
+          title: 'v2 행동',
+          nextPhysicalAction: 'v2 행동',
+          phase: 'start',
+          rewardLineage: 'step-v2',
+          status: 'active',
+          orderIndex: 0,
+          createdAt: now,
+          updatedAt: now,
+        });
+        transaction.objectStore('wallet').put({ id: 'main', stepCoin: 9, gold: 2 });
+        transaction.objectStore('backups').put({ id: 'backup-v2', createdAt: now, snapshot: {} });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }, { now: NOW });
+
+  await page.reload();
+  const result = await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('stepquest');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction(['goals', 'steps', 'wallet', 'backups'], 'readonly');
+    const requestValue = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const [goal, step, wallet, backups] = await Promise.all([
+      requestValue(transaction.objectStore('goals').get('goal-v2')),
+      requestValue(transaction.objectStore('steps').get('step-v2')),
+      requestValue(transaction.objectStore('wallet').get('main')),
+      requestValue(transaction.objectStore('backups').getAll()),
+    ]);
+    const value = {
+      version: database.version,
+      stores: [...database.objectStoreNames],
+      goal,
+      step,
+      wallet,
+      backups,
+    };
+    database.close();
+    return value;
+  });
+
+  expect(result.version).toBe(3);
+  expect(result.stores).toEqual(expect.arrayContaining(['characters', 'assets']));
+  expect(result.goal).toMatchObject({ id: 'goal-v2', title: 'v2 목표' });
+  expect(result.step).toMatchObject({ id: 'step-v2', goalId: 'goal-v2' });
+  expect(result.wallet).toEqual({ id: 'main', stepCoin: 9, gold: 2 });
+  expect(result.backups).toEqual([expect.objectContaining({ id: 'backup-v2' })]);
+});
+
+test('persists local character blobs outside ordinary exports', async ({ page }) => {
+  await clearBrowserState(page);
+  const result = await page.evaluate(async ({ now }) => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const metadata = {
+      id: 'local-primary',
+      name: '로컬 영웅',
+      imageBlobKey: 'character:local-primary:image',
+      skillPreset: 'slash',
+      skillName: '첫 베기',
+      accentColor: '#65d9ff',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await repository.saveCharacter(metadata, new Blob(['local-image'], { type: 'image/png' }));
+    const saved = await repository.getCharacter();
+    const blob = await repository.getCharacterBlob(metadata.imageBlobKey);
+    const ordinary = await repository.exportRecords();
+    const fullRecords = await repository.exportCharacterAssets();
+    return {
+      saved,
+      blobText: await blob.text(),
+      ordinaryCharacters: ordinary.characters,
+      ordinaryHasAssets: Object.prototype.hasOwnProperty.call(ordinary, 'assets'),
+      rollingCharacters: ordinary.backups[0]?.snapshot?.characters,
+      fullCharacterCount: fullRecords.characters.length,
+      fullAssetCount: fullRecords.assets.length,
+      fullAssetSize: fullRecords.assets[0]?.blob?.size,
+    };
+  }, { now: NOW });
+
+  expect(result.saved).toMatchObject({ id: 'local-primary', name: '로컬 영웅' });
+  expect(result.blobText).toBe('local-image');
+  expect(result.ordinaryCharacters).toEqual([expect.objectContaining({ id: 'local-primary' })]);
+  expect(result.ordinaryHasAssets).toBe(false);
+  expect(result.rollingCharacters).toEqual([expect.objectContaining({ id: 'local-primary' })]);
+  expect(result.fullCharacterCount).toBe(1);
+  expect(result.fullAssetCount).toBe(1);
+  expect(result.fullAssetSize).toBe(11);
+});
+
 test('migrates legacy state once and blocks legacy rewrites', async ({ page }) => {
   await clearBrowserState(page);
   const legacy = {
@@ -118,10 +247,27 @@ test('falls back to localStorage when IndexedDB cannot open', async ({ page }) =
       now,
       idFactory: (prefix) => `${prefix}-30`,
     });
-    return { mode: repository.mode, snapshot: await repository.getSnapshot() };
+    let saveError = null;
+    try {
+      await repository.saveCharacter({ id: 'local-primary' }, new Blob(['x']));
+    } catch (error) {
+      saveError = error.message;
+    }
+    return {
+      mode: repository.mode,
+      snapshot: await repository.getSnapshot(),
+      character: await repository.getCharacter(),
+      characterBlob: await repository.getCharacterBlob('missing'),
+      characterRecords: await repository.exportCharacterAssets(),
+      saveError,
+    };
   }, { now: NOW });
   expect(beforeReload.mode).toBe('localStorage');
   expect(beforeReload.snapshot.goals[0].title).toBe('대체 저장 테스트');
+  expect(beforeReload.character).toBeNull();
+  expect(beforeReload.characterBlob).toBeNull();
+  expect(beforeReload.characterRecords).toEqual({ characters: [], assets: [] });
+  expect(beforeReload.saveError).toBe('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
 
   await page.reload();
   const afterReload = await page.evaluate(async () => {
@@ -140,7 +286,7 @@ test('quarantines malformed records and keeps readable state', async ({ page }) 
     await repository.getSnapshot();
 
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('stepquest', 2);
+      const request = indexedDB.open('stepquest', 3);
       request.onsuccess = () => {
         const database = request.result;
         const transaction = database.transaction('steps', 'readwrite');

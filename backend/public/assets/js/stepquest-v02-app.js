@@ -2,6 +2,8 @@
   let repository = null;
   let snapshot = null;
   let app = null;
+  let characterImageUrl = null;
+  let character = null;
   let legacyWriteBlockPending = false;
   let legacyWriteBlockRecorded = false;
   const status = {
@@ -14,15 +16,58 @@
     migrationError: null,
     lastExternalBackupAt: null,
     quarantinedRecords: 0,
+    characterStorageSupported: false,
+    characterImageMissing: false,
   };
 
   const now = () => new Date().toISOString();
   const makeId = (prefix) => (
     `${prefix}-${root.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`
   );
+  const builtInCharacter = () => ({
+    id: 'builtin-default',
+    name: '나의 모험가',
+    imageBlobKey: null,
+    imageUrl: null,
+    skillPreset: 'impact',
+    skillName: '첫걸음',
+    accentColor: '#65d9ff',
+    usingDefault: true,
+    missingImage: false,
+  });
 
   function requireRepository() {
     if (!repository || !snapshot || !app) throw new Error('STEPQUEST_V02_NOT_INITIALIZED');
+  }
+
+  function releaseCharacterImageUrl() {
+    if (characterImageUrl && root.URL?.revokeObjectURL) root.URL.revokeObjectURL(characterImageUrl);
+    characterImageUrl = null;
+  }
+
+  async function refreshCharacter() {
+    releaseCharacterImageUrl();
+    const metadata = await repository.getCharacter();
+    if (!metadata) {
+      character = builtInCharacter();
+      status.characterImageMissing = false;
+      return character;
+    }
+    const blob = await repository.getCharacterBlob(metadata.imageBlobKey);
+    if (!blob || !root.URL?.createObjectURL) {
+      character = { ...builtInCharacter(), missingImage: true };
+      status.characterImageMissing = true;
+      return character;
+    }
+    characterImageUrl = root.URL.createObjectURL(blob);
+    character = {
+      ...metadata,
+      imageUrl: characterImageUrl,
+      usingDefault: false,
+      missingImage: false,
+    };
+    status.characterImageMissing = false;
+    return character;
   }
 
   async function recordLegacyWriteBlock() {
@@ -75,6 +120,7 @@
     }
 
     status.mode = repository.mode;
+    status.characterStorageSupported = repository.mode === 'indexedDB';
     status.lastExternalBackupAt = await repository.getMeta('lastExternalBackupAt') || null;
     status.externalBackupStale = Boolean(await repository.getMeta('externalBackupStale'));
     status.quarantinedRecords = Number(await repository.getMeta('lastQuarantineCount') || 0);
@@ -96,6 +142,7 @@
       status.persisted = false;
     }
     if (legacyWriteBlockPending) await recordLegacyWriteBlock();
+    await refreshCharacter();
     return snapshot;
   }
 
@@ -192,6 +239,8 @@
     requireRepository();
     const expedition = snapshot.expeditions.find((item) => item.status === 'active');
     if (!expedition) throw new Error('ACTIVE_EXPEDITION_NOT_FOUND');
+    const step = snapshot.steps.find((item) => item.id === expedition.stepId);
+    const wasComplete = snapshot.goals.find((item) => item.id === step?.goalId)?.status === 'completed';
     const transition = await repository.execute('reportOutcome', {
       ...command,
       expeditionId: expedition.id,
@@ -199,8 +248,9 @@
       idFactory: makeId,
     });
     snapshot = transition.state;
+    const isComplete = snapshot.goals.find((item) => item.id === step?.goalId)?.status === 'completed';
     await afterSignificantCommit();
-    return transition.result;
+    return { ...transition.result, goalMilestone: !wasComplete && isComplete };
   }
 
   async function resumeCurrentStep(stepId, idempotencyKey) {
@@ -262,9 +312,49 @@
     return transition.result;
   }
 
+  async function importCharacter(input) {
+    requireRepository();
+    if (repository.mode !== 'indexedDB') throw new Error('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
+    const Character = root.StepQuestV02Character;
+    if (!Character?.prepareImage || !Character?.normalizeMetadata) {
+      throw new Error('CHARACTER_MODULE_NOT_LOADED');
+    }
+    const prepared = await Character.prepareImage(input?.file);
+    const saved = await repository.getCharacter();
+    const timestamp = now();
+    const metadata = Character.normalizeMetadata({
+      ...input,
+      createdAt: saved?.createdAt || timestamp,
+      imageBlobKey: Character.IMAGE_BLOB_KEY,
+    }, timestamp);
+    await repository.saveCharacter(metadata, prepared.blob);
+    await refreshCharacter();
+    await afterSignificantCommit();
+    return { ...metadata, width: prepared.width, height: prepared.height };
+  }
+
   async function exportJson() {
     requireRepository();
     const value = root.StepQuestV02Backup.buildExport(await repository.exportRecords(), now());
+    return root.StepQuestV02Backup.serializeExport(value);
+  }
+
+  async function exportFullJson() {
+    requireRepository();
+    if (repository.mode !== 'indexedDB') throw new Error('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
+    const Character = root.StepQuestV02Character;
+    if (!Character?.blobToBase64) throw new Error('CHARACTER_MODULE_NOT_LOADED');
+    const records = await repository.exportCharacterAssets();
+    const encodedAssets = await Promise.all(records.assets.map(async (asset) => ({
+      id: asset.id,
+      mimeType: asset.mimeType || asset.blob?.type || 'image/png',
+      base64: await Character.blobToBase64(asset.blob),
+    })));
+    const value = root.StepQuestV02Backup.buildFullExport(
+      await repository.exportRecords(),
+      encodedAssets,
+      now(),
+    );
     return root.StepQuestV02Backup.serializeExport(value);
   }
 
@@ -282,6 +372,7 @@
     init,
     getSnapshot: () => snapshot,
     getStatus: () => ({ ...status }),
+    getCharacter: () => ({ ...(character || builtInCharacter()) }),
     createGoal,
     importAccountProgress,
     keepLocalProfileEmpty,
@@ -292,7 +383,9 @@
     unblockCurrentStep,
     routeCurrentObstacle,
     upgradeCamp,
+    importCharacter,
     exportJson,
+    exportFullJson,
     enableExternalBackup,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : window);

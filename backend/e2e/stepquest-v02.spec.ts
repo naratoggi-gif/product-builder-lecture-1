@@ -56,6 +56,41 @@ test('completed advances exactly one step', async ({ page }) => {
   await expect(page.locator('[data-v02-current-step]')).not.toHaveText(before);
 });
 
+test('facade marks only the final completed step as a Goal milestone', async ({ page }) => {
+  await resetV02(page);
+  const result = await page.evaluate(async () => {
+    const now = '2026-07-12T00:00:00.000Z';
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.importGoal({
+      weekly: { id: 'milestone-goal', title: '마일스톤 목표', createdAt: now },
+      micro: [
+        { id: 'milestone-step-1', title: '첫 행동', phase: 'start', createdAt: now },
+        { id: 'milestone-step-2', title: '마지막 행동', phase: 'close', createdAt: now },
+      ],
+    }, {
+      idempotencyKey: 'milestone-goal:import',
+      now,
+      idFactory: (prefix) => `${prefix}-milestone`,
+    });
+    const Core = (window as any).StepQuestV02App;
+    await Core.init({ App: (window as any).StepQuestApp, forceRefresh: true });
+    await Core.startCurrentStep('milestone:first:start');
+    const first = await Core.reportCurrentExpedition({
+      outcome: 'completed',
+      idempotencyKey: 'milestone:first:report',
+    });
+    await Core.startCurrentStep('milestone:last:start');
+    const last = await Core.reportCurrentExpedition({
+      outcome: 'completed',
+      idempotencyKey: 'milestone:last:report',
+    });
+    return { first, last };
+  });
+
+  expect(result.first.goalMilestone).toBe(false);
+  expect(result.last.goalMilestone).toBe(true);
+});
+
 test('interrupted requires and restores a Resume Anchor', async ({ page }) => {
   await resetV02(page);
   await createAndStart(page, '글쓰기 시작하기');
@@ -241,7 +276,7 @@ test('legacy direct-retry history reopens its active return report', async ({ pa
     if (!report) throw new Error('Expected a not-started report for the legacy retry fixture');
     const retryAt = new Date(new Date(report.createdAt).getTime() + 1).toISOString();
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('stepquest', 2);
+      const request = indexedDB.open('stepquest', 3);
       request.onsuccess = () => {
         const database = request.result;
         const transaction = database.transaction(['steps', 'expeditions', 'events'], 'readwrite');
@@ -353,7 +388,7 @@ test('completed expedition can upgrade and persist the base camp', async ({ page
 
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('stepquest', 2);
+      const request = indexedDB.open('stepquest', 3);
       request.onsuccess = () => {
         const database = request.result;
         const transaction = database.transaction('wallet', 'readwrite');
@@ -369,7 +404,7 @@ test('completed expedition can upgrade and persist the base camp', async ({ page
 
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open('stepquest', 2);
+      const request = indexedDB.open('stepquest', 3);
       request.onsuccess = () => {
         const database = request.result;
         const transaction = database.transaction('wallet', 'readwrite');
@@ -393,7 +428,7 @@ test('exports valid JSON and rotates five recovery snapshots', async ({ page }) 
     await page.locator('[data-v02-outcome="completed"]').click();
   }
   const exported = await page.evaluate(() => (window as any).StepQuestV02App.exportJson());
-  expect(JSON.parse(exported).schemaVersion).toBe(2);
+  expect(JSON.parse(exported).schemaVersion).toBe(3);
   const backupCount = await page.evaluate(async () => (
     await (await (window as any).StepQuestV02Storage.openRepository()).exportRecords()
   ).backups.length);

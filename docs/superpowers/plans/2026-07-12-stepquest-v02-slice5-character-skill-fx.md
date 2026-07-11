@@ -12,7 +12,7 @@
 
 - Implement Phase A only; no roster, gallery, sharing, cloud image sync, original-character pack, paper-doll, sprite-sheet, skeletal animation, or third-party runtime dependency.
 - Do not modify `backend/public/assets/js/stepquest-v02-domain.js` or any StepCoin/Gold rule.
-- Accept only PNG/WebP/JPG, redraw to PNG with the longest edge at most 512px, and keep all image bytes device-local.
+- Accept only PNG/WebP/JPG, redraw to PNG with the longest edge at most 512px, and keep all image bytes device-local. Prefer a Blob value in IndexedDB; if the engine explicitly rejects Blob/File storage, keep the same bytes as an ArrayBuffer and reconstruct a Blob at the repository boundary.
 - IndexedDB upgrade is additive from version 2 to version 3; all existing v2 records must survive.
 - Ordinary JSON, rolling snapshots, and automatic external backups contain character metadata but no Blob, data URL, or base64; only the explicit manual full export may include base64.
 - Live loop triggers use the character's selected preset; all four presets remain available as manual previews.
@@ -216,20 +216,16 @@ Expected: schema assertions fail against DB version 2 and missing stores.
 
 Set `DB_VERSION = 3`, add `PRESENTATION_STORES = ['characters', 'assets']`, and create both stores in `onupgradeneeded`. Do not add them to `STATE_STORES`, `readRecords`, `writeState`, `partitionRecords`, or the JSON-cloned domain snapshot. Include `characters` (never `assets`) in transactions that rotate rolling backups so `rotateBackups` can attach current metadata without image bytes.
 
-`saveCharacter` must perform one transaction spanning the domain read stores, `backups`, `characters`, and `assets`: persist the replacement and rotate a `saveCharacter` snapshot containing domain state plus current character metadata, never the Blob.
+`saveCharacter` first reads the domain snapshot, current character, and backup list, then performs one atomic write transaction over `backups`, `characters`, and `assets`: persist the replacement and rotate a `saveCharacter` snapshot containing domain state plus current character metadata, never image bytes.
 
 ```js
-const previous = await requestResult(characterStore.get(metadata.id));
-assetStore.put({ id: metadata.imageBlobKey, blob, mimeType: blob.type, updatedAt: metadata.updatedAt });
+assetStore.put({ id: metadata.imageBlobKey, blob, storageEncoding: 'blob', mimeType: blob.type, updatedAt: metadata.updatedAt });
 characterStore.put(clone(metadata));
 if (previous?.imageBlobKey && previous.imageBlobKey !== metadata.imageBlobKey) assetStore.delete(previous.imageBlobKey);
-const { state } = partitionRecords(await readRecords(transaction));
-await rotateBackups(transaction, { ...state, characters: [clone(metadata)] }, 'saveCharacter', metadata.updatedAt);
-await done;
-return clone(metadata);
+backupStore.put({ operation: 'saveCharacter', snapshot: { ...state, characters: [clone(metadata)] } });
 ```
 
-For domain-triggered rolling backups, `rotateBackups` must read `characters.getAll()` and merge that metadata into the stored snapshot. The five-snapshot retention rule remains unchanged.
+If the Blob write fails specifically with an engine error saying Blob/File values cannot be prepared for IndexedDB, retry the same atomic transaction with `bytes: await blob.arrayBuffer()` and `storageEncoding: 'arrayBuffer'`. `getCharacterBlob` and `exportCharacterAssets` reconstruct a Blob from those bytes. Other storage errors propagate unchanged. For domain-triggered rolling backups, `rotateBackups` must read `characters.getAll()` and merge that metadata into the stored snapshot. The five-snapshot retention rule remains unchanged.
 
 - [ ] **Step 4: Add fallback stubs and safe export boundaries**
 
@@ -288,6 +284,7 @@ git commit -m "Persist local Slice 5 character assets"
 - Modify: `backend/public/assets/js/stepquest-v02-character.js`
 - Modify: `backend/public/assets/js/stepquest-v02-backup.js`
 - Modify: `backend/public/assets/js/stepquest-v02-ui.js`
+- Modify: `backend/public/goals.html`
 - Modify: `backend/public/assets/css/app.css`
 - Modify: `backend/src/main.ts`
 - Modify: `backend/scripts/stepquest-persistence-test.js`
@@ -337,6 +334,8 @@ Create a reusable `characterStage()` string used in both the active-step and act
 
 When `Core.getStatus().mode === 'localStorage'`, render the CSS default character plus `이 브라우저에서는 캐릭터 이미지를 저장할 수 없어 기본 캐릭터를 사용합니다.` and no enabled file-save action.
 
+Load `stepquest-v02-character.js` and `stepquest-v02-fx.js` in `goals.html` after Backup and before the legacy App/facade, temporarily using the current `v02-core-3` build query. Task 5 changes every v0.2 URL and the service-worker cache to `v02-core-4` together.
+
 - [ ] **Step 5: Add manual full-export wiring**
 
 Extend `downloadJson` with an optional fourth `filename = 'stepquest-backup.json'` argument. The button must call `Core.exportFullJson()` and `StepQuestV02Backup.downloadJson(json, document, URL, 'stepquest-full-backup-with-images.json')`. Keep `#v02-export` and automatic backup on `Core.exportJson()`.
@@ -366,7 +365,7 @@ Expected: import, reload, replacement, ordinary export exclusion, manual full ex
 - [ ] **Step 8: Commit the character UI**
 
 ```powershell
-git add backend/public/assets/js/stepquest-v02-character.js backend/public/assets/js/stepquest-v02-backup.js backend/public/assets/js/stepquest-v02-ui.js backend/public/assets/css/app.css backend/src/main.ts backend/scripts/stepquest-persistence-test.js backend/e2e/stepquest-v02.spec.ts backend/e2e/stepquest-v02-storage.spec.ts
+git add backend/public/assets/js/stepquest-v02-character.js backend/public/assets/js/stepquest-v02-backup.js backend/public/assets/js/stepquest-v02-ui.js backend/public/goals.html backend/public/assets/css/app.css backend/src/main.ts backend/scripts/stepquest-persistence-test.js backend/e2e/stepquest-v02.spec.ts backend/e2e/stepquest-v02-storage.spec.ts
 git commit -m "Add local character import and stage"
 ```
 

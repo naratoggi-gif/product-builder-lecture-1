@@ -63,6 +63,7 @@ Imported images are user-local content: stored only in the user's browser, never
 - `skillPreset` is the one preset used by real loop triggers. The settings panel exposes four preview buttons so the same saved image can demonstrate all presets without rotating or randomizing live behavior.
 - The built-in fallback is the existing code-drawn/CSS silhouette. It is not a persisted `CharacterAsset` and introduces no third-party image or bundled copyrighted asset.
 - The 512px limit applies to the image's longest edge. The browser redraws accepted PNG/WebP/JPG input to PNG so SVG and untrusted embedded content never enter storage. Invalid or undecodable input leaves the previous character unchanged.
+- IndexedDB stores the PNG as a Blob when the engine supports it. If an engine rejects Blob/File values in IndexedDB, the repository stores the same local bytes as an ArrayBuffer and reconstructs a Blob at its public boundary; no image bytes enter localStorage or ordinary backups.
 - Character and technique names are trimmed, escaped at render time, and limited to 40 characters. Empty values use `나의 모험가` and `첫걸음`. Accent color is selected from the eight constants owned by `stepquest-v02-character.js`; arbitrary colors are rejected.
 - `partial` has no FX. A final-step `completed` event plays one milestone variant, not a completed animation followed by a second animation.
 - Speed lines, dash translation, leap/hover transforms, and the summoning circle are private preset helpers composed around the six named public primitives.
