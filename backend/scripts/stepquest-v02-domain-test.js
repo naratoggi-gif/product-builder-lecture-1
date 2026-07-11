@@ -681,6 +681,92 @@ function testObstacleRouteMatrixDoesNotChangeWallet() {
   });
 }
 
+function stateWithGold(amount) {
+  const state = Domain.createInitialState();
+  state.wallet.gold = amount;
+  state.rewards.push({
+    idempotencyKey: `seed-gold-${amount}`,
+    currency: 'gold',
+    amount,
+    stage: 'test_seed',
+    createdAt: NOW,
+  });
+  return state;
+}
+
+function testCampUpgradeUsesGoldLedgerAndCapsAtFive() {
+  let transition = Domain.upgradeCamp(stateWithGold(2), {
+    idempotencyKey: 'camp-upgrade-1',
+    now: NOW,
+  });
+  assert.equal(transition.state.camp.level, 1);
+  assert.equal(transition.state.wallet.gold, 0);
+  assert.deepEqual(
+    transition.state.rewards.filter((item) => item.stage === 'camp_upgrade'),
+    [{
+      idempotencyKey: 'camp:level:1',
+      currency: 'gold',
+      amount: -2,
+      stage: 'camp_upgrade',
+      createdAt: NOW,
+    }],
+  );
+  assert.equal(
+    transition.state.rewards
+      .filter((item) => item.currency === 'gold')
+      .reduce((sum, item) => sum + item.amount, 0),
+    transition.state.wallet.gold,
+  );
+
+  const replay = Domain.upgradeCamp(transition.state, {
+    idempotencyKey: 'camp-upgrade-1',
+    now: NOW,
+  });
+  assert.equal(replay.duplicate, true);
+  assert.equal(replay.state.wallet.gold, 0);
+  assert.equal(replay.state.camp.level, 1);
+
+  const insufficient = Domain.createInitialState();
+  assert.throws(() => Domain.upgradeCamp(insufficient, {
+    idempotencyKey: 'camp-insufficient',
+    now: NOW,
+  }), /GOLD_INSUFFICIENT/);
+  assert.deepEqual(insufficient.wallet, { stepCoin: 0, gold: 0 });
+  assert.deepEqual(insufficient.camp, { level: 0 });
+
+  const activeExpeditionState = stateWithGold(2);
+  activeExpeditionState.steps.push({ id: 'active-camp-step', status: 'started' });
+  activeExpeditionState.expeditions.push({
+    id: 'active-camp-expedition',
+    stepId: 'active-camp-step',
+    status: 'active',
+  });
+  const activeUpgrade = Domain.upgradeCamp(activeExpeditionState, {
+    idempotencyKey: 'camp-upgrade-during-expedition',
+    now: NOW,
+  });
+  assert.equal(activeUpgrade.state.camp.level, 1);
+  assert.equal(activeUpgrade.state.expeditions[0].status, 'active');
+
+  transition = { state: stateWithGold(20) };
+  const costs = [];
+  for (let level = 1; level <= 5; level += 1) {
+    const before = transition.state.wallet.gold;
+    transition = Domain.upgradeCamp(transition.state, {
+      idempotencyKey: `camp-sequence-${level}`,
+      now: NOW,
+    });
+    costs.push(before - transition.state.wallet.gold);
+    assert.equal(transition.state.camp.level, level);
+  }
+  assert.deepEqual(costs, [2, 3, 4, 5, 6]);
+  assert.equal(transition.state.wallet.gold, 0);
+  assert.throws(() => Domain.upgradeCamp(transition.state, {
+    idempotencyKey: 'camp-level-6',
+    now: NOW,
+  }), /CAMP_MAX_LEVEL_REACHED/);
+}
+
 function testOnlyOneExpeditionCanBeActive() {
   const state = makeState(['start', 'start']);
   state.steps[1].status = 'active';
@@ -713,6 +799,7 @@ testWaitingStepLifecycleAndBlockValidation();
 testBlockRouteResolvesPendingReport();
 testDeferContextIsClearedOnUndefer();
 testObstacleRouteMatrixDoesNotChangeWallet();
+testCampUpgradeUsesGoldLedgerAndCapsAtFive();
 testOnlyOneExpeditionCanBeActive();
 
 console.log(JSON.stringify({ ok: true, checked: 'stepquest-v02-domain' }, null, 2));

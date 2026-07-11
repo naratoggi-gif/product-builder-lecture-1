@@ -461,6 +461,9 @@ assert.ok(
   'v0.2 storage must open the versioned database',
 );
 assert.ok(v02Storage.includes('const DB_VERSION = 2'), 'v0.2 database version must be 2');
+assert.ok(v02Storage.includes('normalizeCamp'), 'v0.2 storage must normalize legacy camp state');
+assert.ok(v02Storage.includes("objectStore('wallet').get('camp')"), 'v0.2 storage must read the camp singleton');
+assert.ok(v02Storage.includes("id: 'camp'"), 'v0.2 storage must write the camp singleton');
 ['completed', 'partial', 'interrupted', 'not_started'].forEach((outcome) => {
   assert.ok(v02Ui.includes(outcome), `return UI must include ${outcome}`);
 });
@@ -470,10 +473,13 @@ assert.ok(v02Storage.includes('const DB_VERSION = 2'), 'v0.2 database version mu
   .forEach((reason) => assert.ok(v02Ui.includes(reason), `v0.2 obstacle UI must include ${reason}`));
 ['v02-blocked-step', 'v02-waiting-step']
   .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 parked UI must include ${id}`));
+assert.ok(v02Ui.includes('v02-upgrade-camp'), 'v0.2 UI must expose the affordable camp upgrade');
+assert.ok(appCss.includes('.v02-camp'), 'v0.2 camp visual styles are missing');
 assert.ok(
   v02Domain.includes('goal:${step.goalId}:lineage:${step.rewardLineage}:gold:${priorGold}'),
   'v0.2 gold grants must use the reward lineage key',
 );
 assert.ok(v02Domain.includes('unblockStep'), 'v0.2 domain must expose blocked-step recovery');
+assert.ok(v02Domain.includes('CAMP_MAX_LEVEL'), 'v0.2 domain must cap camp progression');
 
 console.log(JSON.stringify({ ok: true, checked: 'stepquest-persistence' }, null, 2));

@@ -312,6 +312,78 @@ test('double click and elapsed time do not multiply rewards', async ({ page }) =
   expect(after.activeExpeditions).toBe(1);
 });
 
+test('completed expedition can upgrade and persist the base camp', async ({ page }) => {
+  await resetV02(page);
+  await createAndStart(page, 'Build the camp');
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await expect(page.locator('#v02-upgrade-camp')).toBeVisible();
+  await expect(page.locator('#v02-wallet')).toContainText('골드 2');
+
+  await page.locator('#v02-upgrade-camp').click();
+  await expect(page.locator('#v02-camp-badge')).toHaveAttribute('data-camp-level', '1');
+  await expect(page.locator('#v02-wallet')).toContainText('골드 0');
+  await expect(page.locator('#v02-upgrade-camp')).toHaveCount(0);
+  await expect(page.locator('#v02-camp-message')).toBeVisible();
+
+  const campState = await page.evaluate(async () => {
+    const state = (window as any).StepQuestV02App.getSnapshot();
+    const exported = JSON.parse(await (window as any).StepQuestV02App.exportJson());
+    return {
+      level: state.camp.level,
+      walletGold: state.wallet.gold,
+      ledgerGold: state.rewards
+        .filter((item) => item.currency === 'gold')
+        .reduce((sum, item) => sum + item.amount, 0),
+      upgradeRows: state.rewards.filter((item) => item.stage === 'camp_upgrade'),
+      exportedCamp: exported.camp,
+    };
+  });
+  expect(campState).toEqual({
+    level: 1,
+    walletGold: 0,
+    ledgerGold: 0,
+    upgradeRows: [expect.objectContaining({ amount: -2, idempotencyKey: 'camp:level:1' })],
+    exportedCamp: { level: 1 },
+  });
+
+  await page.reload();
+  await expect(page.locator('#v02-camp-badge')).toHaveAttribute('data-camp-level', '1');
+  await expect(page.locator('#v02-wallet')).toContainText('골드 0');
+
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 2);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('wallet', 'readwrite');
+        transaction.objectStore('wallet').put({ id: 'camp', level: 99 });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  });
+  await page.reload();
+  await expect(page.locator('#v02-camp-badge')).toHaveAttribute('data-camp-level', '5');
+
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 2);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('wallet', 'readwrite');
+        transaction.objectStore('wallet').delete('camp');
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  });
+  await page.reload();
+  await expect(page.locator('#v02-camp-badge')).toHaveAttribute('data-camp-level', '0');
+});
+
 test('exports valid JSON and rotates five recovery snapshots', async ({ page }) => {
   await resetV02(page);
   await createGoal(page, '백업 확인');

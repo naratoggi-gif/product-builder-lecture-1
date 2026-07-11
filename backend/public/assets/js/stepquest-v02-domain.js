@@ -7,6 +7,7 @@
   const WORK_PHASES = new Set(['start', 'continue', 'close']);
   const OUTCOMES = new Set(['completed', 'partial', 'interrupted', 'not_started']);
   const OBSTACLE_ROUTES = new Set(['manual_shrink', 'defer', 'retry', 'block']);
+  const CAMP_MAX_LEVEL = 5;
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -28,6 +29,7 @@
       events: [],
       rewards: [],
       wallet: { stepCoin: 0, gold: 0 },
+      camp: { level: 0 },
     };
   }
 
@@ -494,6 +496,38 @@
     });
   }
 
+  function upgradeCamp(source, command) {
+    const repeated = replay(source, command.idempotencyKey);
+    if (repeated) return repeated;
+    const state = clone(source);
+    const rawLevel = Number(state.camp?.level);
+    const level = Number.isFinite(rawLevel)
+      ? Math.max(0, Math.min(CAMP_MAX_LEVEL, Math.trunc(rawLevel)))
+      : 0;
+    if (level >= CAMP_MAX_LEVEL) throw domainError('CAMP_MAX_LEVEL_REACHED');
+    const cost = 2 + level;
+    if (state.wallet.gold < cost) throw domainError('GOLD_INSUFFICIENT');
+
+    const nextLevel = level + 1;
+    state.camp = { level: nextLevel };
+    grantReward(state, {
+      idempotencyKey: `camp:level:${nextLevel}`,
+      currency: 'gold',
+      amount: -cost,
+      stage: 'camp_upgrade',
+      createdAt: command.now,
+    });
+
+    return recordEvent(state, {
+      idempotencyKey: command.idempotencyKey,
+      type: 'camp_upgraded',
+      level: nextLevel,
+      cost,
+      createdAt: command.now,
+      result: { level: nextLevel, cost },
+    });
+  }
+
   function importGoal(source, command) {
     const repeated = replay(source, command.idempotencyKey);
     if (repeated) return repeated;
@@ -580,6 +614,7 @@
     undeferStep,
     unblockStep,
     routeObstacle,
+    upgradeCamp,
     exportableState,
   };
 });

@@ -6,6 +6,7 @@
   let selectedOutcome = null;
   let selectedReason = null;
   let tiredShrink = false;
+  let campMessage = null;
 
   const outcomeLabels = {
     completed: '완료',
@@ -24,6 +25,14 @@
     anxious: '불안·부담',
   };
   const misTapReason = 'mis_tap';
+  const campLevels = [
+    ['⛺', '빈 야영지'],
+    ['🏕️', '작은 텐트'],
+    ['🔥', '모닥불 캠프'],
+    ['🛖', '정찰 기지'],
+    ['🏡', '환한 쉼터'],
+    ['🏰', '중앙 캠프'],
+  ];
   const h = (value) => App.h(String(value ?? ''));
   const key = (name, id) => `v02:${name}:${id}`;
   const anchorDraftKey = (expeditionId) => `stepquest_v02_anchor_draft_${expeditionId}`;
@@ -161,6 +170,17 @@
     return '';
   }
 
+  function campVisual(level) {
+    const [icon, label] = campLevels[level] || campLevels[0];
+    return `
+      <div class="v02-camp-visual" data-camp-level="${level}">
+        <span aria-hidden="true">${icon}</span>
+        <strong>중앙 캠프 Lv.${level}</strong>
+        <small>${label}</small>
+      </div>
+    `;
+  }
+
   function storagePanel(status) {
     const backupTime = status.lastExternalBackupAt
       ? `마지막 외부 파일 백업: ${h(status.lastExternalBackupAt)}`
@@ -203,10 +223,14 @@
     const vm = viewModel();
     const status = Core.getStatus();
     const anchorDraft = vm.expedition ? readAnchorDraft(vm.expedition.id) : null;
+    const campLevel = vm.state.camp?.level || 0;
+    const nextCampCost = 2 + campLevel;
+    const canUpgradeCamp = campLevel < 5 && vm.state.wallet.gold >= nextCampCost;
     const wallet = `
       <div id="v02-wallet" class="v02-wallet" aria-label="보유 재화">
         <span>스텝코인 <b>${vm.state.wallet.stepCoin}</b></span>
         <span>골드 <b>${vm.state.wallet.gold}</b></span>
+        <span id="v02-camp-badge" class="v02-camp-badge" data-camp-level="${campLevel}">${campLevels[campLevel][0]} 캠프 Lv.${campLevel}</span>
       </div>
     `;
     let body;
@@ -320,7 +344,27 @@
       `;
     }
 
-    rootNode.innerHTML = `${wallet}${body}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
+    const showCamp = Boolean(
+      vm.expedition
+      || vm.parked
+      || !vm.state.goals.length
+      || canUpgradeCamp
+      || campMessage,
+    );
+    const campPanel = showCamp ? `
+      <section class="panel v02-camp">
+        ${campVisual(campLevel)}
+        ${vm.expedition ? '<p>캐릭터가 캠프에서 원정을 준비합니다.</p>' : ''}
+        ${canUpgradeCamp ? `<button id="v02-upgrade-camp" class="ghost">캠프 확장 · 골드 ${nextCampCost}</button>` : ''}
+        ${campMessage ? `
+          <div id="v02-camp-message" class="v02-camp-message" aria-live="polite">
+            <span>${h(campMessage)}</span>
+            <button id="v02-dismiss-camp-message" class="ghost" aria-label="캠프 알림 닫기">닫기</button>
+          </div>
+        ` : ''}
+      </section>
+    ` : '';
+    rootNode.innerHTML = `${wallet}${body}${campPanel}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
     wire();
   }
 
@@ -545,6 +589,17 @@
         return true;
       })
     ));
+    document.getElementById('v02-upgrade-camp')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        const level = Core.getSnapshot().camp?.level || 0;
+        await Core.upgradeCamp(key('camp-upgrade', level + 1));
+        campMessage = '캠프가 조금 더 편안해졌습니다.';
+      })
+    ));
+    document.getElementById('v02-dismiss-camp-message')?.addEventListener('click', () => {
+      campMessage = null;
+      render();
+    });
     document.getElementById('v02-import-account')?.addEventListener('click', (event) => (
       run(event.currentTarget, () => Core.importAccountProgress())
     ));
@@ -575,6 +630,7 @@
       : null;
     selectedReason = null;
     tiredShrink = false;
+    campMessage = null;
     render();
   }
 

@@ -251,6 +251,17 @@
     return transition.result;
   }
 
+  async function upgradeCamp(idempotencyKey) {
+    requireRepository();
+    const transition = await repository.execute('upgradeCamp', {
+      idempotencyKey,
+      now: now(),
+    });
+    snapshot = transition.state;
+    await afterSignificantCommit();
+    return transition.result;
+  }
+
   async function exportJson() {
     requireRepository();
     const value = root.StepQuestV02Backup.buildExport(await repository.exportRecords(), now());
@@ -280,6 +291,7 @@
     undeferCurrentStep,
     unblockCurrentStep,
     routeCurrentObstacle,
+    upgradeCamp,
     exportJson,
     enableExternalBackup,
   };

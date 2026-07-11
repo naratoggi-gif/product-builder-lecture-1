@@ -12,6 +12,7 @@ async function run() {
     events: [{ idempotencyKey: 'event-1' }],
     rewards: [{ idempotencyKey: 'reward-1' }],
     wallet: { stepCoin: 12, gold: 2 },
+    camp: { level: 2 },
     backups: [{ id: 'internal-only' }],
   };
   const exported = Backup.buildExport(records, now);
@@ -25,8 +26,10 @@ async function run() {
     events: records.events,
     rewards: records.rewards,
     wallet: records.wallet,
+    camp: records.camp,
   });
   assert.deepEqual(JSON.parse(Backup.serializeExport(exported)), exported);
+  assert.deepEqual(Backup.buildExport({ ...records, camp: undefined }, now).camp, { level: 0 });
 
   assert.deepEqual(await Backup.requestPersistentStorage(undefined), {
     supported: false,
