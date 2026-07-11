@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const Fx = require('../public/assets/js/stepquest-v02-fx');
 
 function run() {
+  assert.equal(typeof Fx.play, 'function');
+  assert.equal(typeof Fx.cancel, 'function');
   for (const preset of ['impact', 'dash', 'slash', 'cast']) {
     const departure = Fx.buildPlan(preset, 'departure', false);
     const completed = Fx.buildPlan(preset, 'completed', false);

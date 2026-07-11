@@ -239,6 +239,11 @@
                 )).join('')}
               </select>
             </label>
+            <div class="v02-fx-previews" role="group" aria-label="기술 연출 미리보기">
+              ${presets.map(([value, label]) => (
+                `<button type="button" class="ghost" data-v02-fx-preview="${value}">${label} 미리보기</button>`
+              )).join('')}
+            </div>
             <button id="v02-save-character">이 캐릭터 저장</button>
             ${character.usingDefault ? '' : '<button id="v02-export-character-full" class="ghost">이미지 포함 전체 내보내기</button>'}
           </div>
@@ -409,6 +414,7 @@
       body = `
         <section class="panel v02-runner">
           <span class="v02-kicker">큰 목표는 한 줄이면 충분합니다</span>
+          ${stage}
           <label class="v02-goal-label">목표 한 줄<input id="v02-goal-title" maxlength="140" autocomplete="off" /></label>
           <button id="v02-create-goal">첫 행동 만들기</button>
         </section>
@@ -439,13 +445,35 @@
     wire();
   }
 
-  async function run(button, action) {
+  function playCharacterFx(mode, preset) {
+    const stage = document.querySelector('[data-v02-character-stage]');
+    const characterElement = stage?.querySelector('#v02-character-image, .v02-default-character');
+    const characterValue = Core.getCharacter();
+    const reducedMotion = Boolean(
+      App.state?.reducedMotion
+      || root.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    );
+    return root.StepQuestV02FX?.play({
+      stage,
+      character: characterElement,
+      preset: preset || characterValue.skillPreset,
+      skillName: characterValue.skillName,
+      color: characterValue.accentColor,
+      mode,
+      reducedMotion,
+    });
+  }
+
+  async function run(button, action, afterRender) {
     if (button.disabled) return;
     button.disabled = true;
     try {
       const result = await action();
       if (result === false) button.disabled = false;
-      else render();
+      else {
+        render();
+        if (afterRender) Promise.resolve().then(() => afterRender(result)).catch(() => {});
+      }
     } catch (error) {
       button.disabled = false;
       App.toast(error.message, true);
@@ -500,6 +528,12 @@
         return false;
       })
     ));
+    document.querySelectorAll('[data-v02-fx-preview]').forEach((button) => {
+      button.addEventListener('click', () => {
+        characterPanelOpen = true;
+        playCharacterFx('preview', button.dataset.v02FxPreview)?.catch(() => {});
+      });
+    });
     document.getElementById('v02-create-goal')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
         const field = document.getElementById('v02-goal-title');
@@ -524,10 +558,11 @@
         const attempt = state.events.filter((item) => (
           item.type === 'step_started' && item.stepId === step.id
         )).length;
-        await Core.startCurrentStep(key('start', `${step.id}:${attempt}`));
+        const result = await Core.startCurrentStep(key('start', `${step.id}:${attempt}`));
         reporting = false;
         reportDismissed = false;
-      })
+        return result;
+      }, () => playCharacterFx('departure'))
     ));
     document.getElementById('v02-open-report')?.addEventListener('click', () => {
       reporting = true;
@@ -542,24 +577,28 @@
     });
     document.querySelectorAll('[data-v02-outcome]').forEach((button) => {
       button.addEventListener('click', (event) => {
-        selectedOutcome = button.dataset.v02Outcome;
-        if (selectedOutcome === 'partial' || selectedOutcome === 'interrupted') {
+        const outcome = button.dataset.v02Outcome;
+        selectedOutcome = outcome;
+        if (outcome === 'partial' || outcome === 'interrupted') {
           const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-          writeAnchorDraft(expedition.id, { outcome: selectedOutcome });
+          writeAnchorDraft(expedition.id, { outcome });
           render();
           return;
         }
         run(event.currentTarget, async () => {
           const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-          await Core.reportCurrentExpedition({
-            outcome: selectedOutcome,
+          const result = await Core.reportCurrentExpedition({
+            outcome,
             idempotencyKey: key('report', expedition.id),
           });
           clearAnchorDraft(expedition.id);
           reporting = false;
           selectedOutcome = null;
           selectedReason = null;
-        });
+          return result;
+        }, outcome === 'completed'
+          ? (result) => playCharacterFx(result.goalMilestone ? 'milestone' : 'completed')
+          : null);
       });
     });
     document.getElementById('v02-save-outcome')?.addEventListener('click', (event) => (

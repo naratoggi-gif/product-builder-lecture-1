@@ -99,6 +99,12 @@ test('local character import renders, replaces, reloads, and exports safely', as
   await resetV02(page);
   await createGoal(page, '캐릭터 원정 테스트');
   await page.locator('#v02-character-settings > summary').click();
+  const characterNetworkWrites: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() !== 'GET' && ['fetch', 'xhr'].includes(request.resourceType())) {
+      characterNetworkWrites.push(`${request.method()} ${request.url()}`);
+    }
+  });
   await page.locator('#v02-character-file').setInputFiles({
     name: 'hero.png', mimeType: 'image/png', buffer: tinyPng,
   });
@@ -111,6 +117,7 @@ test('local character import renders, replaces, reloads, and exports safely', as
   await expect(page.locator('#v02-character-image')).toHaveAttribute('src', /^blob:/);
   await expect(page.locator('[data-v02-character-name]')).toHaveText('<b>나의 영웅</b>');
   await expect(page.locator('[data-v02-character-name] b')).toHaveCount(0);
+  expect(characterNetworkWrites).toEqual([]);
 
   await page.reload();
   await expect(page.locator('#v02-character-image')).toHaveAttribute('src', /^blob:/);
@@ -127,10 +134,26 @@ test('local character import renders, replaces, reloads, and exports safely', as
   const exported = await page.evaluate(async () => {
     const Core = (window as any).StepQuestV02App;
     const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const rawStoreCounts = await new Promise<{ characters: number; assets: number }>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 3);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(['characters', 'assets'], 'readonly');
+        const charactersRequest = transaction.objectStore('characters').count();
+        const assetsRequest = transaction.objectStore('assets').count();
+        transaction.oncomplete = () => {
+          database.close();
+          resolve({ characters: charactersRequest.result, assets: assetsRequest.result });
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
     return {
       ordinary: JSON.parse(await Core.exportJson()),
       full: JSON.parse(await Core.exportFullJson()),
       assets: await repository.exportCharacterAssets(),
+      rawStoreCounts,
     };
   });
   expect(exported.ordinary.characters).toEqual([expect.objectContaining({ name: '교체한 영웅' })]);
@@ -142,6 +165,7 @@ test('local character import renders, replaces, reloads, and exports safely', as
   ]);
   expect(exported.assets.characters).toHaveLength(1);
   expect(exported.assets.assets).toHaveLength(1);
+  expect(exported.rawStoreCounts).toEqual({ characters: 1, assets: 1 });
 
   const downloadPromise = page.waitForEvent('download');
   await page.locator('#v02-export-character-full').click();
@@ -150,6 +174,106 @@ test('local character import renders, replaces, reloads, and exports safely', as
 
   await page.locator('#v02-start-step').click();
   await expect(page.locator('#v02-expedition-active #v02-character-image')).toHaveAttribute('src', /^blob:/);
+});
+
+test('skill FX previews all presets and remains skippable by tap and keyboard', async ({ page }) => {
+  await resetV02(page);
+  await createGoal(page, '연출 미리보기');
+  await page.locator('#v02-character-settings > summary').click();
+
+  for (const preset of ['impact', 'dash', 'slash', 'cast']) {
+    await page.locator(`[data-v02-fx-preview="${preset}"]`).click();
+    const overlay = page.locator(`[data-v02-fx-mode="preview"][data-v02-fx-preset="${preset}"]`);
+    await expect(overlay).toBeVisible();
+    await expect(overlay.locator('[data-v02-fx-step="cutin"]')).toBeVisible();
+    await overlay.locator('[data-v02-fx-skip]').click();
+    await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+  }
+
+  await page.locator('[data-v02-fx-preview="impact"]').click();
+  await page.locator('[data-v02-fx-overlay]').click({ position: { x: 8, y: 8 } });
+  await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+
+  for (const keyName of ['Escape', 'Enter', 'Space']) {
+    await page.locator('[data-v02-fx-preview="slash"]').click();
+    await expect(page.locator('[data-v02-fx-overlay]')).toBeVisible();
+    await page.keyboard.press(keyName);
+    await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+    await expect(page.locator('#v02-expedition-active')).toHaveCount(0);
+  }
+});
+
+test('skill FX runs only after departure and completed state renders', async ({ page }) => {
+  await resetV02(page);
+  await createGoal(page, '완료 연출 테스트');
+  await page.locator('#v02-start-step').click();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="departure"]')).toBeVisible();
+  await page.locator('[data-v02-fx-skip]').click();
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await expect(page.locator('[data-v02-current-step]')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="completed"]')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="milestone"]')).toHaveCount(0);
+  await page.locator('[data-v02-fx-skip]').click();
+
+  await resetV02(page);
+  await page.evaluate(async () => {
+    const now = '2026-07-12T00:00:00.000Z';
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.importGoal({
+      weekly: { id: 'fx-milestone-goal', title: '한 단계 목표', createdAt: now },
+      micro: [{ id: 'fx-milestone-step', title: '마지막 행동', phase: 'close', createdAt: now }],
+    }, {
+      idempotencyKey: 'fx-milestone:import',
+      now,
+      idFactory: (prefix) => `${prefix}-fx-milestone`,
+    });
+    await (window as any).StepQuestV02App.init({
+      App: (window as any).StepQuestApp,
+      forceRefresh: true,
+    });
+    (window as any).StepQuestV02UI.render();
+  });
+  await page.locator('#v02-start-step').click();
+  await page.locator('[data-v02-fx-skip]').click();
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  const milestone = page.locator('[data-v02-fx-mode="milestone"]');
+  await expect(milestone).toBeVisible();
+  await expect(milestone.locator('[data-v02-fx-step="cutin"]')).toBeVisible();
+  await expect(page.locator('[data-v02-fx-mode="completed"]')).toHaveCount(0);
+});
+
+test('skill FX stays absent for partial, interrupted, and not started outcomes', async ({ page }) => {
+  for (const outcome of ['partial', 'interrupted', 'not_started']) {
+    await resetV02(page);
+    await createGoal(page, `연출 제외 ${outcome}`);
+    await page.locator('#v02-start-step').click();
+    await page.locator('[data-v02-fx-skip]').click();
+    await page.locator('#v02-open-report').click();
+    await page.locator(`[data-v02-outcome="${outcome}"]`).click();
+    if (outcome === 'partial' || outcome === 'interrupted') {
+      await page.locator('#v02-next-action').fill('다음 손동작');
+      await page.locator('#v02-save-outcome').click();
+    }
+    await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+  }
+});
+
+test('skill FX reduced motion uses only cut-in and a soft 120ms flash', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await resetV02(page);
+  await createGoal(page, '축소 모션 연출');
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('[data-v02-fx-preview="cast"]').click();
+  const overlay = page.locator('[data-v02-fx-overlay]');
+  await expect(overlay).toHaveAttribute('data-v02-fx-duration', '120');
+  const steps = await overlay.locator('[data-v02-fx-step]').evaluateAll((nodes) => (
+    nodes.map((node) => node.getAttribute('data-v02-fx-step')).sort()
+  ));
+  expect(steps).toEqual(['cutin', 'flash']);
 });
 
 test('interrupted requires and restores a Resume Anchor', async ({ page }) => {
