@@ -47,6 +47,39 @@ async function run() {
   ], { type: 'image/png' }));
   assert.equal(encoded, 'AAEC/f7/');
 
+  class LoadedImage {
+    constructor() {
+      this.naturalWidth = 20;
+      this.naturalHeight = 20;
+    }
+
+    set src(_value) {
+      queueMicrotask(() => this.onload());
+    }
+  }
+  await assert.rejects(
+    () => Character.prepareImage(
+      { type: 'image/png' },
+      {
+        ImageValue: LoadedImage,
+        urlApi: {
+          createObjectURL: () => 'blob:test',
+          revokeObjectURL: () => {},
+        },
+        documentValue: {
+          createElement(name) {
+            assert.equal(name, 'canvas');
+            return {
+              getContext: () => ({ drawImage() {} }),
+              toBlob() { throw new DOMException('encoder unavailable'); },
+            };
+          },
+        },
+      },
+    ),
+    /CHARACTER_IMAGE_ENCODE_FAILED/,
+  );
+
   console.log(JSON.stringify({ ok: true, checked: 'stepquest-v02-character' }, null, 2));
 }
 

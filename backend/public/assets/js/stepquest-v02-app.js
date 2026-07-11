@@ -350,8 +350,9 @@
       mimeType: asset.mimeType || asset.blob?.type || 'image/png',
       base64: await Character.blobToBase64(asset.blob),
     })));
+    const domainRecords = await repository.exportRecords();
     const value = root.StepQuestV02Backup.buildFullExport(
-      await repository.exportRecords(),
+      { ...domainRecords, characters: records.characters },
       encodedAssets,
       now(),
     );

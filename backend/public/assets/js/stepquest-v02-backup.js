@@ -65,11 +65,16 @@
     await writable.close();
   }
 
-  function downloadJson(json, documentValue = document, urlApi = URL) {
+  function downloadJson(
+    json,
+    documentValue = document,
+    urlApi = URL,
+    filename = 'stepquest-backup.json',
+  ) {
     const url = urlApi.createObjectURL(new Blob([json], { type: 'application/json;charset=utf-8' }));
     const anchor = documentValue.createElement('a');
     anchor.href = url;
-    anchor.download = 'stepquest-backup.json';
+    anchor.download = filename;
     documentValue.body.append(anchor);
     anchor.click();
     anchor.remove();

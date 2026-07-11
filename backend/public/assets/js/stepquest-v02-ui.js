@@ -7,6 +7,7 @@
   let selectedReason = null;
   let tiredShrink = false;
   let campMessage = null;
+  let characterPanelOpen = false;
 
   const outcomeLabels = {
     completed: '완료',
@@ -181,6 +182,73 @@
     `;
   }
 
+  function characterStage() {
+    const character = Core.getCharacter();
+    const art = character.imageUrl
+      ? `<img id="v02-character-image" src="${h(character.imageUrl)}" alt="${h(character.name)}" />`
+      : '<span class="v02-default-character" aria-hidden="true"><i></i></span>';
+    return `
+      <div class="v02-character-stage" data-v02-character-stage style="--v02-character-accent:${h(character.accentColor)}">
+        <div class="v02-character-art">${art}</div>
+        <div class="v02-character-caption">
+          <strong data-v02-character-name>${h(character.name)}</strong>
+          <small>${h(character.skillName)} · ${h(character.skillPreset)}</small>
+        </div>
+        ${character.missingImage ? '<p class="v02-character-notice">저장된 이미지를 찾지 못해 기본 캐릭터를 표시합니다.</p>' : ''}
+      </div>
+    `;
+  }
+
+  function characterSettings(status) {
+    const character = Core.getCharacter();
+    const Character = root.StepQuestV02Character;
+    const palette = Character?.PALETTE || ['#65d9ff'];
+    const presets = [
+      ['impact', '임팩트'],
+      ['dash', '대시'],
+      ['slash', '참격'],
+      ['cast', '마법'],
+    ];
+    const supported = status.characterStorageSupported;
+    return `
+      <details id="v02-character-settings" class="panel v02-character-settings" ${characterPanelOpen ? 'open' : ''}>
+        <summary>캐릭터와 기술 연출</summary>
+        <p>가져온 이미지는 이 기기에만 저장되며 개인 사용 범위에서만 쓰세요.</p>
+        ${supported ? `
+          <div class="v02-character-form">
+            <label>캐릭터 이미지
+              <input id="v02-character-file" type="file" accept="image/png,image/webp,image/jpeg" />
+            </label>
+            <label>캐릭터 이름
+              <input id="v02-character-name" maxlength="40" value="${h(character.name)}" autocomplete="off" />
+            </label>
+            <label>기술 프리셋
+              <select id="v02-character-preset">
+                ${presets.map(([value, label]) => (
+                  `<option value="${value}" ${character.skillPreset === value ? 'selected' : ''}>${label}</option>`
+                )).join('')}
+              </select>
+            </label>
+            <label>기술명
+              <input id="v02-character-skill-name" maxlength="40" value="${h(character.skillName)}" autocomplete="off" />
+            </label>
+            <label>강조색
+              <select id="v02-character-color">
+                ${palette.map((value, index) => (
+                  `<option value="${value}" ${character.accentColor === value ? 'selected' : ''}>색상 ${index + 1}</option>`
+                )).join('')}
+              </select>
+            </label>
+            <button id="v02-save-character">이 캐릭터 저장</button>
+            ${character.usingDefault ? '' : '<button id="v02-export-character-full" class="ghost">이미지 포함 전체 내보내기</button>'}
+          </div>
+        ` : `
+          <p class="v02-character-notice">이 브라우저에서는 캐릭터 이미지를 저장할 수 없어 기본 캐릭터를 사용합니다.</p>
+        `}
+      </details>
+    `;
+  }
+
   function storagePanel(status) {
     const backupTime = status.lastExternalBackupAt
       ? `마지막 외부 파일 백업: ${h(status.lastExternalBackupAt)}`
@@ -226,6 +294,7 @@
     const campLevel = vm.state.camp?.level || 0;
     const nextCampCost = 2 + campLevel;
     const canUpgradeCamp = campLevel < 5 && vm.state.wallet.gold >= nextCampCost;
+    const stage = characterStage();
     const wallet = `
       <div id="v02-wallet" class="v02-wallet" aria-label="보유 재화">
         <span>스텝코인 <b>${vm.state.wallet.stepCoin}</b></span>
@@ -290,6 +359,7 @@
         <section id="v02-expedition-active" class="panel v02-expedition">
           <span class="v02-kicker">원정 진행 중</span>
           <h2>${h(step?.title)}</h2>
+          ${stage}
           <p>앱을 닫아도 됩니다.</p>
           <button id="v02-open-report">돌아왔어요</button>
         </section>
@@ -309,6 +379,7 @@
         <section class="panel v02-runner">
           <span class="v02-kicker">지금 할 하나</span>
           <h2 data-v02-current-step>${h(vm.active.title)}</h2>
+          ${stage}
           <p>완료를 약속하지 않아도 됩니다. 시작 위치만 남깁니다.</p>
           <button id="v02-start-step">시작</button>
         </section>
@@ -364,7 +435,7 @@
         ` : ''}
       </section>
     ` : '';
-    rootNode.innerHTML = `${wallet}${body}${campPanel}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
+    rootNode.innerHTML = `${wallet}${body}${campPanel}${characterSettings(status)}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
     wire();
   }
 
@@ -395,6 +466,40 @@
   }
 
   function wire() {
+    document.getElementById('v02-character-settings')?.addEventListener('toggle', (event) => {
+      characterPanelOpen = event.currentTarget.open;
+    });
+    document.getElementById('v02-save-character')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        const fileField = document.getElementById('v02-character-file');
+        const file = fileField.files?.[0];
+        if (!file) {
+          fileField.focus();
+          App.toast('저장할 캐릭터 이미지를 먼저 선택해 주세요.', true);
+          return false;
+        }
+        characterPanelOpen = true;
+        await Core.importCharacter({
+          file,
+          name: document.getElementById('v02-character-name').value,
+          skillPreset: document.getElementById('v02-character-preset').value,
+          skillName: document.getElementById('v02-character-skill-name').value,
+          accentColor: document.getElementById('v02-character-color').value,
+        });
+        return true;
+      })
+    ));
+    document.getElementById('v02-export-character-full')?.addEventListener('click', (event) => (
+      run(event.currentTarget, async () => {
+        root.StepQuestV02Backup.downloadJson(
+          await Core.exportFullJson(),
+          document,
+          root.URL,
+          'stepquest-full-backup-with-images.json',
+        );
+        return false;
+      })
+    ));
     document.getElementById('v02-create-goal')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
         const field = document.getElementById('v02-goal-title');
@@ -631,6 +736,7 @@
     selectedReason = null;
     tiredShrink = false;
     campMessage = null;
+    characterPanelOpen = false;
     render();
   }
 

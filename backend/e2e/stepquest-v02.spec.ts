@@ -91,6 +91,67 @@ test('facade marks only the final completed step as a Goal milestone', async ({ 
   expect(result.last.goalMilestone).toBe(true);
 });
 
+test('local character import renders, replaces, reloads, and exports safely', async ({ page }) => {
+  const tinyPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await resetV02(page);
+  await createGoal(page, '캐릭터 원정 테스트');
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('#v02-character-file').setInputFiles({
+    name: 'hero.png', mimeType: 'image/png', buffer: tinyPng,
+  });
+  await page.locator('#v02-character-name').fill('<b>나의 영웅</b>');
+  await page.locator('#v02-character-preset').selectOption('dash');
+  await page.locator('#v02-character-skill-name').fill('벽력일섬');
+  await page.locator('#v02-character-color').selectOption('#a78bfa');
+  await page.locator('#v02-save-character').click();
+
+  await expect(page.locator('#v02-character-image')).toHaveAttribute('src', /^blob:/);
+  await expect(page.locator('[data-v02-character-name]')).toHaveText('<b>나의 영웅</b>');
+  await expect(page.locator('[data-v02-character-name] b')).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.locator('#v02-character-image')).toHaveAttribute('src', /^blob:/);
+  await expect(page.locator('[data-v02-character-name]')).toHaveText('<b>나의 영웅</b>');
+
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('#v02-character-file').setInputFiles({
+    name: 'hero-replacement.png', mimeType: 'image/png', buffer: tinyPng,
+  });
+  await page.locator('#v02-character-name').fill('교체한 영웅');
+  await page.locator('#v02-save-character').click();
+  await expect(page.locator('[data-v02-character-name]')).toHaveText('교체한 영웅');
+
+  const exported = await page.evaluate(async () => {
+    const Core = (window as any).StepQuestV02App;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    return {
+      ordinary: JSON.parse(await Core.exportJson()),
+      full: JSON.parse(await Core.exportFullJson()),
+      assets: await repository.exportCharacterAssets(),
+    };
+  });
+  expect(exported.ordinary.characters).toEqual([expect.objectContaining({ name: '교체한 영웅' })]);
+  expect(JSON.stringify(exported.ordinary)).not.toContain('base64');
+  expect(JSON.stringify(exported.ordinary)).not.toContain('data:image');
+  expect(exported.full.exportType).toBe('full-with-images');
+  expect(exported.full.assets).toEqual([
+    expect.objectContaining({ mimeType: 'image/png', base64: expect.any(String) }),
+  ]);
+  expect(exported.assets.characters).toHaveLength(1);
+  expect(exported.assets.assets).toHaveLength(1);
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.locator('#v02-export-character-full').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('stepquest-full-backup-with-images.json');
+
+  await page.locator('#v02-start-step').click();
+  await expect(page.locator('#v02-expedition-active #v02-character-image')).toHaveAttribute('src', /^blob:/);
+});
+
 test('interrupted requires and restores a Resume Anchor', async ({ page }) => {
   await resetV02(page);
   await createAndStart(page, '글쓰기 시작하기');

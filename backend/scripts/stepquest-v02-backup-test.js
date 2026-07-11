@@ -125,8 +125,11 @@ async function run() {
     revokeObjectURL(value) { assert.equal(value, 'blob:test'); downloadEvents.push('url-revoked'); },
   };
   Backup.downloadJson('{}', documentValue, urlApi);
-  assert.equal(anchor.href, 'blob:test');
   assert.equal(anchor.download, 'stepquest-backup.json');
+  downloadEvents.length = 0;
+  Backup.downloadJson('{}', documentValue, urlApi, 'stepquest-full-backup-with-images.json');
+  assert.equal(anchor.href, 'blob:test');
+  assert.equal(anchor.download, 'stepquest-full-backup-with-images.json');
   assert.deepEqual(downloadEvents, [
     'url-created',
     'created:a',

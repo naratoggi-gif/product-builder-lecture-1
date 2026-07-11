@@ -112,13 +112,17 @@
           return;
         }
         revoke();
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            reject(contractError('CHARACTER_IMAGE_ENCODE_FAILED'));
-            return;
-          }
-          resolve({ blob, ...dimensions });
-        }, 'image/png');
+        try {
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              reject(contractError('CHARACTER_IMAGE_ENCODE_FAILED'));
+              return;
+            }
+            resolve({ blob, ...dimensions });
+          }, 'image/png');
+        } catch (_error) {
+          fail('CHARACTER_IMAGE_ENCODE_FAILED');
+        }
       };
       image.src = objectUrl;
     });

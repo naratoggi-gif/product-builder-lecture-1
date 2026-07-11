@@ -296,6 +296,22 @@ test('falls back to localStorage when IndexedDB cannot open', async ({ page }) =
   expect(afterReload.snapshot.goals[0].title).toBe('대체 저장 테스트');
 });
 
+test('localStorage fallback shows a calm built-in character notice', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value() { throw new Error('INDEXED_DB_DISABLED_FOR_TEST'); },
+    });
+  });
+  await clearBrowserState(page);
+  await page.locator('#v02-goal-title').fill('기본 캐릭터 테스트');
+  await page.locator('#v02-create-goal').click();
+  await expect(page.locator('.v02-default-character')).toBeVisible();
+  await page.locator('#v02-character-settings > summary').click();
+  await expect(page.getByText('이 브라우저에서는 캐릭터 이미지를 저장할 수 없어 기본 캐릭터를 사용합니다.')).toBeVisible();
+  await expect(page.locator('#v02-save-character')).toHaveCount(0);
+});
+
 test('quarantines malformed records and keeps readable state', async ({ page }) => {
   await clearBrowserState(page);
   const result = await page.evaluate(async () => {

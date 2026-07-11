@@ -33,6 +33,7 @@ const stateModule = fs.readFileSync(path.join(root, 'src/stepquest/stepquest.sta
 const browserApp = fs.readFileSync(path.join(root, 'public/assets/js/app.js'), 'utf8');
 const v02Storage = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-storage.js'), 'utf8');
 const v02Domain = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-domain.js'), 'utf8');
+const v02App = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-app.js'), 'utf8');
 const v02Ui = fs.readFileSync(path.join(root, 'public/assets/js/stepquest-v02-ui.js'), 'utf8');
 const goalsHtml = fs.readFileSync(path.join(root, 'public/goals.html'), 'utf8');
 const appCss = fs.readFileSync(path.join(root, 'public/assets/css/app.css'), 'utf8');
@@ -500,6 +501,20 @@ assert.ok(v02Storage.includes("id: 'camp'"), 'v0.2 storage must write the camp s
 ['v02-blocked-step', 'v02-waiting-step']
   .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 parked UI must include ${id}`));
 assert.ok(v02Ui.includes('v02-upgrade-camp'), 'v0.2 UI must expose the affordable camp upgrade');
+['v02-character-settings', 'v02-character-file', 'v02-save-character', 'v02-export-character-full']
+  .forEach((id) => assert.ok(v02Ui.includes(id), `v0.2 character UI must include ${id}`));
+assert.ok(
+  v02Ui.includes('가져온 이미지는 이 기기에만 저장되며 개인 사용 범위에서만 쓰세요.'),
+  'character import must show the local-only copyright posture',
+);
+assert.ok(
+  mainTs.includes("imgSrc: [\"'self'\", 'data:', 'blob:']"),
+  'CSP must allow device-local Blob image URLs only in img-src',
+);
+assert.ok(
+  v02App.includes('characters: records.characters'),
+  'full image export must keep character metadata paired with its atomic asset read',
+);
 assert.ok(appCss.includes('.v02-camp'), 'v0.2 camp visual styles are missing');
 assert.ok(
   v02Domain.includes('goal:${step.goalId}:lineage:${step.rewardLineage}:gold:${priorGold}'),
