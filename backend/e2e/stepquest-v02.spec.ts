@@ -129,6 +129,14 @@ test('legacy direct-retry history reopens its active return report', async ({ pa
   await page.evaluate(async () => {
     const state = (window as any).StepQuestV02App.getSnapshot();
     const step = state.steps.find((item) => item.status === 'active');
+    if (!step) throw new Error('Expected an active step for the legacy retry fixture');
+    const report = state.events.find((item) => (
+      item.type === 'expedition_reported'
+      && item.outcome === 'not_started'
+      && item.stepId === step.id
+    ));
+    if (!report) throw new Error('Expected a not-started report for the legacy retry fixture');
+    const retryAt = new Date(new Date(report.createdAt).getTime() + 1).toISOString();
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('stepquest', 2);
       request.onsuccess = () => {
@@ -137,13 +145,13 @@ test('legacy direct-retry history reopens its active return report', async ({ pa
         transaction.objectStore('steps').put({
           ...step,
           status: 'started',
-          updatedAt: '2026-07-11T00:00:01.000Z',
+          updatedAt: retryAt,
         });
         transaction.objectStore('expeditions').put({
           id: 'legacy-retry-expedition',
           stepId: step.id,
           status: 'active',
-          startedAt: '2026-07-11T00:00:01.000Z',
+          startedAt: retryAt,
           goldCap: 2,
           goldGranted: 0,
         });
@@ -152,7 +160,7 @@ test('legacy direct-retry history reopens its active return report', async ({ pa
           type: 'step_started',
           stepId: step.id,
           expeditionId: 'legacy-retry-expedition',
-          createdAt: '2026-07-11T00:00:01.000Z',
+          createdAt: retryAt,
           result: {
             stepId: step.id,
             expeditionId: 'legacy-retry-expedition',

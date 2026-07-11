@@ -13,7 +13,7 @@ function restore() {
 }
 
 function setEnv(values) {
-  restore();
+  for (const key of keys) delete process.env[key];
   Object.assign(process.env, values);
 }
 
