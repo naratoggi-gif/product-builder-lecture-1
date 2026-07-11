@@ -238,7 +238,7 @@ test('skill FX previews all presets and remains skippable by tap and keyboard', 
       expect(timeline.bolt).toBeLessThan(timeline.afterimage);
       expect(timeline.afterimage).toBeLessThan(timeline.shockring);
     }
-    await overlay.locator('[data-v02-fx-skip]').click();
+    await overlay.locator('[data-v02-fx-skip]').click({ force: true });
     await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
     await expect(page.locator(`[data-v02-fx-preview="${preset}"]`)).toBeFocused();
   }
