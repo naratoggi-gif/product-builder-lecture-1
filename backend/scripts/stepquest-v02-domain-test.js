@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict');
 const Domain = require('../public/assets/js/stepquest-v02-domain');
+const Fun = require('../public/assets/js/stepquest-v02-fun.js');
 
 const NOW = '2026-07-11T00:00:00.000Z';
 let sequence = 0;
@@ -40,6 +41,172 @@ function activeExpedition(state) {
   return state.expeditions.find((expedition) => expedition.status === 'active');
 }
 
+function testExpeditionDurationContract() {
+  [
+    [5, '2026-07-12T00:05:00.000Z'],
+    [10, '2026-07-12T00:10:00.000Z'],
+    [25, '2026-07-12T00:25:00.000Z'],
+  ].forEach(([plannedMinutes, expectedExpiry], index) => {
+    const transition = Domain.startStep(makeState(['start']), {
+      stepId: 'step-1',
+      plannedMinutes,
+      idempotencyKey: `allowed-duration-${index}`,
+      now: '2026-07-12T00:00:00.000Z',
+      idFactory,
+    });
+    const expedition = activeExpedition(transition.state);
+    assert.equal(expedition.plannedMinutes, plannedMinutes);
+    assert.equal(expedition.expiresAt, expectedExpiry);
+  });
+
+  [
+    {},
+    { plannedMinutes: '5' },
+    { plannedMinutes: 0 },
+    { plannedMinutes: 15 },
+    { plannedMinutes: Number.NaN },
+  ].forEach((duration, index) => {
+    assert.throws(() => Domain.startStep(makeState(['start']), {
+      stepId: 'step-1',
+      ...duration,
+      idempotencyKey: `invalid-duration-${index}`,
+      now: NOW,
+      idFactory,
+    }), /EXPEDITION_DURATION_INVALID/);
+  });
+
+  assert.throws(() => Domain.startStep(makeState(['start']), {
+    stepId: 'step-1',
+    plannedMinutes: 5,
+    idempotencyKey: 'invalid-command-time',
+    now: 'not-a-command-time',
+    idFactory,
+  }), /COMMAND_TIME_INVALID/);
+}
+
+function testTimedExpeditionAndProjectionFacts() {
+  const state = makeState(['start']);
+  state.goals[0].category = 'writing';
+  state.steps[0].category = 'writing';
+  const before = JSON.stringify(state);
+  let transition = Domain.startStep(state, {
+    stepId: activeStep(state).id,
+    plannedMinutes: 10,
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    idempotencyKey: 'timed-start',
+    now: '2026-07-12T00:00:00.000Z',
+    idFactory,
+  });
+  const expedition = activeExpedition(transition.state);
+  assert.equal(expedition.plannedMinutes, 10);
+  assert.equal(expedition.expiresAt, '2026-07-12T00:10:00.000Z');
+
+  const timedState = transition.state;
+  const unchanged = JSON.stringify(timedState);
+  assert.equal(Fun.deriveTimer(expedition, '2026-08-11T00:00:00.000Z').phase, 'ready');
+  assert.equal(JSON.stringify(timedState), unchanged, 'clock projection cannot mutate domain state');
+
+  transition = Domain.reportOutcome(timedState, {
+    expeditionId: expedition.id,
+    outcome: 'completed',
+    idempotencyKey: 'timed-report',
+    now: '2026-07-12T00:01:00.000Z',
+    idFactory,
+  });
+  const report = transition.state.events.find((event) => event.idempotencyKey === 'timed-report');
+  assert.deepEqual(
+    {
+      rewardLineage: report.result.rewardLineage,
+      category: report.result.category,
+      reportVersion: report.result.reportVersion,
+      goalMilestone: report.result.goalMilestone,
+      goldGranted: report.result.goldGranted,
+    },
+    { rewardLineage: 'step-1', category: 'writing', reportVersion: 1, goalMilestone: true, goldGranted: 2 },
+  );
+  assert.equal(JSON.stringify(state), before, 'domain commands never mutate their input');
+  assert.notStrictEqual(transition.state, state, 'domain commands return a cloned transition');
+}
+
+function testImportedCategoriesAreRetained() {
+  let transition = Domain.importGoal(Domain.createInitialState(), {
+    idempotencyKey: 'import-category-unknown',
+    now: NOW,
+    idFactory,
+    made: {
+      weekly: { id: 'goal-category-unknown', title: 'Unknown category', category: 'alchemy' },
+      micro: [
+        { id: 'step-category-explicit', title: 'Explicit category', phase: 'start', category: 'writing' },
+        { id: 'step-category-inherited', title: 'Inherited category', phase: 'close' },
+      ],
+    },
+  });
+  assert.equal(transition.state.goals[0].category, 'alchemy');
+  assert.equal(transition.state.steps[0].category, 'writing');
+  assert.equal(transition.state.steps[1].category, 'alchemy');
+
+  transition = Domain.importGoal(Domain.createInitialState(), {
+    idempotencyKey: 'import-category-generic',
+    now: NOW,
+    idFactory,
+    made: {
+      weekly: { id: 'goal-category-generic', title: 'Generic category' },
+      micro: [{ id: 'step-category-generic', title: 'Generic step', phase: 'start' }],
+    },
+  });
+  assert.equal(transition.state.goals[0].category, 'generic');
+  assert.equal(transition.state.steps[0].category, 'generic');
+}
+
+function testGoalMilestoneAndShrinkEncounterIdentity() {
+  const multiStep = makeState(['start', 'close']);
+  assert.equal(Domain.isGoalMilestone(multiStep.steps[0], multiStep.steps), false);
+  assert.equal(Domain.isGoalMilestone(multiStep.steps[1], multiStep.steps), true);
+
+  const state = makeState(['open']);
+  const original = activeStep(state);
+  original.category = 'writing';
+  const beforeEncounter = Fun.selectEncounter({
+    rewardLineage: original.rewardLineage,
+    category: original.category,
+    boss: Domain.isGoalMilestone(original, state.steps),
+  });
+  const transition = Domain.routeObstacle(state, {
+    stepId: original.id,
+    reason: 'too_big',
+    route: 'manual_shrink',
+    nextPhysicalAction: 'Read one heading',
+    idempotencyKey: 'category-shrink',
+    now: NOW,
+    idFactory,
+  });
+  const replacement = activeStep(transition.state);
+  assert.deepEqual(
+    {
+      phase: replacement.phase,
+      entrySegmentId: replacement.entrySegmentId,
+      rewardLineage: replacement.rewardLineage,
+      category: replacement.category,
+    },
+    {
+      phase: original.phase,
+      entrySegmentId: original.entrySegmentId,
+      rewardLineage: original.rewardLineage,
+      category: original.category,
+    },
+  );
+  const afterEncounter = Fun.selectEncounter({
+    rewardLineage: replacement.rewardLineage,
+    category: replacement.category,
+    boss: Domain.isGoalMilestone(replacement, transition.state.steps),
+  });
+  assert.deepEqual(afterEncounter, beforeEncounter);
+}
+
+function testCampUpgradeCostContract() {
+  assert.deepEqual([0, 1, 2, 3, 4].map(Domain.campUpgradeCost), [2, 3, 4, 5, 6]);
+}
+
 function testEntrySegmentsPayOnce() {
   const separated = Domain.assignEntrySegments([
     { id: 'a', phase: 'orient' },
@@ -50,6 +217,7 @@ function testEntrySegmentsPayOnce() {
 
   let transition = Domain.startStep(makeState(), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'entry-start-1',
     now: NOW,
     idFactory,
@@ -59,6 +227,7 @@ function testEntrySegmentsPayOnce() {
 
   const replay = Domain.startStep(transition.state, {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'entry-start-1',
     now: NOW,
     idFactory,
@@ -75,6 +244,7 @@ function testEntrySegmentsPayOnce() {
   });
   transition = Domain.startStep(transition.state, {
     stepId: 'step-2',
+    plannedMinutes: 5,
     idempotencyKey: 'entry-start-2',
     now: NOW,
     idFactory,
@@ -85,6 +255,7 @@ function testEntrySegmentsPayOnce() {
 function testPartialProgressAndResumeAnchor() {
   let transition = Domain.startStep(makeState(['start', 'close']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'partial-start',
     now: NOW,
     idFactory,
@@ -122,6 +293,7 @@ function testPartialProgressAndResumeAnchor() {
 function testReplacementLineageCannotMintStartReward() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'lineage-start-original',
     now: NOW,
     idFactory,
@@ -154,6 +326,7 @@ function testReplacementLineageCannotMintStartReward() {
   assert.equal(replacement.rewardLineage, 'step-1');
   transition = Domain.startStep(transition.state, {
     stepId: replacement.id,
+    plannedMinutes: 5,
     idempotencyKey: 'lineage-start-1',
     now: NOW,
     idFactory,
@@ -182,6 +355,7 @@ function testReplacementLineageCannotMintStartReward() {
   assert.equal(replacement.rewardLineage, 'step-1');
   transition = Domain.startStep(transition.state, {
     stepId: replacement.id,
+    plannedMinutes: 5,
     idempotencyKey: 'lineage-start-2',
     now: NOW,
     idFactory,
@@ -192,6 +366,7 @@ function testReplacementLineageCannotMintStartReward() {
 function testReplacementLineageCannotMintExtraGold() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'gold-lineage-start-original',
     now: NOW,
     idFactory,
@@ -213,6 +388,7 @@ function testReplacementLineageCannotMintExtraGold() {
   });
   transition = Domain.startStep(transition.state, {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'gold-lineage-restart-original',
     now: NOW,
     idFactory,
@@ -238,6 +414,7 @@ function testReplacementLineageCannotMintExtraGold() {
   let replacement = activeStep(transition.state);
   transition = Domain.startStep(transition.state, {
     stepId: replacement.id,
+    plannedMinutes: 5,
     idempotencyKey: 'gold-lineage-start-replacement',
     now: NOW,
     idFactory,
@@ -262,6 +439,7 @@ function testReplacementLineageCannotMintExtraGold() {
   replacement = activeStep(transition.state);
   transition = Domain.startStep(transition.state, {
     stepId: replacement.id,
+    plannedMinutes: 5,
     idempotencyKey: 'gold-lineage-start-final-replacement',
     now: NOW,
     idFactory,
@@ -286,6 +464,7 @@ function testReplacementLineageCannotMintExtraGold() {
 function testOutcomeRules() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'not-started-start',
     now: NOW,
     idFactory,
@@ -302,6 +481,7 @@ function testOutcomeRules() {
 
   transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'interrupted-start',
     now: NOW,
     idFactory,
@@ -317,6 +497,7 @@ function testOutcomeRules() {
 
   transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'completed-start',
     now: NOW,
     idFactory,
@@ -335,6 +516,7 @@ function testOutcomeRules() {
 function testNotStartedRequiresObstacleRouteBeforeRestart() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'blocked-start',
     now: NOW,
     idFactory,
@@ -349,6 +531,7 @@ function testNotStartedRequiresObstacleRouteBeforeRestart() {
 
   assert.throws(() => Domain.startStep(transition.state, {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'blocked-retry',
     now: NOW,
     idFactory,
@@ -358,6 +541,7 @@ function testNotStartedRequiresObstacleRouteBeforeRestart() {
 function testRetryRouteResolvesMisTapWithoutRewards() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'retry-start-1',
     now: NOW,
     idFactory,
@@ -405,6 +589,7 @@ function testRetryRouteResolvesMisTapWithoutRewards() {
 
   transition = Domain.startStep(transition.state, {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'retry-start-2',
     now: NOW,
     idFactory,
@@ -428,6 +613,7 @@ function testRetryRouteResolvesMisTapWithoutRewards() {
   });
   assert.doesNotThrow(() => Domain.startStep(transition.state, {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'retry-start-3',
     now: NOW,
     idFactory,
@@ -438,6 +624,7 @@ function testRetryRouteResolvesMisTapWithoutRewards() {
 function testLegacyObstacleRouteWithoutLinkAllowsRestart() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'legacy-route-start',
     now: '2026-07-11T00:00:00.000Z',
     idFactory,
@@ -465,6 +652,7 @@ function testLegacyObstacleRouteWithoutLinkAllowsRestart() {
 
   assert.doesNotThrow(() => Domain.startStep(transition.state, {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'legacy-route-restart',
     now: '2026-07-11T00:00:04.000Z',
     idFactory,
@@ -593,6 +781,7 @@ function testWaitingStepLifecycleAndBlockValidation() {
 function testBlockRouteResolvesPendingReport() {
   let transition = Domain.startStep(makeState(['start']), {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'block-resolution-start',
     now: NOW,
     idFactory,
@@ -622,6 +811,7 @@ function testBlockRouteResolvesPendingReport() {
   });
   const restarted = Domain.startStep(transition.state, {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'block-resolution-restart',
     now: NOW,
     idFactory,
@@ -772,12 +962,14 @@ function testOnlyOneExpeditionCanBeActive() {
   state.steps[1].status = 'active';
   const transition = Domain.startStep(state, {
     stepId: 'step-1',
+    plannedMinutes: 5,
     idempotencyKey: 'single-expedition-1',
     now: NOW,
     idFactory,
   });
   assert.throws(() => Domain.startStep(transition.state, {
     stepId: 'step-2',
+    plannedMinutes: 5,
     idempotencyKey: 'single-expedition-2',
     now: NOW,
     idFactory,
@@ -785,6 +977,11 @@ function testOnlyOneExpeditionCanBeActive() {
   assert.equal(activeExpedition(transition.state).id, transition.result.expeditionId);
 }
 
+testExpeditionDurationContract();
+testTimedExpeditionAndProjectionFacts();
+testImportedCategoriesAreRetained();
+testGoalMilestoneAndShrinkEncounterIdentity();
+testCampUpgradeCostContract();
 testEntrySegmentsPayOnce();
 testPartialProgressAndResumeAnchor();
 testReplacementLineageCannotMintStartReward();

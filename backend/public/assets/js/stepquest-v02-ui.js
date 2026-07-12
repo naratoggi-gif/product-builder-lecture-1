@@ -2,12 +2,30 @@
   let App;
   let Core;
   let reporting = false;
-  let reportDismissed = false;
+  let reportingEntry = null;
   let selectedOutcome = null;
   let selectedReason = null;
   let tiredShrink = false;
   let campMessage = null;
   let characterPanelOpen = false;
+  let selectedMinutes = 5;
+  let timerInterval = null;
+  let timerExpeditionId = null;
+  let readyLatch = null;
+  let readyAnnounced = null;
+  let lifecycleBound = false;
+  let hashRouteBound = false;
+  let mounted = false;
+  let refreshQueue = Promise.resolve();
+  let combatState = null;
+  let pendingBattleReport = null;
+  let combatPlayback = null;
+  let combatLifecycleRefreshPending = false;
+  let reportCommitInFlight = false;
+  let foregroundSession = { firstLocalDate: false, longAbsence: false };
+  let dialogueCache = null;
+  let dialoguePendingKey = null;
+  const failedCharacterMedia = new Map();
 
   const outcomeLabels = {
     completed: '완료',
@@ -37,6 +55,12 @@
   const h = (value) => App.h(String(value ?? ''));
   const key = (name, id) => `v02:${name}:${id}`;
   const anchorDraftKey = (expeditionId) => `stepquest_v02_anchor_draft_${expeditionId}`;
+
+  function normalizeRouteHash() {
+    if (['#today', '#codex'].includes(root.location.hash)) return root.location.hash;
+    root.history.replaceState(null, '', '#today');
+    return '#today';
+  }
 
   function readAnchorDraft(expeditionId) {
     if (!expeditionId) return null;
@@ -77,6 +101,214 @@
       requiredMaterial: document.getElementById('v02-material')?.value || '',
       note: document.getElementById('v02-note')?.value || '',
     });
+  }
+
+  function alignTimerSession(expedition) {
+    const expeditionId = expedition?.id || null;
+    if (timerExpeditionId === expeditionId) return;
+    timerExpeditionId = expeditionId;
+    readyLatch = null;
+    readyAnnounced = null;
+  }
+
+  function timerView(expedition) {
+    alignTimerSession(expedition);
+    if (!expedition) return null;
+    const timer = Core.getTimerView(new Date().toISOString());
+    if (!timer) return null;
+    if (timer.phase === 'ready') readyLatch = expedition.id;
+    if (timer.phase === 'running' && readyLatch === expedition.id) {
+      return { ...timer, phase: 'ready', remainingMs: 0 };
+    }
+    return timer;
+  }
+
+  function formatCountdown(remainingMs) {
+    const totalSeconds = Math.max(0, Math.ceil(Number(remainingMs || 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function routeLabel(minutes) {
+    return root.StepQuestV02Fun?.ROUTES?.[minutes]?.label || '원정 경로';
+  }
+
+  function teaserText(minutes) {
+    return `${minutes}분 · ${routeLabel(minutes)} · ???의 흔적`;
+  }
+
+  function durationChooser() {
+    return `
+      <div role="radiogroup" aria-labelledby="v02-expedition-duration-label">
+        <span id="v02-expedition-duration-label">원정 시간</span>
+        ${[5, 10, 25].map((minutes) => `
+          <label>
+            <input type="radio" name="v02-expedition-minutes" value="${minutes}" ${selectedMinutes === minutes ? 'checked' : ''} />
+            ${minutes}분
+          </label>
+        `).join('')}
+      </div>
+      <p data-v02-expedition-teaser>${h(teaserText(selectedMinutes))}</p>
+    `;
+  }
+
+  function reportPresentation() {
+    if (reportingEntry === 'early') {
+      return {
+        kicker: '조기 귀환',
+        cancel: '원정 계속하기',
+      };
+    }
+    if (reportingEntry === 'legacy') {
+      return {
+        kicker: '이전 원정 귀환 기록',
+        cancel: '이전 원정으로 돌아가기',
+      };
+    }
+    return {
+      kicker: '전리품 확인',
+      cancel: '수확 준비 화면으로 돌아가기',
+    };
+  }
+
+  function clearTimer() {
+    if (timerInterval === null) return;
+    root.clearInterval(timerInterval);
+    timerInterval = null;
+  }
+
+  function announceReady(expeditionId) {
+    if (!expeditionId || readyAnnounced === expeditionId) return;
+    readyAnnounced = expeditionId;
+    const live = document.getElementById('v02-live');
+    if (live) live.textContent = '원정 전리품을 확인할 준비가 되었습니다.';
+  }
+
+  function updateCountdown(timer, expeditionId) {
+    const countdown = document.querySelector('[data-v02-countdown]');
+    if (countdown?.dataset.v02ExpeditionId === String(expeditionId)) {
+      countdown.textContent = formatCountdown(timer.remainingMs);
+    }
+  }
+
+  function renderedTimerPhase() {
+    if (document.getElementById('v02-expedition-active')) return 'running';
+    if (document.getElementById('v02-expedition-ready')) return 'ready';
+    if (document.getElementById('v02-expedition-legacy-ready')) return 'legacy_ready';
+    return null;
+  }
+
+  function stableCharacter() {
+    const {
+      imageUrl,
+      portraitUrl,
+      idleUrl,
+      skillUrl,
+      ...value
+    } = Core.getCharacter();
+    return value;
+  }
+
+  const domainArrayKeys = new Set([
+    'goals',
+    'steps',
+    'expeditions',
+    'anchors',
+    'resumeAnchors',
+    'events',
+    'rewards',
+  ]);
+
+  function volatilePresentationKey(name) {
+    return /url$/i.test(name) || ['objectUrl', 'previewSrc'].includes(name);
+  }
+
+  function compareDomainRecords(left, right) {
+    const leftOrder = Number(left?.orderIndex);
+    const rightOrder = Number(right?.orderIndex);
+    const leftHasOrder = Number.isFinite(leftOrder);
+    const rightHasOrder = Number.isFinite(rightOrder);
+    if (leftHasOrder && rightHasOrder && leftOrder !== rightOrder) return leftOrder - rightOrder;
+    if (leftHasOrder !== rightHasOrder) return leftHasOrder ? -1 : 1;
+
+    for (const name of ['id', 'idempotencyKey', 'goalId', 'stepId', 'expeditionId']) {
+      const compared = String(left?.[name] ?? '').localeCompare(String(right?.[name] ?? ''));
+      if (compared) return compared;
+    }
+    return JSON.stringify(left).localeCompare(JSON.stringify(right));
+  }
+
+  function canonicalProjection(value, parentKey = '') {
+    if (Array.isArray(value)) {
+      const projected = value.map((item) => canonicalProjection(item));
+      return domainArrayKeys.has(parentKey) ? projected.sort(compareDomainRecords) : projected;
+    }
+    if (!value || typeof value !== 'object') return value;
+    return Object.keys(value).sort().reduce((projected, name) => {
+      if (!volatilePresentationKey(name)) {
+        projected[name] = canonicalProjection(value[name], name);
+      }
+      return projected;
+    }, {});
+  }
+
+  function canonicalString(value) {
+    return JSON.stringify(canonicalProjection(value));
+  }
+
+  function lifecyclePresentation() {
+    const snapshot = Core.getSnapshot();
+    const expedition = snapshot.expeditions.find((item) => item.status === 'active') || null;
+    return {
+      snapshot: canonicalString(snapshot),
+      status: canonicalString(Core.getStatus()),
+      character: canonicalString(stableCharacter()),
+      selectedMinutes,
+      expedition,
+      expeditionRecord: canonicalString(expedition),
+      pendingReportKey: pendingBattleReport?.key || null,
+      renderedPhase: renderedTimerPhase(),
+    };
+  }
+
+  async function hydratePendingBattleReport() {
+    pendingBattleReport = await Core.getPendingBattleReport();
+    return pendingBattleReport;
+  }
+
+  function refreshCharacterUrlInPlace() {
+    const character = Core.getCharacter();
+    document.querySelectorAll('[data-v02-character-media]').forEach((element) => {
+      const slot = element.dataset.v02CharacterMedia;
+      const nextUrl = character[`${slot}Url`];
+      if (nextUrl && element.getAttribute('src') !== nextUrl) element.setAttribute('src', nextUrl);
+    });
+    const image = document.getElementById('v02-character-image');
+    if (image && character.imageUrl && image.getAttribute('src') !== character.imageUrl) {
+      image.setAttribute('src', character.imageUrl);
+    }
+  }
+
+  function timerTick() {
+    const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+    const timer = timerView(expedition);
+    if (!timer || timer.phase !== 'running') {
+      clearTimer();
+      if (timer?.phase === 'ready' && !reporting && !document.getElementById('v02-expedition-ready')) {
+        render('#v02-open-report');
+      }
+      return;
+    }
+    updateCountdown(timer, expedition.id);
+  }
+
+  function syncTimer(timer) {
+    if (!timer || timer.phase !== 'running') {
+      clearTimer();
+      return;
+    }
+    if (timerInterval === null) timerInterval = root.setInterval(timerTick, 1000);
   }
 
   function viewModel() {
@@ -182,14 +414,217 @@
     `;
   }
 
-  function characterStage() {
+  function reducedMotionEnabled() {
+    return Boolean(
+      App.state?.reducedMotion
+      || root.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
+  function currentLocalDate() {
+    const observed = new Date();
+    return [
+      observed.getFullYear(),
+      String(observed.getMonth() + 1).padStart(2, '0'),
+      String(observed.getDate()).padStart(2, '0'),
+    ].join('-');
+  }
+
+  function dialogueProjection(vm, timer) {
+    const localDate = currentLocalDate();
+    const expeditionStep = vm.expedition
+      ? vm.state.steps.find((item) => item.id === vm.expedition.stepId)
+      : null;
+    const campSubject = `캠프 Lv.${vm.state.camp?.level || 0}`;
+    if (pendingBattleReport) {
+      return {
+        context: 'reported',
+        entityId: pendingBattleReport.key,
+        localDate,
+        subject: pendingBattleReport.monsterName,
+      };
+    }
+    if (vm.expedition && timer?.phase === 'ready') {
+      return {
+        context: 'ready',
+        entityId: vm.expedition.id,
+        localDate,
+        subject: Core.getEncounterView()?.name || expeditionStep?.title || campSubject,
+      };
+    }
+    if (vm.expedition && reporting && reportingEntry === 'early') {
+      return {
+        context: 'early_return',
+        entityId: vm.expedition.id,
+        localDate,
+        subject: expeditionStep?.title || campSubject,
+      };
+    }
+    if (vm.expedition && timer?.phase === 'running') {
+      return {
+        context: 'departure',
+        entityId: vm.expedition.id,
+        localDate,
+        subject: expeditionStep?.title || campSubject,
+      };
+    }
+    if (vm.parked) {
+      return {
+        context: vm.parked.status,
+        entityId: vm.parked.id,
+        localDate,
+        subject: vm.parked.title,
+      };
+    }
+    const fallbackSubject = vm.anchor?.nextPhysicalAction
+      || vm.active?.title
+      || vm.interrupted?.title
+      || campSubject;
+    const fallbackEntityId = vm.anchor?.id
+      || vm.active?.id
+      || vm.interrupted?.id
+      || `camp:${vm.state.camp?.level || 0}`;
+    if (foregroundSession.longAbsence) {
+      return {
+        context: 'long_absence',
+        entityId: vm.anchor?.id || vm.active?.id || vm.interrupted?.id || `camp:${vm.state.camp?.level || 0}`,
+        localDate,
+        subject: fallbackSubject,
+      };
+    }
+    if (foregroundSession.firstLocalDate) {
+      return {
+        context: 'first_daily',
+        entityId: vm.anchor?.id || vm.active?.id || vm.interrupted?.id || `camp:${vm.state.camp?.level || 0}`,
+        localDate,
+        subject: fallbackSubject,
+      };
+    }
+    if (
+      ['first_daily', 'long_absence'].includes(dialogueCache?.input?.context)
+      && dialogueCache.input.entityId === fallbackEntityId
+      && dialogueCache.input.localDate === localDate
+    ) return dialogueCache.input;
+    return {
+      context: 'idle',
+      entityId: fallbackEntityId,
+      localDate,
+      subject: fallbackSubject,
+    };
+  }
+
+  function dialogueTriggerKey(input) {
+    return `${input.context}:${input.entityId || 'none'}:${input.localDate}`;
+  }
+
+  function syncDialogue(input) {
+    if (combatState) return;
+    const triggerKey = dialogueTriggerKey(input);
+    if (dialogueCache?.triggerKey === triggerKey || dialoguePendingKey === triggerKey) return;
+    dialoguePendingKey = triggerKey;
+    Core.chooseDialogue({ ...input, triggerKey }).then((text) => {
+      if (dialoguePendingKey !== triggerKey) return;
+      dialoguePendingKey = null;
+      dialogueCache = { triggerKey, text, input };
+      if (input.context === 'first_daily') foregroundSession.firstLocalDate = false;
+      if (input.context === 'long_absence') {
+        foregroundSession.longAbsence = false;
+        foregroundSession.firstLocalDate = false;
+      }
+      const bubble = document.getElementById('v02-dialogue');
+      if (bubble?.dataset.v02DialogueTrigger === triggerKey) {
+        bubble.textContent = text;
+        bubble.removeAttribute('aria-busy');
+      }
+    }).catch((error) => {
+      if (dialoguePendingKey === triggerKey) dialoguePendingKey = null;
+      App.toast(error.message, true);
+    });
+  }
+
+  function characterMediaKey(character, slot) {
+    const metadata = character.mediaMetadata?.[slot] || {};
+    return [
+      slot,
+      metadata.mimeType,
+      metadata.byteLength,
+      metadata.width,
+      metadata.height,
+      metadata.durationMs,
+      character.updatedAt,
+    ].join(':');
+  }
+
+  function createPortraitElement(character) {
+    if (character.portraitUrl || character.imageUrl) {
+      const image = document.createElement('img');
+      image.id = 'v02-character-image';
+      image.dataset.v02CharacterMedia = 'portrait';
+      image.src = character.portraitUrl || character.imageUrl;
+      image.alt = character.name;
+      return image;
+    }
+    const fallback = document.createElement('span');
+    fallback.className = 'v02-default-character';
+    fallback.setAttribute('aria-hidden', 'true');
+    fallback.append(document.createElement('i'));
+    return fallback;
+  }
+
+  function downgradeCharacterMedia(element) {
+    if (!element?.matches?.('[data-v02-character-media][data-v02-animated]')) return;
+    if (!element.isConnected) return;
+    const slot = element.dataset.v02CharacterMedia;
+    if (!['idle', 'skill'].includes(slot)) return;
     const character = Core.getCharacter();
-    const art = character.imageUrl
-      ? `<img id="v02-character-image" src="${h(character.imageUrl)}" alt="${h(character.name)}" />`
+    const currentKey = characterMediaKey(character, slot);
+    if (element.dataset.v02MediaKey !== currentKey) return;
+    failedCharacterMedia.set(slot, currentKey);
+    if (element.tagName === 'VIDEO') {
+      try { element.pause(); } catch (_error) { /* no-op */ }
+    }
+    element.replaceWith(createPortraitElement(character));
+  }
+
+  function handleCharacterMediaError(event) {
+    downgradeCharacterMedia(event.target);
+  }
+
+  function observeCharacterVideoPlayback(video) {
+    if (!video?.isConnected) return;
+    video.muted = true;
+    video.playsInline = true;
+    try {
+      const started = video.play();
+      if (started?.catch) started.catch(() => downgradeCharacterMedia(video));
+    } catch (_error) {
+      downgradeCharacterMedia(video);
+    }
+  }
+
+  function characterArt(slot = 'idle') {
+    const character = Core.getCharacter();
+    const metadata = character.mediaMetadata?.[slot];
+    const mediaUrl = character[`${slot}Url`];
+    const mediaKey = characterMediaKey(character, slot);
+    const mediaFailed = failedCharacterMedia.get(slot) === mediaKey;
+    if (!mediaFailed && !reducedMotionEnabled() && mediaUrl && metadata?.mimeType === 'image/webp') {
+      return `<img data-v02-character-media="${slot}" data-v02-media-key="${h(mediaKey)}" data-v02-animated src="${h(mediaUrl)}" alt="${h(character.name)}" />`;
+    }
+    if (!mediaFailed && !reducedMotionEnabled() && mediaUrl && metadata?.mimeType === 'video/webm') {
+      const playback = slot === 'idle' ? ' autoplay loop' : '';
+      return `<video data-v02-character-media="${slot}" data-v02-media-key="${h(mediaKey)}" data-v02-animated src="${h(mediaUrl)}" muted playsinline${playback} aria-label="${h(character.name)}"></video>`;
+    }
+    return character.portraitUrl || character.imageUrl
+      ? `<img id="v02-character-image" data-v02-character-media="portrait" src="${h(character.portraitUrl || character.imageUrl)}" alt="${h(character.name)}" />`
       : '<span class="v02-default-character" aria-hidden="true"><i></i></span>';
+  }
+
+  function characterStage(slot = 'idle') {
+    const character = Core.getCharacter();
     return `
       <div class="v02-character-stage" data-v02-character-stage style="--v02-character-accent:${h(character.accentColor)}">
-        <div class="v02-character-art">${art}</div>
+        <div class="v02-character-art">${characterArt(slot)}</div>
         <div class="v02-character-caption">
           <strong data-v02-character-name>${h(character.name)}</strong>
           <small>${h(character.skillName)} · ${h(character.skillPreset)}</small>
@@ -219,6 +654,14 @@
             <label>캐릭터 이미지
               <input id="v02-character-file" type="file" accept="image/png,image/webp,image/jpeg" />
             </label>
+            <label>대기 애니메이션
+              <input id="v02-character-idle-file" type="file" accept="image/webp,video/webm" ${character.usingDefault ? 'disabled' : ''} />
+            </label>
+            <button id="v02-save-character-idle" type="button" class="ghost" ${character.usingDefault ? 'disabled' : ''}>대기 애니메이션 저장</button>
+            <label>기술 애니메이션
+              <input id="v02-character-skill-file" type="file" accept="image/webp,video/webm" ${character.usingDefault ? 'disabled' : ''} />
+            </label>
+            <button id="v02-save-character-skill" type="button" class="ghost" ${character.usingDefault ? 'disabled' : ''}>기술 애니메이션 저장</button>
             <label>캐릭터 이름
               <input id="v02-character-name" maxlength="40" value="${h(character.name)}" autocomplete="off" />
             </label>
@@ -290,17 +733,100 @@
     `;
   }
 
-  function render() {
+  function combatPanel() {
+    const state = combatState;
+    const monsterState = state.monsterState || 'ready';
+    return `
+      <section class="panel v02-expedition" data-v02-combat data-v02-combat-phase="${h(state.phase)}">
+        <span class="v02-kicker">전투 기록</span>
+        <h2>${h(state.encounter?.name || '알 수 없는 존재')}</h2>
+        ${characterStage(state.attack ? 'skill' : 'portrait')}
+        <div data-v02-monster-state="${h(monsterState)}">
+          <div
+            data-v02-monster-hp
+            role="progressbar"
+            aria-label="${h(state.encounter?.name || '조우')} 체력"
+            aria-valuemin="0"
+            aria-valuemax="2"
+            aria-valuenow="${state.currentHp}"
+          ></div>
+          <p data-v02-combat-status>${h(state.statusText || '')}</p>
+          <p data-v02-damage aria-live="polite">${state.damage ? `${state.damage} 데미지` : ''}</p>
+        </div>
+        ${state.attack ? '<button id="v02-combat-skip" data-v02-combat-skip type="button">연출 건너뛰기</button>' : ''}
+      </section>
+    `;
+  }
+
+  function battleReportPanel() {
+    return `
+      <section
+        id="v02-battle-report"
+        class="panel v02-runner"
+        data-v02-report-key="${h(pendingBattleReport.key)}"
+      >
+        <span class="v02-kicker">전투 리포트</span>
+        <h2 data-v02-report-headline>${h(pendingBattleReport.headline)}</h2>
+        <p data-v02-report-monster>${h(pendingBattleReport.monsterName)}</p>
+        <p data-v02-report-route>${h(pendingBattleReport.route?.label)}</p>
+        <p data-v02-report-discovery>${pendingBattleReport.newDiscovery ? '새 발견' : '기존 조우'}</p>
+        <p data-v02-report-defeats>몬스터 ${h(pendingBattleReport.defeatCount)}</p>
+        <p data-v02-report-gold>골드 ${h(pendingBattleReport.goldGranted)}</p>
+        <button id="v02-continue-report" type="button">계속</button>
+      </section>
+    `;
+  }
+
+  function codexPanel(codex) {
+    const discovered = codex.entries.filter((entry) => entry.discovered);
+    return `
+      <section id="v02-codex" class="panel v02-runner">
+        <span class="v02-kicker">몬스터 도감</span>
+        <h2 id="v02-codex-heading" tabindex="-1">원정에서 만난 존재</h2>
+        ${discovered.length ? '' : '<p id="v02-codex-empty">첫 토벌 기록이 여기에 남습니다.</p>'}
+        <div class="v02-codex-grid">
+          ${codex.entries.map((entry) => entry.discovered ? `
+            <article data-v02-codex-entry="${h(entry.id)}">
+              <h3>${h(entry.name)}</h3>
+              <span data-v02-codex-count>${h(entry.count)}</span>
+            </article>
+          ` : `
+            <article data-v02-codex-entry aria-label="미발견 몬스터"><span aria-hidden="true">???</span></article>
+          `).join('')}
+        </div>
+      </section>
+    `;
+  }
+
+  function render(focusSelector = null) {
     root.StepQuestV02FX?.cancel();
     App.renderShell('지금 할 한 동작');
     document.body.classList.add('v02-mode');
     const rootNode = document.getElementById('page-root');
     const vm = viewModel();
     const status = Core.getStatus();
+    const route = normalizeRouteHash();
+    const codex = root.StepQuestV02Fun.buildCodex(vm.state.events);
+    const timer = timerView(vm.expedition);
     const anchorDraft = vm.expedition ? readAnchorDraft(vm.expedition.id) : null;
     const campLevel = vm.state.camp?.level || 0;
-    const nextCampCost = 2 + campLevel;
+    const nextCampCost = root.StepQuestV02Domain.campUpgradeCost(campLevel);
     const canUpgradeCamp = campLevel < 5 && vm.state.wallet.gold >= nextCampCost;
+    const showNextDesire = route === '#today' || Boolean(pendingBattleReport);
+    const expeditionStep = vm.expedition
+      ? vm.state.steps.find((item) => item.id === vm.expedition.stepId)
+      : null;
+    const desireStep = vm.active || expeditionStep || (vm.interrupted ? {
+      ...vm.interrupted,
+      nextPhysicalAction: vm.anchor?.nextPhysicalAction || vm.interrupted.nextPhysicalAction,
+    } : null) || vm.parked;
+    const nextDesire = showNextDesire ? root.StepQuestV02Fun.buildNextDesire({
+      camp: { ...vm.state.camp, nextCost: nextCampCost },
+      wallet: vm.state.wallet,
+      activeStep: desireStep,
+      encounter: Core.getEncounterView(),
+      codex,
+    }) : null;
     const stage = characterStage();
     const wallet = `
       <div id="v02-wallet" class="v02-wallet" aria-label="보유 재화">
@@ -312,7 +838,12 @@
     let body;
     let hasCharacterStage = false;
 
-    if (status.pendingAccountImport) {
+    if (pendingBattleReport) {
+      body = battleReportPanel();
+    } else if (combatState) {
+      hasCharacterStage = true;
+      body = combatPanel();
+    } else if (status.pendingAccountImport) {
       body = `
         <section class="panel v02-runner">
           <span class="v02-kicker">기기 저장소가 비어 있습니다</span>
@@ -324,6 +855,8 @@
           </div>
         </section>
       `;
+    } else if (route === '#codex') {
+      body = codexPanel(codex);
     } else if (vm.pendingObstacle) {
       body = `
         <section class="panel v02-obstacle">
@@ -338,12 +871,13 @@
           ${obstacleActionPanel()}
         </section>
       `;
-    } else if (vm.expedition && (reporting || (status.recoveredExpedition && !reportDismissed))) {
+    } else if (vm.expedition && reporting) {
+      const presentation = reportPresentation();
       body = `
         <section id="v02-return-report" class="panel v02-runner">
-          <span class="v02-kicker">평가가 아니라 다음 위치를 정합니다</span>
+          <span class="v02-kicker">${presentation.kicker}</span>
           <h2>어떻게 돌아왔나요?</h2>
-          <button id="v02-cancel-report" class="ghost">아직 진행 중이에요 → 돌아가기</button>
+          <button id="v02-cancel-report" class="ghost">${presentation.cancel}</button>
           <div class="v02-outcome-grid">
             ${Object.entries(outcomeLabels).map(([value, label]) => (
               `<button data-v02-outcome="${value}">${label}</button>`
@@ -361,16 +895,44 @@
           ` : ''}
         </section>
       `;
-    } else if (vm.expedition) {
+    } else if (vm.expedition && timer?.phase === 'running') {
       const step = vm.state.steps.find((item) => item.id === vm.expedition.stepId);
+      const encounter = Core.getEncounterView();
       hasCharacterStage = true;
       body = `
         <section id="v02-expedition-active" class="panel v02-expedition">
           <span class="v02-kicker">원정 진행 중</span>
           <h2>${h(step?.title)}</h2>
           ${stage}
+          <div data-v02-encounter>
+            <span>${h(routeLabel(timer.plannedMinutes))}에서 마주친 존재</span>
+            <strong>${h(encounter?.name || '알 수 없는 존재')}</strong>
+          </div>
+          <time data-v02-countdown data-v02-expedition-id="${h(vm.expedition.id)}" aria-label="남은 원정 시간">${formatCountdown(timer.remainingMs)}</time>
           <p>앱을 닫아도 됩니다.</p>
-          <button id="v02-open-report">돌아왔어요</button>
+          <button id="v02-open-report">일찍 돌아왔어요</button>
+        </section>
+      `;
+    } else if (vm.expedition && timer?.phase === 'ready') {
+      const step = vm.state.steps.find((item) => item.id === vm.expedition.stepId);
+      hasCharacterStage = true;
+      body = `
+        <section id="v02-expedition-ready" class="panel v02-expedition">
+          <span class="v02-kicker">수확 준비 완료</span>
+          <h2>${h(step?.title)} 원정 기록이 도착했습니다.</h2>
+          ${stage}
+          <p>돌아온 기록을 차분히 확인할 수 있습니다.</p>
+          <button id="v02-open-report">전리품 확인</button>
+        </section>
+      `;
+    } else if (vm.expedition) {
+      const step = vm.state.steps.find((item) => item.id === vm.expedition.stepId);
+      body = `
+        <section id="v02-expedition-legacy-ready" class="panel v02-expedition">
+          <span class="v02-kicker">이전 원정 기록</span>
+          <h2>${h(step?.title)}</h2>
+          <p>이전 버전에서 시작한 원정입니다. 남은 시간을 계산하지 않고 기존 귀환 기록을 이어갑니다.</p>
+          <button id="v02-open-report">귀환 기록 열기</button>
         </section>
       `;
     } else if (vm.interrupted && vm.anchor) {
@@ -391,6 +953,7 @@
           <h2 data-v02-current-step>${h(vm.active.title)}</h2>
           ${stage}
           <p>완료를 약속하지 않아도 됩니다. 시작 위치만 남깁니다.</p>
+          ${durationChooser()}
           <button id="v02-start-step">시작</button>
         </section>
       `;
@@ -427,7 +990,7 @@
       `;
     }
 
-    const showCamp = Boolean(
+    const showCamp = route === '#today' && !combatState && !pendingBattleReport && Boolean(
       vm.expedition
       || vm.parked
       || !vm.state.goals.length
@@ -447,18 +1010,38 @@
         ` : ''}
       </section>
     ` : '';
-    rootNode.innerHTML = `${wallet}${body}${campPanel}${characterSettings(status, hasCharacterStage)}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
+    const navigation = `
+      <nav class="v02-navigation" aria-label="주요 화면">
+        <a id="v02-nav-today" href="#today"${route === '#today' ? ' aria-current="page"' : ''}>오늘</a>
+        <a id="v02-nav-codex" href="#codex"${route === '#codex' ? ' aria-current="page"' : ''}>도감</a>
+      </nav>
+    `;
+    const dialogueInput = dialogueProjection(vm, timer);
+    const dialogueKey = dialogueTriggerKey(dialogueInput);
+    const dialogueText = dialogueCache?.triggerKey === dialogueKey ? dialogueCache.text : '';
+    const dialogue = `<p id="v02-dialogue" data-v02-dialogue-trigger="${h(dialogueKey)}"${dialogueText ? '' : ' aria-busy="true"'}>${h(dialogueText || '…')}</p>`;
+    const desire = nextDesire ? `<p id="v02-next-desire">${h(nextDesire.text)}</p>` : '';
+    rootNode.innerHTML = `${navigation}${wallet}${dialogue}${body}${desire}${campPanel}${characterSettings(status, hasCharacterStage)}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
     wire();
+    syncDialogue(dialogueInput);
+    syncTimer(timer);
+    if (!reporting && timer?.phase === 'ready') announceReady(vm.expedition.id);
+    if (focusSelector) {
+      Promise.resolve().then(() => {
+        const target = document.querySelector(focusSelector);
+        if (!target) return;
+        if (/^H[1-6]$/.test(target.tagName) && !target.hasAttribute('tabindex')) {
+          target.setAttribute('tabindex', '-1');
+        }
+        target.focus();
+      });
+    }
   }
 
-  function playCharacterFx(mode, preset, restoreFocus) {
+  function playCharacterFx(mode, preset, restoreFocus, options = {}) {
     const stage = document.querySelector('[data-v02-character-stage]');
-    const characterElement = stage?.querySelector('#v02-character-image, .v02-default-character');
+    const characterElement = stage?.querySelector('[data-v02-character-media], #v02-character-image, .v02-default-character');
     const characterValue = Core.getCharacter();
-    const reducedMotion = Boolean(
-      App.state?.reducedMotion
-      || root.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    );
     return root.StepQuestV02FX?.play({
       stage,
       character: characterElement,
@@ -466,9 +1049,223 @@
       skillName: characterValue.skillName,
       color: characterValue.accentColor,
       mode,
-      reducedMotion,
+      reducedMotion: reducedMotionEnabled(),
       restoreFocus,
+      ...options,
     });
+  }
+
+  function createCombatPlaybackSession() {
+    const controller = new AbortController();
+    return {
+      controller,
+      signal: controller.signal,
+      timers: new Set(),
+      hitAnimation: null,
+      finalized: false,
+    };
+  }
+
+  function waitForCombat(playback, duration) {
+    if (playback.signal.aborted) return Promise.resolve();
+    return new Promise((resolve) => {
+      let timer = null;
+      const finish = () => {
+        if (timer !== null) {
+          root.clearTimeout(timer);
+          playback.timers.delete(timer);
+        }
+        playback.signal.removeEventListener('abort', finish);
+        resolve();
+      };
+      timer = root.setTimeout(finish, duration);
+      playback.timers.add(timer);
+      playback.signal.addEventListener('abort', finish, { once: true });
+    });
+  }
+
+  function stopCombatMedia() {
+    const media = document.querySelector('[data-v02-character-media="skill"]');
+    if (media?.tagName !== 'VIDEO') return;
+    try { media.pause(); } catch (_error) { /* no-op */ }
+    try { media.currentTime = 0; } catch (_error) { /* no-op */ }
+  }
+
+  function playSkillMedia(playback) {
+    const media = document.querySelector('[data-v02-character-media="skill"]');
+    if (!media || reducedMotionEnabled()) return Promise.resolve();
+    const duration = Math.max(1, Number(Core.getCharacter().mediaMetadata?.skill?.durationMs || 1));
+    if (media.tagName === 'VIDEO') {
+      media.muted = true;
+      media.playsInline = true;
+      media.loop = false;
+      try { media.currentTime = 0; } catch (_error) { /* no-op */ }
+      observeCharacterVideoPlayback(media);
+    }
+    return waitForCombat(playback, duration);
+  }
+
+  function applyCombatFinalDom(state, showDamage) {
+    const hp = document.querySelector('[data-v02-monster-hp]');
+    const monster = document.querySelector('[data-v02-monster-state]');
+    const statusText = document.querySelector('[data-v02-combat-status]');
+    const damage = document.querySelector('[data-v02-damage]');
+    hp?.setAttribute('aria-valuenow', String(state.afterHp));
+    monster?.setAttribute(
+      'data-v02-monster-state',
+      state.afterHp === 0 ? 'defeated' : state.delta > 0 ? 'hit' : 'guarded',
+    );
+    if (statusText) {
+      statusText.textContent = state.afterHp === 0
+        ? '조우를 마쳤습니다.'
+        : state.delta > 0
+          ? '진행이 체력에 반영되었습니다.'
+          : '흔적은 그대로 남아 있습니다.';
+    }
+    if (damage) damage.textContent = showDamage && state.delta > 0 ? `${state.delta} 데미지` : '';
+  }
+
+  function finalizeCombat(playback, skipped = false) {
+    if (!playback || playback.finalized || combatPlayback !== playback || !combatState) return;
+    playback.finalized = true;
+    applyCombatFinalDom(combatState, !skipped && combatState.delta > 0);
+    playback.controller.abort();
+    playback.timers.forEach((timer) => root.clearTimeout(timer));
+    playback.timers.clear();
+    stopCombatMedia();
+    root.StepQuestV02FX?.cancel();
+    try { playback.hitAnimation?.cancel(); } catch (_error) { /* no-op */ }
+    pendingBattleReport = combatState.pending;
+    combatState = null;
+    combatPlayback = null;
+    render('#v02-battle-report h2');
+    if (combatLifecycleRefreshPending) {
+      combatLifecycleRefreshPending = false;
+      enqueueLifecycle(refreshFromLifecycle);
+    }
+  }
+
+  async function playMonsterHit(playback) {
+    if (playback.signal.aborted || combatPlayback !== playback) return;
+    combatState.currentHp = combatState.afterHp;
+    combatState.damage = combatState.delta;
+    combatState.monsterState = combatState.afterHp === 0 ? 'defeated' : 'hit';
+    applyCombatFinalDom(combatState, true);
+    const monster = document.querySelector('[data-v02-monster-state]');
+    if (monster?.animate) {
+      playback.hitAnimation = monster.animate(
+        combatState.afterHp === 0
+          ? [{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(18px)' }]
+          : [{ transform: 'translateX(0)' }, { transform: 'translateX(8px)' }, { transform: 'translateX(0)' }],
+        { duration: 320, easing: 'ease-out', fill: 'forwards' },
+      );
+    }
+    await waitForCombat(playback, 450);
+  }
+
+  async function startCombatSequence(context) {
+    const playback = createCombatPlaybackSession();
+    combatPlayback = playback;
+    const delta = context.beforeHp - context.afterHp;
+    const attacks = delta > 0 && ['completed', 'partial'].includes(context.outcome);
+    combatState = {
+      ...context,
+      delta,
+      attack: attacks && !reducedMotionEnabled(),
+      phase: attacks ? 'playback' : context.outcome === 'partial' ? 'guard' : 'handoff',
+      currentHp: attacks && !reducedMotionEnabled() ? context.beforeHp : context.afterHp,
+      damage: attacks && reducedMotionEnabled() ? delta : 0,
+      monsterState: attacks && reducedMotionEnabled()
+        ? context.afterHp === 0 ? 'defeated' : 'hit'
+        : context.outcome === 'partial' ? 'guarded' : 'ready',
+      statusText: context.outcome === 'partial' && delta === 0
+        ? '막아냈지만 흔적은 그대로 남아 있습니다.'
+        : '',
+    };
+
+    if (!attacks && context.outcome !== 'partial') {
+      finalizeCombat(playback);
+      return;
+    }
+
+    render();
+    if (!attacks) {
+      await waitForCombat(playback, 360);
+      if (!playback.signal.aborted) finalizeCombat(playback);
+      return;
+    }
+
+    if (reducedMotionEnabled()) {
+      applyCombatFinalDom(combatState, delta > 0);
+      await Promise.allSettled([
+        playCharacterFx(context.outcome === 'partial' ? 'progress' : context.result.goalMilestone ? 'milestone' : 'completed', null, null, {
+          signal: playback.signal,
+          interactive: false,
+        }),
+      ]);
+      if (!playback.signal.aborted) finalizeCombat(playback);
+      return;
+    }
+
+    await Promise.allSettled([
+      playSkillMedia(playback),
+      playCharacterFx(context.outcome === 'partial' ? 'progress' : context.result.goalMilestone ? 'milestone' : 'completed', null, null, {
+        signal: playback.signal,
+        interactive: false,
+      }),
+    ]);
+    if (playback.signal.aborted) return;
+    await playMonsterHit(playback);
+    if (!playback.signal.aborted) finalizeCombat(playback);
+  }
+
+  async function commitCombatOutcome(command) {
+    const before = Core.getSnapshot();
+    const expedition = before.expeditions.find((item) => item.status === 'active');
+    if (!expedition) throw new Error('ACTIVE_EXPEDITION_NOT_FOUND');
+    const originalStep = before.steps.find((item) => item.id === expedition.stepId);
+    if (!originalStep) throw new Error('ACTIVE_STEP_NOT_FOUND');
+    const Fun = root.StepQuestV02Fun;
+    if (!Fun?.deriveEncounterHp) throw new Error('FUN_MODULE_NOT_LOADED');
+    const beforeHp = Fun.deriveEncounterHp(originalStep, before.rewards);
+    const encounter = Core.getEncounterView();
+    const result = await Core.reportCurrentExpedition(command);
+    const after = Core.getSnapshot();
+    const sameStep = after.steps.find((item) => item.id === originalStep.id);
+    if (!sameStep) throw new Error('REPORTED_STEP_NOT_FOUND');
+    const afterHp = Fun.deriveEncounterHp(sameStep, after.rewards);
+    const pending = await Core.getPendingBattleReport();
+    if (!pending || pending.key !== command.idempotencyKey) throw new Error('BATTLE_REPORT_HANDOFF_MISSING');
+    return {
+      outcome: command.outcome,
+      result,
+      pending,
+      encounter,
+      stepId: originalStep.id,
+      rewardLineage: originalStep.rewardLineage,
+      beforeHp,
+      afterHp,
+    };
+  }
+
+  function setReportCommitControlsDisabled(disabled) {
+    document.querySelectorAll(
+      '#v02-return-report button, #v02-return-report input, #v02-return-report textarea, #v02-return-report select',
+    ).forEach((control) => {
+      control.disabled = disabled;
+    });
+  }
+
+  function beginReportCommit() {
+    if (reportCommitInFlight) return false;
+    reportCommitInFlight = true;
+    setReportCommitControlsDisabled(true);
+    return true;
+  }
+
+  function finishReportCommit(restoreControls = false) {
+    reportCommitInFlight = false;
+    if (restoreControls) setReportCommitControlsDisabled(false);
   }
 
   async function run(button, action, afterRender) {
@@ -501,6 +1298,18 @@
   }
 
   function wire() {
+    observeCharacterVideoPlayback(
+      document.querySelector('video[data-v02-character-media="idle"]'),
+    );
+    document.querySelectorAll('[name="v02-expedition-minutes"]').forEach((field) => {
+      field.addEventListener('change', () => {
+        const minutes = Number(field.value);
+        if (!field.checked || ![5, 10, 25].includes(minutes)) return;
+        selectedMinutes = minutes;
+        const teaser = document.querySelector('[data-v02-expedition-teaser]');
+        if (teaser) teaser.textContent = teaserText(minutes);
+      });
+    });
     document.getElementById('v02-character-settings')?.addEventListener('toggle', (event) => {
       characterPanelOpen = event.currentTarget.open;
     });
@@ -524,6 +1333,22 @@
         return true;
       })
     ));
+    ['idle', 'skill'].forEach((slot) => {
+      document.getElementById(`v02-save-character-${slot}`)?.addEventListener('click', (event) => (
+        run(event.currentTarget, async () => {
+          const fileField = document.getElementById(`v02-character-${slot}-file`);
+          const file = fileField.files?.[0];
+          if (!file) {
+            fileField.focus();
+            App.toast('저장할 애니메이션을 먼저 선택해 주세요.', true);
+            return false;
+          }
+          characterPanelOpen = true;
+          await Core.importCharacterMedia(slot, file);
+          return true;
+        })
+      ));
+    });
     document.getElementById('v02-export-character-full')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
         root.StepQuestV02Backup.downloadJson(
@@ -565,60 +1390,76 @@
         const attempt = state.events.filter((item) => (
           item.type === 'step_started' && item.stepId === step.id
         )).length;
-        const result = await Core.startCurrentStep(key('start', `${step.id}:${attempt}`));
+        const minutes = Number(document.querySelector('[name="v02-expedition-minutes"]:checked')?.value);
+        const result = await Core.startCurrentStep(key('start', `${step.id}:${attempt}`), minutes);
+        selectedMinutes = minutes;
         reporting = false;
-        reportDismissed = false;
+        reportingEntry = null;
         return result;
       }, () => playCharacterFx('departure'))
     ));
     document.getElementById('v02-open-report')?.addEventListener('click', () => {
+      const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+      const timer = timerView(expedition);
       reporting = true;
-      reportDismissed = false;
-      render();
+      reportingEntry = timer?.phase === 'running'
+        ? 'early'
+        : timer?.phase === 'legacy_ready'
+          ? 'legacy'
+          : 'harvest';
+      render(selectedOutcome ? '#v02-next-action' : '[data-v02-outcome]');
     });
     document.getElementById('v02-cancel-report')?.addEventListener('click', () => {
       reporting = false;
-      reportDismissed = true;
+      reportingEntry = null;
       selectedOutcome = null;
-      render();
+      render('#v02-open-report');
     });
     document.querySelectorAll('[data-v02-outcome]').forEach((button) => {
       button.addEventListener('click', (event) => {
+        if (reportCommitInFlight) return;
         const outcome = button.dataset.v02Outcome;
         selectedOutcome = outcome;
         if (outcome === 'partial' || outcome === 'interrupted') {
           const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
           writeAnchorDraft(expedition.id, { outcome });
-          render();
+          render('#v02-next-action');
           return;
         }
-        run(event.currentTarget, async () => {
+        if (event.currentTarget.disabled || !beginReportCommit()) return;
+        (async () => {
           const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-          const result = await Core.reportCurrentExpedition({
+          const context = await commitCombatOutcome({
             outcome,
             idempotencyKey: key('report', expedition.id),
           });
           clearAnchorDraft(expedition.id);
           reporting = false;
+          reportingEntry = null;
           selectedOutcome = null;
           selectedReason = null;
-          return result;
-        }, outcome === 'completed'
-          ? (result) => playCharacterFx(result.goalMilestone ? 'milestone' : 'completed')
-          : null);
+          await startCombatSequence(context);
+          finishReportCommit();
+        })().catch((error) => {
+          finishReportCommit(true);
+          App.toast(error.message, true);
+        });
       });
     });
-    document.getElementById('v02-save-outcome')?.addEventListener('click', (event) => (
-      run(event.currentTarget, async () => {
-        const nextField = document.getElementById('v02-next-action');
-        const nextPhysicalAction = nextField.value.trim();
-        if (!nextPhysicalAction) {
-          nextField.focus();
-          return false;
-        }
+    document.getElementById('v02-save-outcome')?.addEventListener('click', (event) => {
+      if (reportCommitInFlight || event.currentTarget.disabled) return;
+      const nextField = document.getElementById('v02-next-action');
+      const nextPhysicalAction = nextField.value.trim();
+      if (!nextPhysicalAction) {
+        nextField.focus();
+        return;
+      }
+      const reportOutcome = selectedOutcome;
+      if (!beginReportCommit()) return;
+      (async () => {
         const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-        await Core.reportCurrentExpedition({
-          outcome: selectedOutcome,
+        const context = await commitCombatOutcome({
+          outcome: reportOutcome,
           idempotencyKey: key('report', expedition.id),
           anchor: {
             lastCompletedAction: document.getElementById('v02-last-action').value.trim(),
@@ -630,9 +1471,15 @@
         });
         clearAnchorDraft(expedition.id);
         reporting = false;
+        reportingEntry = null;
         selectedOutcome = null;
-      })
-    ));
+        await startCombatSequence(context);
+        finishReportCommit();
+      })().catch((error) => {
+        finishReportCommit(true);
+        App.toast(error.message, true);
+      });
+    });
     ['v02-last-action', 'v02-next-action', 'v02-location', 'v02-material', 'v02-note']
       .forEach((id) => document.getElementById(id)?.addEventListener('input', () => {
         const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
@@ -640,8 +1487,12 @@
       }));
     document.getElementById('v02-resume-step')?.addEventListener('click', (event) => (
       run(event.currentTarget, async () => {
-        const step = Core.getSnapshot().steps.find((item) => item.status === 'interrupted');
-        await Core.resumeCurrentStep(step.id, key('resume', step.id));
+        const state = Core.getSnapshot();
+        const step = state.steps.find((item) => item.status === 'interrupted');
+        const attempt = state.events.filter((item) => (
+          item.type === 'step_resumed' && item.stepId === step.id
+        )).length;
+        await Core.resumeCurrentStep(step.id, key('resume', `${step.id}:${attempt}`));
       })
     ));
     document.getElementById('v02-undefer-step')?.addEventListener('click', (event) => (
@@ -766,24 +1617,165 @@
     document.getElementById('v02-enable-backup')?.addEventListener('click', (event) => (
       run(event.currentTarget, () => Core.enableExternalBackup())
     ));
+    document.getElementById('v02-combat-skip')?.addEventListener('click', () => {
+      finalizeCombat(combatPlayback, true);
+    });
+    document.getElementById('v02-continue-report')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      const reportKey = pendingBattleReport?.key;
+      if (!reportKey || button.disabled) return;
+      button.disabled = true;
+      try {
+        const acknowledged = await Core.acknowledgeBattleReport(reportKey);
+        if (!acknowledged) {
+          await hydratePendingBattleReport();
+          render('#v02-battle-report h2');
+          return;
+        }
+        await Core.refreshSnapshot();
+        const latest = await Core.getPendingBattleReport();
+        if (latest) {
+          pendingBattleReport = latest;
+          render('#v02-battle-report h2');
+          return;
+        }
+        if (pendingBattleReport && pendingBattleReport.key !== reportKey) {
+          render('#v02-battle-report h2');
+          return;
+        }
+        pendingBattleReport = null;
+        root.history.replaceState(null, '', '#today');
+        render('#page-root h2, #page-root button');
+      } catch (error) {
+        button.disabled = false;
+        App.toast(error.message, true);
+      }
+    });
+  }
+
+  function reconcileRefreshedPresentation(before) {
+    const after = lifecyclePresentation();
+    const expeditionChanged = before.expeditionRecord !== after.expeditionRecord;
+
+    if (expeditionChanged) {
+      reporting = false;
+      reportingEntry = null;
+      const draft = readAnchorDraft(after.expedition?.id);
+      selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
+        ? draft.outcome
+        : null;
+      selectedReason = null;
+      tiredShrink = false;
+      timerExpeditionId = null;
+      alignTimerSession(after.expedition);
+    }
+
+    const timer = timerView(after.expedition);
+    if (reporting && !expeditionChanged) {
+      refreshCharacterUrlInPlace();
+      syncTimer(timer);
+      return;
+    }
+
+    const stateUnchanged = (
+      before.snapshot === after.snapshot
+      && before.status === after.status
+      && before.character === after.character
+      && before.selectedMinutes === after.selectedMinutes
+      && before.pendingReportKey === after.pendingReportKey
+    );
+    if (stateUnchanged && after.renderedPhase === (timer?.phase || null)) {
+      refreshCharacterUrlInPlace();
+      if (timer?.phase === 'running') updateCountdown(timer, after.expedition.id);
+      syncTimer(timer);
+      return;
+    }
+    render();
+  }
+
+  async function refreshFromLifecycle() {
+    if (combatPlayback && !combatPlayback.finalized) {
+      combatLifecycleRefreshPending = true;
+      return;
+    }
+    const before = lifecyclePresentation();
+    await Core.refreshSnapshot();
+    await hydratePendingBattleReport();
+    reconcileRefreshedPresentation(before);
+  }
+
+  function enqueueLifecycle(action, reportError = true) {
+    const pending = refreshQueue.then(action);
+    refreshQueue = pending.catch((error) => {
+      if (reportError) App.toast(error.message, true);
+    });
+    return pending;
+  }
+
+  function queueLifecycleRefresh() {
+    enqueueLifecycle(refreshFromLifecycle);
+  }
+
+  function bindLifecycle() {
+    if (lifecycleBound) return;
+    lifecycleBound = true;
+    document.addEventListener('error', handleCharacterMediaError, true);
+    document.addEventListener('visibilitychange', queueLifecycleRefresh);
+    document.addEventListener('change', (event) => {
+      if (event.target?.id !== 'reduced-motion-toggle') return;
+      Promise.resolve().then(() => render('#reduced-motion-toggle'));
+    });
+    root.addEventListener('pageshow', queueLifecycleRefresh);
+    root.addEventListener('focus', queueLifecycleRefresh);
+    if (!hashRouteBound) {
+      hashRouteBound = true;
+      root.addEventListener('hashchange', () => {
+        const route = normalizeRouteHash();
+        render(route === '#codex' ? '#v02-codex-heading' : '#page-root button');
+      });
+    }
   }
 
   async function mount(options) {
-    App = options.App;
-    Core = options.Core;
-    await Core.init({ App });
-    reporting = Core.getStatus().recoveredExpedition;
-    reportDismissed = false;
-    const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-    const draft = readAnchorDraft(expedition?.id);
-    selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
-      ? draft.outcome
-      : null;
-    selectedReason = null;
-    tiredShrink = false;
-    campMessage = null;
-    characterPanelOpen = false;
-    render();
+    const nextApp = options.App;
+    const nextCore = options.Core;
+    return enqueueLifecycle(async () => {
+      const wasMounted = mounted;
+      const before = wasMounted ? lifecyclePresentation() : null;
+      App = nextApp;
+      Core = nextCore;
+      bindLifecycle();
+      await Core.init({ App });
+      const nextSelectedMinutes = await Core.getLastExpeditionMinutes();
+      await Core.refreshSnapshot();
+      await hydratePendingBattleReport();
+      selectedMinutes = nextSelectedMinutes;
+      if (wasMounted) {
+        reconcileRefreshedPresentation(before);
+        return;
+      }
+      reporting = false;
+      reportingEntry = null;
+      combatState = null;
+      combatPlayback = null;
+      combatLifecycleRefreshPending = false;
+      reportCommitInFlight = false;
+      foregroundSession = await Core.beginForegroundSession(currentLocalDate());
+      dialogueCache = null;
+      dialoguePendingKey = null;
+      const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+      const draft = readAnchorDraft(expedition?.id);
+      selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
+        ? draft.outcome
+        : null;
+      selectedReason = null;
+      tiredShrink = false;
+      campMessage = null;
+      characterPanelOpen = false;
+      normalizeRouteHash();
+      render();
+      mounted = true;
+    }, false);
   }
 
   root.StepQuestV02UI = { mount, render };

@@ -3,7 +3,15 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.StepQuestV02Backup = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, () => {
+  const LEGACY_PORTRAIT_KEY = 'character:local-primary:image';
+  const MEDIA_KEYS = Object.freeze({
+    portrait: 'character:local-primary:portrait',
+    idle: 'character:local-primary:idle',
+    skill: 'character:local-primary:skill',
+  });
+
   function buildExport(records, now = new Date().toISOString()) {
+    // Keep domain records whole so additive timing, category, and report fields survive export.
     return {
       schemaVersion: 3,
       exportedAt: now,
@@ -19,11 +27,28 @@
     };
   }
 
+  function selectedCharacterAssetKeys(records) {
+    const selected = new Set();
+    (records.characters || []).forEach((character) => {
+      const media = character?.media || {};
+      const portraitKey = media.portraitKey || character?.imageBlobKey;
+      if (portraitKey === MEDIA_KEYS.portrait || portraitKey === LEGACY_PORTRAIT_KEY) {
+        selected.add(portraitKey);
+      }
+      if (media.idleKey === MEDIA_KEYS.idle) selected.add(media.idleKey);
+      if (media.skillKey === MEDIA_KEYS.skill) selected.add(media.skillKey);
+    });
+    return selected;
+  }
+
   function buildFullExport(records, encodedAssets, now = new Date().toISOString()) {
+    const selected = selectedCharacterAssetKeys(records);
     return {
       ...buildExport(records, now),
       exportType: 'full-with-images',
-      assets: Array.isArray(encodedAssets) ? encodedAssets : [],
+      assets: Array.isArray(encodedAssets)
+        ? encodedAssets.filter((asset) => selected.has(asset?.id))
+        : [],
     };
   }
 
