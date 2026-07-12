@@ -328,8 +328,10 @@ test('keeps the same active expedition across reload', async ({ page }) => {
 
 test('persists additive fields and backs up a committed IndexedDB start exactly once', async ({ page }) => {
   await clearBrowserState(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
   const result = await page.evaluate(async ({ expiry, now }) => {
     const Backup = (window as any).StepQuestV02Backup;
+    const Fun = (window as any).StepQuestV02Fun;
     const repository = await (window as any).StepQuestV02Storage.openRepository();
     await repository.importGoal({
       weekly: {
@@ -356,10 +358,26 @@ test('persists additive fields and backs up a committed IndexedDB start exactly 
     const standard = Backup.buildExport(startedRecords, now);
     const startMirrorBytes = localStorage.getItem('stepquest_v02_fallback_state');
     const startMirror = JSON.parse(startMirrorBytes);
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const afterElapsed = await repository.exportRecords();
-    const elapsedMirrorBytes = localStorage.getItem('stepquest_v02_fallback_state');
+    const beforeObservation = {
+      backupCount: startedRecords.backups.length,
+      exportBytes: Backup.serializeExport(standard),
+      fallbackRevision: localStorage.getItem('stepquest_v02_fallback_revision'),
+      headRevision: localStorage.getItem('stepquest_v02_head_revision'),
+      mirrorBytes: startMirrorBytes,
+      recordsBytes: JSON.stringify(startedRecords),
+      stateRevision: await repository.getMeta('stateRevision'),
+    };
+    const timer = Fun.deriveTimer(startedRecords.expeditions[0], expiry);
+    const observedRecords = await repository.exportRecords();
+    const afterObservation = {
+      backupCount: observedRecords.backups.length,
+      exportBytes: Backup.serializeExport(Backup.buildExport(observedRecords, now)),
+      fallbackRevision: localStorage.getItem('stepquest_v02_fallback_revision'),
+      headRevision: localStorage.getItem('stepquest_v02_head_revision'),
+      mirrorBytes: localStorage.getItem('stepquest_v02_fallback_state'),
+      recordsBytes: JSON.stringify(observedRecords),
+      stateRevision: await repository.getMeta('stateRevision'),
+    };
 
     await repository.execute('reportOutcome', {
       expeditionId: started.result.expeditionId,
@@ -384,9 +402,9 @@ test('persists additive fields and backs up a committed IndexedDB start exactly 
       startedRecords,
       startMirror,
       standard,
-      afterElapsed,
-      startMirrorBytes,
-      elapsedMirrorBytes,
+      timer,
+      beforeObservation,
+      afterObservation,
       reportProjections: {
         indexedDB: reportEvent.result,
         localStorage: reportedMirror.events.find(
@@ -423,8 +441,8 @@ test('persists additive fields and backs up a committed IndexedDB start exactly 
   expect(result.startMirror.steps[0].category).toBe('writing');
   expect(startBackups[0].snapshot.steps[0].category).toBe('writing');
   expect(result.standard.steps[0].category).toBe('writing');
-  expect(result.afterElapsed).toEqual(result.startedRecords);
-  expect(result.elapsedMirrorBytes).toBe(result.startMirrorBytes);
+  expect(result.timer).toEqual({ phase: 'ready', remainingMs: 0, plannedMinutes: 25 });
+  expect(result.afterObservation).toEqual(result.beforeObservation);
 
   const expectedProjection = {
     rewardLineage: 'timed-step',
@@ -496,8 +514,10 @@ test('persists additive fields and backs up a committed fallback start exactly o
     });
   });
   await clearBrowserState(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
   const result = await page.evaluate(async ({ expiry, now }) => {
     const Backup = (window as any).StepQuestV02Backup;
+    const Fun = (window as any).StepQuestV02Fun;
     const repository = await (window as any).StepQuestV02Storage.openRepository();
     await repository.importGoal({
       weekly: {
@@ -528,9 +548,24 @@ test('persists additive fields and backs up a committed fallback start exactly o
     const startedRecords = await repository.exportRecords();
     const standard = Backup.buildExport(startedRecords, now);
     const startStateBytes = localStorage.getItem('stepquest_v02_fallback_state');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const afterElapsed = await repository.exportRecords();
-    const elapsedStateBytes = localStorage.getItem('stepquest_v02_fallback_state');
+    const beforeObservation = {
+      backupCount: startedRecords.backups.length,
+      exportBytes: Backup.serializeExport(standard),
+      fallbackRevision: localStorage.getItem('stepquest_v02_fallback_revision'),
+      headRevision: localStorage.getItem('stepquest_v02_head_revision'),
+      recordsBytes: JSON.stringify(startedRecords),
+      stateBytes: startStateBytes,
+    };
+    const timer = Fun.deriveTimer(startedRecords.expeditions[0], expiry);
+    const observedRecords = await repository.exportRecords();
+    const afterObservation = {
+      backupCount: observedRecords.backups.length,
+      exportBytes: Backup.serializeExport(Backup.buildExport(observedRecords, now)),
+      fallbackRevision: localStorage.getItem('stepquest_v02_fallback_revision'),
+      headRevision: localStorage.getItem('stepquest_v02_head_revision'),
+      recordsBytes: JSON.stringify(observedRecords),
+      stateBytes: localStorage.getItem('stepquest_v02_fallback_state'),
+    };
 
     await repository.execute('reportOutcome', {
       expeditionId: started.result.expeditionId,
@@ -553,9 +588,9 @@ test('persists additive fields and backs up a committed fallback start exactly o
       beforeBackupCount: beforeStart.backups.length,
       startedRecords,
       standard,
-      afterElapsed,
-      startStateBytes,
-      elapsedStateBytes,
+      timer,
+      beforeObservation,
+      afterObservation,
       reportProjections: {
         localStorage: reportEvent.result,
         rollingBackup: reportBackup.snapshot.events.find(
@@ -587,8 +622,8 @@ test('persists additive fields and backs up a committed fallback start exactly o
   expect(result.startedRecords.steps[0].category).toBe('writing');
   expect(startBackups[0].snapshot.steps[0].category).toBe('writing');
   expect(result.standard.steps[0].category).toBe('writing');
-  expect(result.afterElapsed).toEqual(result.startedRecords);
-  expect(result.elapsedStateBytes).toBe(result.startStateBytes);
+  expect(result.timer).toEqual({ phase: 'ready', remainingMs: 0, plannedMinutes: 25 });
+  expect(result.afterObservation).toEqual(result.beforeObservation);
 
   const expectedProjection = {
     rewardLineage: 'fallback-timed-step',
