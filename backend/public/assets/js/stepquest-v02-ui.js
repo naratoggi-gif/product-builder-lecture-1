@@ -14,6 +14,7 @@
   let readyLatch = null;
   let readyAnnounced = null;
   let lifecycleBound = false;
+  let mounted = false;
   let refreshQueue = Promise.resolve();
 
   const outcomeLabels = {
@@ -193,15 +194,63 @@
     return value;
   }
 
+  const domainArrayKeys = new Set([
+    'goals',
+    'steps',
+    'expeditions',
+    'anchors',
+    'resumeAnchors',
+    'events',
+    'rewards',
+  ]);
+
+  function volatilePresentationKey(name) {
+    return /url$/i.test(name) || ['objectUrl', 'previewSrc'].includes(name);
+  }
+
+  function compareDomainRecords(left, right) {
+    const leftOrder = Number(left?.orderIndex);
+    const rightOrder = Number(right?.orderIndex);
+    const leftHasOrder = Number.isFinite(leftOrder);
+    const rightHasOrder = Number.isFinite(rightOrder);
+    if (leftHasOrder && rightHasOrder && leftOrder !== rightOrder) return leftOrder - rightOrder;
+    if (leftHasOrder !== rightHasOrder) return leftHasOrder ? -1 : 1;
+
+    for (const name of ['id', 'idempotencyKey', 'goalId', 'stepId', 'expeditionId']) {
+      const compared = String(left?.[name] ?? '').localeCompare(String(right?.[name] ?? ''));
+      if (compared) return compared;
+    }
+    return JSON.stringify(left).localeCompare(JSON.stringify(right));
+  }
+
+  function canonicalProjection(value, parentKey = '') {
+    if (Array.isArray(value)) {
+      const projected = value.map((item) => canonicalProjection(item));
+      return domainArrayKeys.has(parentKey) ? projected.sort(compareDomainRecords) : projected;
+    }
+    if (!value || typeof value !== 'object') return value;
+    return Object.keys(value).sort().reduce((projected, name) => {
+      if (!volatilePresentationKey(name)) {
+        projected[name] = canonicalProjection(value[name], name);
+      }
+      return projected;
+    }, {});
+  }
+
+  function canonicalString(value) {
+    return JSON.stringify(canonicalProjection(value));
+  }
+
   function lifecyclePresentation() {
     const snapshot = Core.getSnapshot();
     const expedition = snapshot.expeditions.find((item) => item.status === 'active') || null;
     return {
-      snapshot: JSON.stringify(snapshot),
-      status: JSON.stringify(Core.getStatus()),
-      character: JSON.stringify(stableCharacter()),
+      snapshot: canonicalString(snapshot),
+      status: canonicalString(Core.getStatus()),
+      character: canonicalString(stableCharacter()),
+      selectedMinutes,
       expedition,
-      expeditionRecord: JSON.stringify(expedition),
+      expeditionRecord: canonicalString(expedition),
       renderedPhase: renderedTimerPhase(),
     };
   }
@@ -975,9 +1024,7 @@
     ));
   }
 
-  async function refreshFromLifecycle() {
-    const before = lifecyclePresentation();
-    await Core.refreshSnapshot();
+  function reconcileRefreshedPresentation(before) {
     const after = lifecyclePresentation();
     const expeditionChanged = before.expeditionRecord !== after.expeditionRecord;
 
@@ -1005,14 +1052,21 @@
       before.snapshot === after.snapshot
       && before.status === after.status
       && before.character === after.character
+      && before.selectedMinutes === after.selectedMinutes
     );
-    if (stateUnchanged && before.renderedPhase === (timer?.phase || null)) {
+    if (stateUnchanged && after.renderedPhase === (timer?.phase || null)) {
       refreshCharacterUrlInPlace();
       if (timer?.phase === 'running') updateCountdown(timer, after.expedition.id);
       syncTimer(timer);
       return;
     }
     render();
+  }
+
+  async function refreshFromLifecycle() {
+    const before = lifecyclePresentation();
+    await Core.refreshSnapshot();
+    reconcileRefreshedPresentation(before);
   }
 
   function enqueueLifecycle(action, reportError = true) {
@@ -1036,18 +1090,22 @@
   }
 
   async function mount(options) {
-    App = options.App;
-    Core = options.Core;
-    clearTimer();
-    timerExpeditionId = null;
-    readyLatch = null;
-    readyAnnounced = null;
-    refreshQueue = Promise.resolve();
-    bindLifecycle();
-    await enqueueLifecycle(async () => {
+    const nextApp = options.App;
+    const nextCore = options.Core;
+    return enqueueLifecycle(async () => {
+      const wasMounted = mounted;
+      const before = wasMounted ? lifecyclePresentation() : null;
+      App = nextApp;
+      Core = nextCore;
+      bindLifecycle();
       await Core.init({ App });
-      selectedMinutes = await Core.getLastExpeditionMinutes();
+      const nextSelectedMinutes = await Core.getLastExpeditionMinutes();
       await Core.refreshSnapshot();
+      selectedMinutes = nextSelectedMinutes;
+      if (wasMounted) {
+        reconcileRefreshedPresentation(before);
+        return;
+      }
       reporting = false;
       reportingEntry = null;
       const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
@@ -1060,6 +1118,7 @@
       campMessage = null;
       characterPanelOpen = false;
       render();
+      mounted = true;
     }, false);
   }
 
