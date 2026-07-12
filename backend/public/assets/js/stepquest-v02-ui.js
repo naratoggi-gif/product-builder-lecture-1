@@ -2,12 +2,19 @@
   let App;
   let Core;
   let reporting = false;
-  let reportDismissed = false;
+  let reportingEntry = null;
   let selectedOutcome = null;
   let selectedReason = null;
   let tiredShrink = false;
   let campMessage = null;
   let characterPanelOpen = false;
+  let selectedMinutes = 5;
+  let timerInterval = null;
+  let timerExpeditionId = null;
+  let readyLatch = null;
+  let readyAnnounced = null;
+  let lifecycleBound = false;
+  let refreshQueue = Promise.resolve();
 
   const outcomeLabels = {
     completed: '완료',
@@ -77,6 +84,114 @@
       requiredMaterial: document.getElementById('v02-material')?.value || '',
       note: document.getElementById('v02-note')?.value || '',
     });
+  }
+
+  function alignTimerSession(expedition) {
+    const expeditionId = expedition?.id || null;
+    if (timerExpeditionId === expeditionId) return;
+    timerExpeditionId = expeditionId;
+    readyLatch = null;
+    readyAnnounced = null;
+  }
+
+  function timerView(expedition) {
+    alignTimerSession(expedition);
+    if (!expedition) return null;
+    const timer = Core.getTimerView(new Date().toISOString());
+    if (!timer) return null;
+    if (timer.phase === 'ready') readyLatch = expedition.id;
+    if (timer.phase === 'running' && readyLatch === expedition.id) {
+      return { ...timer, phase: 'ready', remainingMs: 0 };
+    }
+    return timer;
+  }
+
+  function formatCountdown(remainingMs) {
+    const totalSeconds = Math.max(0, Math.ceil(Number(remainingMs || 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function routeLabel(minutes) {
+    return root.StepQuestV02Fun?.ROUTES?.[minutes]?.label || '원정 경로';
+  }
+
+  function teaserText(minutes) {
+    return `${minutes}분 · ${routeLabel(minutes)} · ???의 흔적`;
+  }
+
+  function durationChooser() {
+    return `
+      <div role="radiogroup" aria-labelledby="v02-expedition-duration-label">
+        <span id="v02-expedition-duration-label">원정 시간</span>
+        ${[5, 10, 25].map((minutes) => `
+          <label>
+            <input type="radio" name="v02-expedition-minutes" value="${minutes}" ${selectedMinutes === minutes ? 'checked' : ''} />
+            ${minutes}분
+          </label>
+        `).join('')}
+      </div>
+      <p data-v02-expedition-teaser>${h(teaserText(selectedMinutes))}</p>
+    `;
+  }
+
+  function reportPresentation() {
+    if (reportingEntry === 'early') {
+      return {
+        kicker: '조기 귀환',
+        cancel: '원정 계속하기',
+      };
+    }
+    if (reportingEntry === 'legacy') {
+      return {
+        kicker: '이전 원정 귀환 기록',
+        cancel: '이전 원정으로 돌아가기',
+      };
+    }
+    return {
+      kicker: '전리품 확인',
+      cancel: '수확 준비 화면으로 돌아가기',
+    };
+  }
+
+  function clearTimer() {
+    if (timerInterval === null) return;
+    root.clearInterval(timerInterval);
+    timerInterval = null;
+  }
+
+  function announceReady(expeditionId) {
+    if (!expeditionId || readyAnnounced === expeditionId) return;
+    readyAnnounced = expeditionId;
+    const live = document.getElementById('v02-live');
+    if (live) live.textContent = '원정 전리품을 확인할 준비가 되었습니다.';
+  }
+
+  function updateCountdown(timer, expeditionId) {
+    const countdown = document.querySelector(`[data-v02-countdown][data-v02-expedition-id="${expeditionId}"]`);
+    if (countdown) countdown.textContent = formatCountdown(timer.remainingMs);
+  }
+
+  function timerTick() {
+    const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+    const timer = timerView(expedition);
+    if (!timer || timer.phase !== 'running') {
+      clearTimer();
+      if (timer?.phase === 'ready' && !reporting && !document.getElementById('v02-expedition-ready')) {
+        render();
+      }
+      return;
+    }
+    updateCountdown(timer, expedition.id);
+  }
+
+  function syncTimer(timer) {
+    if (!timer || timer.phase !== 'running') {
+      clearTimer();
+      return;
+    }
+    if (timerInterval === null) timerInterval = root.setInterval(timerTick, 1000);
   }
 
   function viewModel() {
@@ -290,13 +405,14 @@
     `;
   }
 
-  function render() {
+  function render(focusSelector = null) {
     root.StepQuestV02FX?.cancel();
     App.renderShell('지금 할 한 동작');
     document.body.classList.add('v02-mode');
     const rootNode = document.getElementById('page-root');
     const vm = viewModel();
     const status = Core.getStatus();
+    const timer = timerView(vm.expedition);
     const anchorDraft = vm.expedition ? readAnchorDraft(vm.expedition.id) : null;
     const campLevel = vm.state.camp?.level || 0;
     const nextCampCost = 2 + campLevel;
@@ -338,12 +454,13 @@
           ${obstacleActionPanel()}
         </section>
       `;
-    } else if (vm.expedition && (reporting || (status.recoveredExpedition && !reportDismissed))) {
+    } else if (vm.expedition && reporting) {
+      const presentation = reportPresentation();
       body = `
         <section id="v02-return-report" class="panel v02-runner">
-          <span class="v02-kicker">평가가 아니라 다음 위치를 정합니다</span>
+          <span class="v02-kicker">${presentation.kicker}</span>
           <h2>어떻게 돌아왔나요?</h2>
-          <button id="v02-cancel-report" class="ghost">아직 진행 중이에요 → 돌아가기</button>
+          <button id="v02-cancel-report" class="ghost">${presentation.cancel}</button>
           <div class="v02-outcome-grid">
             ${Object.entries(outcomeLabels).map(([value, label]) => (
               `<button data-v02-outcome="${value}">${label}</button>`
@@ -361,16 +478,44 @@
           ` : ''}
         </section>
       `;
-    } else if (vm.expedition) {
+    } else if (vm.expedition && timer?.phase === 'running') {
       const step = vm.state.steps.find((item) => item.id === vm.expedition.stepId);
+      const encounter = Core.getEncounterView();
       hasCharacterStage = true;
       body = `
         <section id="v02-expedition-active" class="panel v02-expedition">
           <span class="v02-kicker">원정 진행 중</span>
           <h2>${h(step?.title)}</h2>
           ${stage}
+          <div data-v02-encounter>
+            <span>${h(routeLabel(timer.plannedMinutes))}에서 마주친 존재</span>
+            <strong>${h(encounter?.name || '알 수 없는 존재')}</strong>
+          </div>
+          <time data-v02-countdown data-v02-expedition-id="${h(vm.expedition.id)}" aria-label="남은 원정 시간">${formatCountdown(timer.remainingMs)}</time>
           <p>앱을 닫아도 됩니다.</p>
-          <button id="v02-open-report">돌아왔어요</button>
+          <button id="v02-open-report">일찍 돌아왔어요</button>
+        </section>
+      `;
+    } else if (vm.expedition && timer?.phase === 'ready') {
+      const step = vm.state.steps.find((item) => item.id === vm.expedition.stepId);
+      hasCharacterStage = true;
+      body = `
+        <section id="v02-expedition-ready" class="panel v02-expedition">
+          <span class="v02-kicker">수확 준비 완료</span>
+          <h2>${h(step?.title)} 원정 기록이 도착했습니다.</h2>
+          ${stage}
+          <p>돌아온 기록을 차분히 확인할 수 있습니다.</p>
+          <button id="v02-open-report">전리품 확인</button>
+        </section>
+      `;
+    } else if (vm.expedition) {
+      const step = vm.state.steps.find((item) => item.id === vm.expedition.stepId);
+      body = `
+        <section id="v02-expedition-legacy-ready" class="panel v02-expedition">
+          <span class="v02-kicker">이전 원정 기록</span>
+          <h2>${h(step?.title)}</h2>
+          <p>이전 버전에서 시작한 원정입니다. 남은 시간을 계산하지 않고 기존 귀환 기록을 이어갑니다.</p>
+          <button id="v02-open-report">귀환 기록 열기</button>
         </section>
       `;
     } else if (vm.interrupted && vm.anchor) {
@@ -391,6 +536,7 @@
           <h2 data-v02-current-step>${h(vm.active.title)}</h2>
           ${stage}
           <p>완료를 약속하지 않아도 됩니다. 시작 위치만 남깁니다.</p>
+          ${durationChooser()}
           <button id="v02-start-step">시작</button>
         </section>
       `;
@@ -449,6 +595,9 @@
     ` : '';
     rootNode.innerHTML = `${wallet}${body}${campPanel}${characterSettings(status, hasCharacterStage)}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
     wire();
+    syncTimer(timer);
+    if (!reporting && timer?.phase === 'ready') announceReady(vm.expedition.id);
+    if (focusSelector) Promise.resolve().then(() => document.querySelector(focusSelector)?.focus());
   }
 
   function playCharacterFx(mode, preset, restoreFocus) {
@@ -501,6 +650,15 @@
   }
 
   function wire() {
+    document.querySelectorAll('[name="v02-expedition-minutes"]').forEach((field) => {
+      field.addEventListener('change', () => {
+        const minutes = Number(field.value);
+        if (!field.checked || ![5, 10, 25].includes(minutes)) return;
+        selectedMinutes = minutes;
+        const teaser = document.querySelector('[data-v02-expedition-teaser]');
+        if (teaser) teaser.textContent = teaserText(minutes);
+      });
+    });
     document.getElementById('v02-character-settings')?.addEventListener('toggle', (event) => {
       characterPanelOpen = event.currentTarget.open;
     });
@@ -565,22 +723,30 @@
         const attempt = state.events.filter((item) => (
           item.type === 'step_started' && item.stepId === step.id
         )).length;
-        const result = await Core.startCurrentStep(key('start', `${step.id}:${attempt}`));
+        const minutes = Number(document.querySelector('[name="v02-expedition-minutes"]:checked')?.value);
+        const result = await Core.startCurrentStep(key('start', `${step.id}:${attempt}`), minutes);
+        selectedMinutes = minutes;
         reporting = false;
-        reportDismissed = false;
+        reportingEntry = null;
         return result;
       }, () => playCharacterFx('departure'))
     ));
     document.getElementById('v02-open-report')?.addEventListener('click', () => {
+      const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+      const timer = timerView(expedition);
       reporting = true;
-      reportDismissed = false;
-      render();
+      reportingEntry = timer?.phase === 'running'
+        ? 'early'
+        : timer?.phase === 'legacy_ready'
+          ? 'legacy'
+          : 'harvest';
+      render(selectedOutcome ? '#v02-next-action' : '[data-v02-outcome]');
     });
     document.getElementById('v02-cancel-report')?.addEventListener('click', () => {
       reporting = false;
-      reportDismissed = true;
+      reportingEntry = null;
       selectedOutcome = null;
-      render();
+      render('#v02-open-report');
     });
     document.querySelectorAll('[data-v02-outcome]').forEach((button) => {
       button.addEventListener('click', (event) => {
@@ -589,7 +755,7 @@
         if (outcome === 'partial' || outcome === 'interrupted') {
           const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
           writeAnchorDraft(expedition.id, { outcome });
-          render();
+          render('#v02-next-action');
           return;
         }
         run(event.currentTarget, async () => {
@@ -600,6 +766,7 @@
           });
           clearAnchorDraft(expedition.id);
           reporting = false;
+          reportingEntry = null;
           selectedOutcome = null;
           selectedReason = null;
           return result;
@@ -630,6 +797,7 @@
         });
         clearAnchorDraft(expedition.id);
         reporting = false;
+        reportingEntry = null;
         selectedOutcome = null;
       })
     ));
@@ -768,12 +936,58 @@
     ));
   }
 
+  async function refreshFromLifecycle() {
+    const beforeExpedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+    const preserveForm = reporting && Boolean(beforeExpedition);
+    await Core.refreshSnapshot();
+    const afterExpedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+    const expeditionChanged = beforeExpedition?.id !== afterExpedition?.id;
+
+    if (expeditionChanged) {
+      reporting = false;
+      reportingEntry = null;
+      const draft = readAnchorDraft(afterExpedition?.id);
+      selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
+        ? draft.outcome
+        : null;
+      selectedReason = null;
+      tiredShrink = false;
+      alignTimerSession(afterExpedition);
+    }
+
+    if (preserveForm && !expeditionChanged) {
+      syncTimer(timerView(afterExpedition));
+      return;
+    }
+    render();
+  }
+
+  function queueLifecycleRefresh() {
+    refreshQueue = refreshQueue
+      .then(refreshFromLifecycle)
+      .catch((error) => App.toast(error.message, true));
+  }
+
+  function bindLifecycle() {
+    if (lifecycleBound) return;
+    lifecycleBound = true;
+    document.addEventListener('visibilitychange', queueLifecycleRefresh);
+    root.addEventListener('pageshow', queueLifecycleRefresh);
+    root.addEventListener('focus', queueLifecycleRefresh);
+  }
+
   async function mount(options) {
     App = options.App;
     Core = options.Core;
+    clearTimer();
+    timerExpeditionId = null;
+    readyLatch = null;
+    readyAnnounced = null;
+    refreshQueue = Promise.resolve();
     await Core.init({ App });
-    reporting = Core.getStatus().recoveredExpedition;
-    reportDismissed = false;
+    selectedMinutes = await Core.getLastExpeditionMinutes();
+    reporting = false;
+    reportingEntry = null;
     const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
     const draft = readAnchorDraft(expedition?.id);
     selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
@@ -783,6 +997,7 @@
     tiredShrink = false;
     campMessage = null;
     characterPanelOpen = false;
+    bindLifecycle();
     render();
   }
 

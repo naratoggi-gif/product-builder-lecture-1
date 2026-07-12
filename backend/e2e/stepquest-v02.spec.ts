@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test';
+import path from 'node:path';
+
+const funScriptPath = path.resolve('public/assets/js/stepquest-v02-fun.js');
 
 function writeUint24LE(buffer: Buffer, offset: number, value: number) {
   buffer[offset] = value & 0xff;
@@ -42,6 +45,7 @@ function makeAnimatedWebPBytes(durations: number[], width = 8, height = 8) {
 }
 
 async function resetV02(page) {
+  await page.addInitScript({ path: funScriptPath });
   await page.goto('/goals.html');
   await page.evaluate(async () => {
     localStorage.clear();
@@ -83,20 +87,278 @@ async function createAndStart(page, title) {
   await expect(page.locator('#v02-expedition-active')).toContainText('앱을 닫아도 됩니다.');
 }
 
+async function openOutcomeChooser(page) {
+  if (await page.locator('#v02-return-report').count()) return;
+  await expect(page.locator('#v02-open-report')).toBeVisible();
+  await page.locator('#v02-open-report').click();
+  await expect(page.locator('#v02-return-report')).toBeVisible();
+}
+
 async function cancelFx(page) {
   await page.evaluate(() => (window as any).StepQuestV02FX.cancel());
   await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
 }
 
+async function expeditionObservation(page) {
+  return page.evaluate(() => {
+    const Core = (window as any).StepQuestV02App;
+    const state = Core.getSnapshot();
+    return {
+      events: state.events,
+      rewards: state.rewards,
+      wallet: state.wallet,
+      statuses: {
+        goals: state.goals.map(({ id, status }) => ({ id, status })),
+        steps: state.steps.map(({ id, status }) => ({ id, status })),
+        expeditions: state.expeditions.map(({ id, status }) => ({ id, status })),
+        facade: Core.getStatus(),
+      },
+    };
+  });
+}
+
+test('expedition timer defaults invalid preferences to five minutes and keeps the teaser unknown', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await resetV02(page);
+  await createGoal(page, '시간을 고르는 원정');
+
+  const fiveMinutes = page.locator('[name="v02-expedition-minutes"][value="5"]');
+  await expect(fiveMinutes).toBeChecked();
+  await expect(page.locator('[data-v02-expedition-teaser]')).toHaveText('5분 · 캠프 외곽 · ???의 흔적');
+
+  await page.locator('[name="v02-expedition-minutes"][value="10"]').check();
+  await expect(page.locator('[data-v02-expedition-teaser]')).toHaveText('10분 · 오래된 숲길 · ???의 흔적');
+
+  await page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.setMeta('lastExpeditionMinutes', 25);
+  });
+  await page.reload();
+  await expect(page.locator('[name="v02-expedition-minutes"][value="25"]')).toBeChecked();
+  await expect(page.locator('[data-v02-expedition-teaser]')).toHaveText('25분 · 깊은 유적 입구 · ???의 흔적');
+
+  await page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.setMeta('lastExpeditionMinutes', 15);
+  });
+  await page.reload();
+  await expect(fiveMinutes).toBeChecked();
+  await expect(page.locator('[data-v02-expedition-teaser]')).toHaveText('5분 · 캠프 외곽 · ???의 흔적');
+});
+
+test('expedition timer reaches harvest without writing events rewards wallet or status', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await resetV02(page);
+  await createGoal(page, '절대 시각으로 돌아오는 원정');
+  await page.locator('[name="v02-expedition-minutes"][value="5"]').check();
+  await page.locator('#v02-start-step').click();
+
+  const countdown = page.locator('[data-v02-countdown]');
+  await expect(countdown).toHaveText('05:00');
+  await expect(countdown).not.toHaveAttribute('aria-live', 'assertive');
+  await expect(page.locator('#v02-expedition-active')).toContainText('앱을 닫아도 됩니다.');
+  await expect(page.locator('#v02-open-report')).toHaveText('일찍 돌아왔어요');
+  await expect(page.locator('[data-v02-encounter]')).toBeVisible();
+  const before = await expeditionObservation(page);
+
+  await page.clock.fastForward(5 * 60 * 1000);
+
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+  await expect(page.locator('#v02-expedition-ready')).not.toContainText(/골드|보상/);
+  await expect(page.locator('#v02-open-report')).toHaveText('전리품 확인');
+  expect(await expeditionObservation(page)).toEqual(before);
+});
+
+test('expedition timer reloads an unexpired expedition into its absolute countdown', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await resetV02(page);
+  await createGoal(page, '다시 열어도 이어지는 원정');
+  await page.locator('[name="v02-expedition-minutes"][value="10"]').check();
+  await page.locator('#v02-start-step').click();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  const expiresAt = await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().expeditions
+      .find((item) => item.status === 'active').expiresAt
+  ));
+  await page.clock.setFixedTime(new Date(Date.parse(expiresAt) - 6 * 60 * 1000));
+  await expect(page.locator('[data-v02-countdown]')).toHaveText('06:00');
+
+  await page.reload();
+
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  await expect(page.locator('[data-v02-countdown]')).toHaveText('06:00');
+  await expect(page.locator('#v02-expedition-ready')).toHaveCount(0);
+});
+
+test('harvest state opens directly after an expired reload and never promises Gold', async ({ page }) => {
+  const startedAt = new Date('2026-07-12T00:00:00.000Z');
+  await page.clock.install({ time: startedAt });
+  await resetV02(page);
+  await createGoal(page, '닫아 둔 동안 끝나는 원정');
+  await page.locator('#v02-start-step').click();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  const expiresAt = await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().expeditions
+      .find((item) => item.status === 'active').expiresAt
+  ));
+  await page.clock.setFixedTime(new Date(expiresAt));
+
+  await page.reload();
+
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+  await expect(page.locator('#v02-expedition-ready')).not.toContainText(/골드|보상/);
+  await expect(page.locator('#v02-open-report')).toHaveText('전리품 확인');
+});
+
+test('harvest state gives legacy timing a distinct return panel', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await resetV02(page);
+  await createAndStart(page, '예전 기록으로 남은 원정');
+  await page.evaluate(async () => {
+    const expedition = (window as any).StepQuestV02App.getSnapshot().expeditions
+      .find((item) => item.status === 'active');
+    const legacy = { ...expedition };
+    delete legacy.plannedMinutes;
+    delete legacy.expiresAt;
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 3);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('expeditions', 'readwrite');
+        transaction.objectStore('expeditions').put(legacy);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  });
+
+  await page.reload();
+
+  await expect(page.locator('#v02-expedition-legacy-ready')).toBeVisible();
+  await expect(page.locator('#v02-expedition-ready')).toHaveCount(0);
+  await expect(page.locator('[data-v02-countdown]')).toHaveCount(0);
+  await page.locator('#v02-open-report').click();
+  await expect(page.locator('#v02-return-report')).toBeVisible();
+  await expect(page.locator('#v02-return-report')).toContainText('이전 원정');
+});
+
+test('harvest state labels early return and cancel follows the current derived phase', async ({ page }) => {
+  const startedAt = new Date('2026-07-12T00:00:00.000Z');
+  await page.clock.install({ time: startedAt });
+  await resetV02(page);
+  await createAndStart(page, '조기 귀환을 고르는 원정');
+
+  await page.locator('#v02-open-report').click();
+  await expect(page.locator('#v02-return-report')).toContainText('조기 귀환');
+  await page.locator('#v02-cancel-report').click();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+
+  await page.locator('#v02-open-report').click();
+  const expiresAt = await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().expeditions
+      .find((item) => item.status === 'active').expiresAt
+  ));
+  await page.clock.setFixedTime(new Date(expiresAt));
+  await page.locator('#v02-cancel-report').click();
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+
+  await page.locator('#v02-open-report').click();
+  await expect(page.locator('#v02-return-report')).not.toContainText('조기 귀환');
+  await page.locator('#v02-cancel-report').click();
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+});
+
+test('harvest state latches ready when the system clock moves backward', async ({ page }) => {
+  const startedAt = new Date('2026-07-12T00:00:00.000Z');
+  await page.clock.install({ time: startedAt });
+  await resetV02(page);
+  await createAndStart(page, '뒤로 가지 않는 원정');
+  await page.clock.fastForward(5 * 60 * 1000);
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+
+  await page.clock.setFixedTime(new Date(startedAt.getTime() + 60 * 1000));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+  await expect(page.locator('#v02-expedition-active')).toHaveCount(0);
+});
+
+test('harvest state refreshes on wake and replaces a stale expedition after another commit', async ({ page, context }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await resetV02(page);
+  await createAndStart(page, '다른 탭과 맞추는 원정');
+  await page.evaluate(() => {
+    const Core = (window as any).StepQuestV02App;
+    const refreshSnapshot = Core.refreshSnapshot.bind(Core);
+    (window as any).__slice6RefreshCount = 0;
+    Core.refreshSnapshot = async () => {
+      (window as any).__slice6RefreshCount += 1;
+      return refreshSnapshot();
+    };
+  });
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => page.evaluate(() => (window as any).__slice6RefreshCount)).toBeGreaterThanOrEqual(3);
+
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="partial"]').click();
+  await page.locator('#v02-next-action').fill('다른 탭 보고 뒤 이어갈 행동');
+  const secondPage = await context.newPage();
+  await secondPage.addInitScript({ path: funScriptPath });
+  await secondPage.goto('/goals.html');
+  await expect(secondPage.locator('#v02-expedition-active')).toBeVisible();
+  await secondPage.evaluate(async () => {
+    const Core = (window as any).StepQuestV02App;
+    await Core.reportCurrentExpedition({
+      outcome: 'partial',
+      idempotencyKey: 'slice6:other-tab:report',
+      anchor: { nextPhysicalAction: '다른 탭에서 저장한 다음 행동' },
+    });
+  });
+
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+
+  await expect(page.locator('#v02-resume-anchor')).toContainText('다른 탭에서 저장한 다음 행동');
+  await expect(page.locator('#v02-return-report')).toHaveCount(0);
+  await secondPage.close();
+});
+
+test('harvest state preserves the open Resume Anchor draft and focus across expiry', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await resetV02(page);
+  await createAndStart(page, '작성 중 화면을 지키는 원정');
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="partial"]').click();
+  await page.locator('#v02-last-action').fill('첫 줄을 적었음');
+  await page.locator('#v02-next-action').fill('둘째 줄 첫 단어 적기');
+  await page.locator('#v02-note').fill('만료 뒤에도 남아야 하는 메모');
+  await page.locator('#v02-next-action').focus();
+
+  await page.clock.fastForward(5 * 60 * 1000);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+
+  await expect(page.locator('#v02-return-report')).toBeVisible();
+  await expect(page.locator('#v02-last-action')).toHaveValue('첫 줄을 적었음');
+  await expect(page.locator('#v02-next-action')).toHaveValue('둘째 줄 첫 단어 적기');
+  await expect(page.locator('#v02-note')).toHaveValue('만료 뒤에도 남아야 하는 메모');
+  await expect(page.locator('#v02-next-action')).toBeFocused();
+
+  await page.locator('#v02-cancel-report').click();
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+});
+
 test('partial progress restores a Resume Anchor after reload', async ({ page }) => {
   await resetV02(page);
   await createAndStart(page, '기획서 이어 쓰기');
   await page.reload();
-  await expect(page.locator('#v02-return-report')).toBeVisible();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="partial"]').click();
   await page.locator('#v02-last-action').fill('첫 문장을 썼음');
   await page.locator('#v02-next-action').fill('둘째 문장 첫 단어 쓰기');
   await page.reload();
+  await openOutcomeChooser(page);
   await expect(page.locator('#v02-next-action')).toHaveValue('둘째 문장 첫 단어 쓰기');
   await expect(page.locator('#v02-last-action')).toHaveValue('첫 문장을 썼음');
   await page.locator('#v02-save-outcome').click();
@@ -114,6 +376,7 @@ test('completed advances exactly one step', async ({ page }) => {
   await page.locator('#v02-start-step').click();
   await expect(page.locator('#v02-expedition-active')).toBeVisible();
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="completed"]').click();
   await expect(page.locator('[data-v02-current-step]')).not.toHaveText(before);
 });
@@ -397,6 +660,7 @@ test('interrupted requires and restores a Resume Anchor', async ({ page }) => {
   await resetV02(page);
   await createAndStart(page, '글쓰기 시작하기');
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="interrupted"]').click();
   await page.locator('#v02-save-outcome').click();
   await expect(page.locator('#v02-next-action')).toBeFocused();
@@ -413,6 +677,7 @@ test('manual shrink twice preserves reward lineage and wallet balance', async ({
   const wallet = await page.locator('#v02-wallet').innerText();
 
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
   await page.locator('[data-v02-reason="too_big"]').click();
   await page.locator('#v02-smaller-action').fill('바닥 한 칸 보기');
@@ -425,6 +690,7 @@ test('manual shrink twice preserves reward lineage and wallet balance', async ({
   await expect(page.locator('#v02-wallet')).toHaveText(wallet);
 
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
   await page.locator('[data-v02-reason="too_big"]').click();
   await page.locator('#v02-smaller-action').fill('바닥 먼지 한 점 보기');
@@ -441,6 +707,7 @@ test('not started can defer and undefer with no wallet change', async ({ page })
   await createAndStart(page, '서류 정리하기');
   const wallet = await page.locator('#v02-wallet').innerText();
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
   await expect(page.locator('[data-v02-reason="not_now"]')).toBeVisible();
   await page.reload();
@@ -463,8 +730,7 @@ test('mis-tap retry returns to start repeatedly without wallet changes', async (
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (attempt === 0) await page.reload();
-    else await page.locator('#v02-open-report').click();
-    await expect(page.locator('#v02-return-report')).toBeVisible();
+    await openOutcomeChooser(page);
     await page.locator('[data-v02-outcome="not_started"]').click();
     await page.locator('#v02-retry-step').click();
     await expect(page.locator('#v02-start-step')).toBeVisible();
@@ -485,7 +751,7 @@ test('return report can go back before committing', async ({ page }) => {
   await resetV02(page);
   await createAndStart(page, 'Keep expedition active');
   await page.reload();
-  await expect(page.locator('#v02-return-report')).toBeVisible();
+  await openOutcomeChooser(page);
   const eventsBefore = await page.evaluate(() => (
     (window as any).StepQuestV02App.getSnapshot().events.length
   ));
@@ -498,7 +764,8 @@ test('return report can go back before committing', async ({ page }) => {
   expect(eventsAfter).toBe(eventsBefore);
 
   await page.reload();
-  await expect(page.locator('#v02-return-report')).toBeVisible();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  await openOutcomeChooser(page);
 });
 
 test('missing material parks the step with context and restores it', async ({ page }) => {
@@ -506,6 +773,7 @@ test('missing material parks the step with context and restores it', async ({ pa
   await createAndStart(page, 'Prepare a cable');
   const wallet = await page.locator('#v02-wallet').innerText();
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
   await page.locator('[data-v02-reason="no_material"]').click();
   await page.locator('#v02-block-note').fill('USB cable');
@@ -523,6 +791,7 @@ test('waiting for a person persists the response context', async ({ page }) => {
   await resetV02(page);
   await createAndStart(page, 'Wait for review');
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
   await page.locator('[data-v02-reason="waiting_person"]').click();
   await page.locator('#v02-block-note').fill('designer approval');
@@ -536,6 +805,7 @@ test('tired route can defer and return in one tap', async ({ page }) => {
   await resetV02(page);
   await createAndStart(page, 'Tired route');
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
   await page.locator('[data-v02-reason="tired"]').click();
   await expect(page.locator('#v02-tired-smaller')).toBeVisible();
@@ -550,6 +820,7 @@ test('anxious route offers a preview-sized replacement', async ({ page }) => {
   await createAndStart(page, 'Preview route');
   const wallet = await page.locator('#v02-wallet').innerText();
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
   await page.locator('[data-v02-reason="anxious"]').click();
   await expect(page.locator('#v02-anxious-helper')).toBeVisible();
@@ -563,6 +834,7 @@ test('legacy direct-retry history reopens its active return report', async ({ pa
   await resetV02(page);
   await createAndStart(page, 'Legacy retry compatibility');
   await page.reload();
+  await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
   await expect(page.locator('[data-v02-reason="too_big"]')).toBeVisible();
 
@@ -615,7 +887,8 @@ test('legacy direct-retry history reopens its active return report', async ({ pa
   });
 
   await page.reload();
-  await expect(page.locator('#v02-return-report')).toBeVisible();
+  await expect(page.locator('#v02-expedition-legacy-ready')).toBeVisible();
+  await openOutcomeChooser(page);
   await expect(page.locator('.v02-obstacle')).toHaveCount(0);
 });
 
