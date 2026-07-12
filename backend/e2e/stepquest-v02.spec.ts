@@ -1,5 +1,46 @@
 import { expect, test } from '@playwright/test';
 
+function writeUint24LE(buffer: Buffer, offset: number, value: number) {
+  buffer[offset] = value & 0xff;
+  buffer[offset + 1] = (value >>> 8) & 0xff;
+  buffer[offset + 2] = (value >>> 16) & 0xff;
+}
+
+function riffChunk(type: string, payload: Buffer) {
+  const header = Buffer.alloc(8);
+  header.write(type, 0, 4, 'ascii');
+  header.writeUInt32LE(payload.length, 4);
+  return Buffer.concat([
+    header,
+    payload,
+    payload.length % 2 ? Buffer.alloc(1) : Buffer.alloc(0),
+  ]);
+}
+
+function makeAnimatedWebPBytes(durations: number[], width = 8, height = 8) {
+  const vp8x = Buffer.alloc(10);
+  vp8x[0] = 0x02;
+  writeUint24LE(vp8x, 4, width - 1);
+  writeUint24LE(vp8x, 7, height - 1);
+  const frames = durations.map((duration) => {
+    const payload = Buffer.alloc(16);
+    writeUint24LE(payload, 6, width - 1);
+    writeUint24LE(payload, 9, height - 1);
+    writeUint24LE(payload, 12, duration);
+    return riffChunk('ANMF', payload);
+  });
+  const body = Buffer.concat([
+    Buffer.from('WEBP'),
+    riffChunk('VP8X', vp8x),
+    riffChunk('ANIM', Buffer.alloc(6)),
+    ...frames,
+  ]);
+  const header = Buffer.alloc(8);
+  header.write('RIFF', 0, 4, 'ascii');
+  header.writeUInt32LE(body.length, 4);
+  return Array.from(Buffer.concat([header, body]));
+}
+
 async function resetV02(page) {
   await page.goto('/goals.html');
   await page.evaluate(async () => {
@@ -749,4 +790,516 @@ test('mobile actions keep accessible target sizes', async ({ page }) => {
     expect(startBox.height).toBeGreaterThanOrEqual(44);
     expect(Math.abs(walletBoxes[0].x - walletBoxes[1].x)).toBeLessThan(2);
   }
+});
+
+test('Slice 6 facade commits only valid duration preferences and refreshes cross-tab state', async ({
+  page,
+  context,
+}) => {
+  await resetV02(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
+
+  const initial = await page.evaluate(async () => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const Domain = (window as any).StepQuestV02Domain;
+    const Fun = (window as any).StepQuestV02Fun;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const createdAt = '2026-07-12T00:00:00.000Z';
+    await repository.importGoal({
+      weekly: {
+        id: 'slice6-duration-goal',
+        title: 'Slice 6 duration goal',
+        category: 'writing',
+        createdAt,
+      },
+      micro: [
+        {
+          id: 'slice6-duration-step-1',
+          title: 'Start the timer',
+          category: 'writing',
+          phase: 'start',
+          createdAt,
+        },
+        {
+          id: 'slice6-duration-step-2',
+          title: 'Finish the timer',
+          category: 'writing',
+          phase: 'close',
+          createdAt,
+        },
+      ],
+    }, {
+      idempotencyKey: 'slice6:duration:goal',
+      now: createdAt,
+      idFactory: (prefix) => `${prefix}-slice6-duration`,
+    });
+    await Core.init({ App, forceRefresh: true });
+    await repository.setMeta('commitsSinceExternalBackup', 0);
+
+    const defaultMinutes = await Core.getLastExpeditionMinutes();
+    let invalidDurationError = null;
+    try {
+      await Core.startCurrentStep('slice6:duration:invalid', 15);
+    } catch (error) {
+      invalidDurationError = error.message;
+    }
+    const afterInvalidMinutes = await Core.getLastExpeditionMinutes();
+    const rawAfterInvalid = await repository.getMeta('lastExpeditionMinutes');
+
+    await Core.startCurrentStep('slice6:duration:valid', 10);
+    const state = Core.getSnapshot();
+    const expedition = state.expeditions.find((item) => item.status === 'active');
+    const step = state.steps.find((item) => item.id === expedition.stepId);
+    const beforeProjection = JSON.stringify(state);
+    const backupCountBeforeProjection = await repository.getMeta('commitsSinceExternalBackup');
+    const running = Core.getTimerView(expedition.startedAt);
+    const ready = Core.getTimerView(expedition.expiresAt);
+    const encounter = Core.getEncounterView();
+    const expectedEncounter = Fun.selectEncounter({
+      rewardLineage: step.rewardLineage,
+      category: step.category,
+      boss: Domain.isGoalMilestone(step, state.steps),
+    });
+    const afterProjection = JSON.stringify(Core.getSnapshot());
+    const backupCountAfterProjection = await repository.getMeta('commitsSinceExternalBackup');
+
+    let failedStartError = null;
+    try {
+      await Core.startCurrentStep('slice6:duration:no-active-step', 25);
+    } catch (error) {
+      failedStartError = error.message;
+    }
+
+    return {
+      defaultMinutes,
+      invalidDurationError,
+      afterInvalidMinutes,
+      rawAfterInvalid: rawAfterInvalid ?? null,
+      storedMinutes: await Core.getLastExpeditionMinutes(),
+      rawStoredMinutes: await repository.getMeta('lastExpeditionMinutes'),
+      failedStartError,
+      backupCountBeforeProjection,
+      backupCountAfterProjection,
+      pureProjection: beforeProjection === afterProjection,
+      running,
+      ready,
+      encounter,
+      expectedEncounter,
+      expeditionId: expedition.id,
+    };
+  });
+
+  expect(initial).toMatchObject({
+    defaultMinutes: 5,
+    invalidDurationError: 'EXPEDITION_DURATION_INVALID',
+    afterInvalidMinutes: 5,
+    rawAfterInvalid: null,
+    storedMinutes: 10,
+    rawStoredMinutes: 10,
+    failedStartError: 'ACTIVE_STEP_NOT_FOUND',
+    backupCountBeforeProjection: 1,
+    backupCountAfterProjection: 1,
+    pureProjection: true,
+    running: { phase: 'running', remainingMs: 600_000, plannedMinutes: 10 },
+    ready: { phase: 'ready', remainingMs: 0, plannedMinutes: 10 },
+  });
+  expect(initial.encounter).toEqual(initial.expectedEncounter);
+
+  const secondPage = await context.newPage();
+  await secondPage.goto('/goals.html');
+  await secondPage.waitForFunction(() => Boolean((window as any).StepQuestV02Storage));
+  await secondPage.evaluate(async ({ expeditionId }) => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const snapshot = await repository.getSnapshot();
+    const expedition = snapshot.expeditions.find((item) => item.id === expeditionId);
+    await repository.execute('reportOutcome', {
+      expeditionId,
+      outcome: 'completed',
+      idempotencyKey: 'slice6:cross-tab:report',
+      now: new Date(Date.parse(expedition.startedAt) + 1_000).toISOString(),
+      idFactory: (prefix) => `${prefix}-slice6-cross-tab`,
+    });
+  }, { expeditionId: initial.expeditionId });
+  await secondPage.close();
+
+  const stale = await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().events
+      .some((event) => event.idempotencyKey === 'slice6:cross-tab:report')
+  ));
+  expect(stale).toBe(false);
+
+  const refreshed = await page.evaluate(async () => {
+    const snapshot = await (window as any).StepQuestV02App.refreshSnapshot();
+    return {
+      sawRemoteReport: snapshot.events
+        .some((event) => event.idempotencyKey === 'slice6:cross-tab:report'),
+      activeStepId: snapshot.steps.find((item) => item.status === 'active')?.id,
+    };
+  });
+  expect(refreshed).toEqual({
+    sawRemoteReport: true,
+    activeStepId: 'slice6-duration-step-2',
+  });
+});
+
+test('Slice 6 facade derives the latest report and acknowledges only its matching key', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-07-12T12:00:00.000Z'));
+  await resetV02(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
+
+  const committed = await page.evaluate(async () => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const createdAt = new Date().toISOString();
+    await repository.importGoal({
+      weekly: {
+        id: 'slice6-report-goal',
+        title: 'Slice 6 report goal',
+        category: 'study',
+        createdAt,
+      },
+      micro: [
+        {
+          id: 'slice6-report-step-1',
+          title: 'First encounter',
+          category: 'study',
+          phase: 'start',
+          createdAt,
+        },
+        {
+          id: 'slice6-report-step-2',
+          title: 'Latest encounter',
+          category: 'study',
+          phase: 'close',
+          createdAt,
+        },
+      ],
+    }, {
+      idempotencyKey: 'slice6:report:goal',
+      now: createdAt,
+      idFactory: (prefix) => `${prefix}-slice6-report`,
+    });
+    await Core.init({ App, forceRefresh: true });
+    await Core.startCurrentStep('slice6:start:a', 5);
+    await Core.reportCurrentExpedition({
+      outcome: 'completed',
+      idempotencyKey: 'slice6:report:a',
+    });
+    await Core.startCurrentStep('slice6:start:z', 25);
+    await Core.reportCurrentExpedition({
+      outcome: 'completed',
+      idempotencyKey: 'slice6:report:z',
+    });
+    return {
+      pending: await Core.getPendingBattleReport(),
+      hasPendingMeta: (await repository.getMeta('pendingBattleReport')) !== undefined,
+      acknowledged: await repository.getMeta('acknowledgedBattleReportKey') ?? null,
+    };
+  });
+
+  expect(committed.hasPendingMeta).toBe(false);
+  expect(committed.acknowledged).toBeNull();
+  expect(committed.pending).toMatchObject({
+    key: 'slice6:report:z',
+    reportVersion: 1,
+    route: { plannedMinutes: 25 },
+  });
+
+  await page.reload();
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
+  await page.waitForFunction(() => Boolean((window as any).StepQuestV02App?.getSnapshot?.()));
+
+  const acknowledged = await page.evaluate(async ({ expectedPending }) => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const Storage = (window as any).StepQuestV02Storage;
+    await Core.init({ App, forceRefresh: true });
+    const afterReload = await Core.getPendingBattleReport();
+    const mismatched = await Core.acknowledgeBattleReport('slice6:report:not-latest');
+    const afterMismatch = await Core.getPendingBattleReport();
+
+    const originalOpenRepository = Storage.openRepository;
+    const repository = await originalOpenRepository();
+    const originalSetMeta = repository.setMeta;
+    repository.setMeta = async (key, value) => {
+      if (key === 'acknowledgedBattleReportKey') throw new Error('ACK_WRITE_FAILED');
+      return originalSetMeta(key, value);
+    };
+    Storage.openRepository = async () => repository;
+    await Core.init({ App, forceRefresh: true });
+    Storage.openRepository = originalOpenRepository;
+
+    let failedError = null;
+    try {
+      await Core.acknowledgeBattleReport(expectedPending.key);
+    } catch (error) {
+      failedError = error.message;
+    }
+    const afterFailedWrite = await Core.getPendingBattleReport();
+    repository.setMeta = originalSetMeta;
+    const matched = await Core.acknowledgeBattleReport(expectedPending.key);
+    const afterMatch = await Core.getPendingBattleReport();
+    return {
+      afterReload,
+      mismatched,
+      afterMismatch,
+      failedError,
+      afterFailedWrite,
+      matched,
+      afterMatch,
+      storedKey: await repository.getMeta('acknowledgedBattleReportKey'),
+    };
+  }, { expectedPending: committed.pending });
+
+  expect(acknowledged.afterReload).toEqual(committed.pending);
+  expect(acknowledged.mismatched).toBe(false);
+  expect(acknowledged.afterMismatch).toEqual(committed.pending);
+  expect(acknowledged.failedError).toBe('ACK_WRITE_FAILED');
+  expect(acknowledged.afterFailedWrite).toEqual(committed.pending);
+  expect(acknowledged.matched).toBe(true);
+  expect(acknowledged.afterMatch).toBeNull();
+  expect(acknowledged.storedKey).toBe('slice6:report:z');
+});
+
+test('Slice 6 facade persists semantic dialogue and applies the exact 48-hour session threshold', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-07-12T12:00:00.000Z'));
+  await resetV02(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
+
+  const firstPass = await page.evaluate(async () => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await Core.init({ App, forceRefresh: true });
+    const eventsBefore = JSON.stringify(Core.getSnapshot().events);
+    const first = await Core.beginForegroundSession('2026-07-12');
+    const repeated = await Core.beginForegroundSession('2026-07-12');
+
+    await repository.setMeta('lastForegroundLocalDate', '2026-07-11');
+    await repository.setMeta('lastForegroundAt', '2026-07-10T12:00:00.001Z');
+    const belowThreshold = await Core.beginForegroundSession('2026-07-12');
+    await repository.setMeta('lastForegroundLocalDate', '2026-07-11');
+    await repository.setMeta('lastForegroundAt', '2026-07-10T12:00:00.000Z');
+    const exactThreshold = await Core.beginForegroundSession('2026-07-12');
+
+    const line = await Core.chooseDialogue({
+      context: 'ready',
+      triggerKey: 'ready:expedition-1:2026-07-12',
+      entityId: 'expedition-1',
+      localDate: '2026-07-12',
+      subject: 'Ink slime',
+    });
+    return {
+      first,
+      repeated,
+      belowThreshold,
+      exactThreshold,
+      line,
+      noDomainEvent: eventsBefore === JSON.stringify(Core.getSnapshot().events),
+      lastForegroundAt: await repository.getMeta('lastForegroundAt'),
+    };
+  });
+
+  expect(firstPass).toMatchObject({
+    first: { firstLocalDate: true, longAbsence: false },
+    repeated: { firstLocalDate: false, longAbsence: false },
+    belowThreshold: { firstLocalDate: true, longAbsence: false },
+    exactThreshold: { firstLocalDate: true, longAbsence: true },
+    noDomainEvent: true,
+    lastForegroundAt: '2026-07-12T12:00:00.000Z',
+  });
+
+  await page.reload();
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
+  const afterReload = await page.evaluate(async () => {
+    const Core = (window as any).StepQuestV02App;
+    await Core.init({ App: (window as any).StepQuestApp, forceRefresh: true });
+    const same = await Core.chooseDialogue({
+      context: 'ready',
+      triggerKey: 'ready:expedition-1:2026-07-12',
+      entityId: 'expedition-1',
+      localDate: '2026-07-12',
+      subject: 'Ink slime',
+    });
+    const next = await Core.chooseDialogue({
+      context: 'ready',
+      triggerKey: 'ready:expedition-2:2026-07-12',
+      entityId: 'expedition-2',
+      localDate: '2026-07-12',
+      subject: 'Ink slime',
+    });
+    return { same, next };
+  });
+  expect(afterReload.same).toBe(firstPass.line);
+  expect(afterReload.next).not.toBe(firstPass.line);
+});
+
+test('Slice 6 facade imports synthetic media and revokes every replaced object URL without failure loss', async ({ page }) => {
+  const portraitBytes = Array.from(Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  ));
+  const movingBytes = makeAnimatedWebPBytes([400, 600]);
+  await resetV02(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
+
+  const result = await page.evaluate(async ({ portraitBytes: png, movingBytes: webp }) => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await Core.init({ App, forceRefresh: true });
+    await Core.importCharacterMedia(
+      'portrait',
+      new File([Uint8Array.from(png)], 'portrait.png', { type: 'image/png' }),
+    );
+    await Core.importCharacterMedia(
+      'idle',
+      new File([Uint8Array.from(webp)], 'idle.webp', { type: 'image/webp' }),
+    );
+    await Core.importCharacterMedia(
+      'skill',
+      new File([Uint8Array.from(webp)], 'skill.webp', { type: 'image/webp' }),
+    );
+
+    const beforeRefresh = Core.getCharacter();
+    const beforeUrls = [
+      beforeRefresh.portraitUrl,
+      beforeRefresh.idleUrl,
+      beforeRefresh.skillUrl,
+    ];
+    const beforeStored = await repository.getCharacterMedia();
+    const beforeMetadata = JSON.stringify(beforeStored.character);
+    const urlApi: any = URL;
+    const originalCreateObjectURL = urlApi.createObjectURL.bind(urlApi);
+    const originalRevokeObjectURL = urlApi.revokeObjectURL.bind(urlApi);
+    const created: string[] = [];
+    const revoked: string[] = [];
+    urlApi.createObjectURL = (blob) => {
+      const value = originalCreateObjectURL(blob);
+      created.push(value);
+      return value;
+    };
+    urlApi.revokeObjectURL = (value) => {
+      revoked.push(value);
+      originalRevokeObjectURL(value);
+    };
+
+    let movingError = null;
+    let portraitError = null;
+    let afterRefresh;
+    let failedCreated: string[] = [];
+    try {
+      await Core.refreshSnapshot();
+      afterRefresh = Core.getCharacter();
+      const failedCreateStart = created.length;
+      try {
+        await Core.importCharacterMedia(
+          'idle',
+          new File([Uint8Array.from([1, 2, 3])], 'invalid.webp', { type: 'image/webp' }),
+        );
+      } catch (error) {
+        movingError = error.message;
+      }
+      try {
+        await Core.importCharacterMedia(
+          'portrait',
+          new File([Uint8Array.from([1, 2, 3])], 'invalid.png', { type: 'image/png' }),
+        );
+      } catch (error) {
+        portraitError = error.message;
+      }
+      failedCreated = created.slice(failedCreateStart);
+    } finally {
+      urlApi.createObjectURL = originalCreateObjectURL;
+      urlApi.revokeObjectURL = originalRevokeObjectURL;
+    }
+
+    const afterFailure = Core.getCharacter();
+    const afterStored = await repository.getCharacterMedia();
+    return {
+      beforeUrls,
+      afterRefreshUrls: [
+        afterRefresh.portraitUrl,
+        afterRefresh.idleUrl,
+        afterRefresh.skillUrl,
+      ],
+      afterFailureUrls: [
+        afterFailure.portraitUrl,
+        afterFailure.idleUrl,
+        afterFailure.skillUrl,
+      ],
+      imageUrlMatchesPortrait: afterFailure.imageUrl === afterFailure.portraitUrl,
+      oldUrlsRevoked: beforeUrls.every((value) => revoked.includes(value)),
+      currentUrlsPreserved: [
+        afterFailure.portraitUrl,
+        afterFailure.idleUrl,
+        afterFailure.skillUrl,
+      ].every((value) => !revoked.includes(value)),
+      failedUrlsReleased: failedCreated.length > 0
+        && failedCreated.every((value) => revoked.includes(value)),
+      movingError,
+      portraitError,
+      metadataPreserved: beforeMetadata === JSON.stringify(afterStored.character),
+      mediaMetadata: afterStored.character.mediaMetadata,
+      blobsPresent: Boolean(afterStored.portrait && afterStored.idle && afterStored.skill),
+    };
+  }, { portraitBytes, movingBytes });
+
+  expect(result.beforeUrls.every(Boolean)).toBe(true);
+  expect(result.afterRefreshUrls.every(Boolean)).toBe(true);
+  expect(result.afterRefreshUrls).not.toEqual(result.beforeUrls);
+  expect(result.afterFailureUrls).toEqual(result.afterRefreshUrls);
+  expect(result.imageUrlMatchesPortrait).toBe(true);
+  expect(result.oldUrlsRevoked).toBe(true);
+  expect(result.currentUrlsPreserved).toBe(true);
+  expect(result.failedUrlsReleased).toBe(true);
+  expect(result.movingError).toBe('CHARACTER_MEDIA_MAGIC_MISMATCH');
+  expect(result.portraitError).toBe('CHARACTER_IMAGE_DECODE_FAILED');
+  expect(result.metadataPreserved).toBe(true);
+  expect(result.blobsPresent).toBe(true);
+  expect(result.mediaMetadata).toMatchObject({
+    portrait: { mimeType: 'image/png', width: 1, height: 1 },
+    idle: { mimeType: 'image/webp', width: 8, height: 8, durationMs: 1_000 },
+    skill: { mimeType: 'image/webp', width: 8, height: 8, durationMs: 1_000 },
+  });
+});
+
+test('Slice 6 facade rejects character media when IndexedDB is unavailable', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value() { throw new Error('INDEXED_DB_DISABLED_FOR_SLICE6_FACADE_TEST'); },
+    });
+  });
+  await page.goto('/goals.html');
+  await page.waitForFunction(() => (
+    (window as any).StepQuestV02App?.getStatus?.().mode === 'localStorage'
+  ));
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
+
+  const result = await page.evaluate(async () => {
+    const Core = (window as any).StepQuestV02App;
+    let error = null;
+    try {
+      await Core.importCharacterMedia(
+        'portrait',
+        new File([Uint8Array.from([1])], 'portrait.png', { type: 'image/png' }),
+      );
+    } catch (caught) {
+      error = caught.message;
+    }
+    return {
+      mode: Core.getStatus().mode,
+      error,
+      character: Core.getCharacter(),
+    };
+  });
+
+  expect(result.mode).toBe('localStorage');
+  expect(result.error).toBe('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
+  expect(result.character.usingDefault).toBe(true);
 });
