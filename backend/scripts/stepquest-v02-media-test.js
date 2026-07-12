@@ -51,6 +51,25 @@ function makeAnimatedWebP(durations, options = {}) {
   return Buffer.concat([header, body]);
 }
 
+function ebmlSize(value) {
+  assert.equal(Number.isInteger(value) && value >= 0 && value < 0x7f, true);
+  return Buffer.from([0x80 | value]);
+}
+
+function makeEbmlHeader(docType = 'webm') {
+  const children = [];
+  if (docType !== null) {
+    const value = Buffer.isBuffer(docType) ? docType : Buffer.from(docType, 'ascii');
+    children.push(Buffer.concat([Buffer.from([0x42, 0x82]), ebmlSize(value.length), value]));
+  }
+  const payload = Buffer.concat(children);
+  return Buffer.concat([
+    Buffer.from([0x1a, 0x45, 0xdf, 0xa3]),
+    ebmlSize(payload.length),
+    payload,
+  ]);
+}
+
 function assertCode(error, code) {
   assert.equal(error.code, code);
   assert.equal(error.message, code);
@@ -226,7 +245,7 @@ async function run() {
     durationMs: 2100,
   });
 
-  const webmBytes = Uint8Array.from([0x1a, 0x45, 0xdf, 0xa3]);
+  const webmBytes = makeEbmlHeader('webm');
   await assertRejectsCode(
     () => Media.inspectMovingMedia(new Blob([webmBytes], { type: 'image/webp' })),
     'CHARACTER_MEDIA_MAGIC_MISMATCH',
@@ -235,6 +254,67 @@ async function run() {
     () => Media.inspectMovingMedia(new Blob([webp], { type: 'video/webm' })),
     'CHARACTER_MEDIA_MAGIC_MISMATCH',
   );
+
+  const invalidWebMHeaders = [
+    makeEbmlHeader('matroska'),
+    makeEbmlHeader(null),
+    webmBytes.subarray(0, webmBytes.length - 1),
+    Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x00]),
+    Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x83, 0x42, 0x82, 0x84]),
+    Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x81, 0x00]),
+    makeEbmlHeader(Buffer.from([0x77, 0x65, 0x62, 0x00])),
+  ];
+  let invalidDecodeCalls = 0;
+  for (const bytes of invalidWebMHeaders) {
+    await assertRejectsCode(
+      () => Media.inspectMovingMedia(
+        new Blob([bytes], { type: 'video/webm' }),
+        {
+          createVideo() {
+            invalidDecodeCalls += 1;
+            throw new Error('invalid WebM must not reach decode');
+          },
+          urlApi: {
+            createObjectURL: () => 'blob:invalid-webm',
+            revokeObjectURL: () => {},
+          },
+        },
+      ),
+      'CHARACTER_MEDIA_MAGIC_MISMATCH',
+    );
+  }
+  assert.equal(invalidDecodeCalls, 0);
+
+  const oversizedCalls = [];
+  class ObservedOversizedBlob extends Blob {
+    async arrayBuffer() {
+      oversizedCalls.push('arrayBuffer');
+      return super.arrayBuffer();
+    }
+  }
+  const oversizedBlob = new ObservedOversizedBlob(
+    [new Uint8Array(Media.MAX_CLIP_BYTES + 1)],
+    { type: 'video/webm' },
+  );
+  await assertRejectsCode(
+    () => Media.inspectMovingMedia(oversizedBlob, {
+      createVideo() {
+        oversizedCalls.push('createVideo');
+        return {};
+      },
+      urlApi: {
+        createObjectURL() {
+          oversizedCalls.push('createObjectURL');
+          return 'blob:oversized-webm';
+        },
+        revokeObjectURL() {
+          oversizedCalls.push('revokeObjectURL');
+        },
+      },
+    }),
+    'CHARACTER_MEDIA_TOO_LARGE',
+  );
+  assert.deepEqual(oversizedCalls, []);
 
   const observations = { attributes: [], revoked: [] };
   const inspectedWebM = await Media.inspectMovingMedia(
@@ -261,6 +341,42 @@ async function run() {
   assert.deepEqual(observations.attributes, [['playsinline', '']]);
   assert.deepEqual(observations.revoked, ['blob:valid-webm']);
 
+  const exactLimitObservations = { attributes: [], revoked: [] };
+  const exactLimit = await Media.inspectMovingMedia(
+    new Blob([webmBytes], { type: 'video/webm' }),
+    {
+      createVideo: makeVideoFactory(
+        { duration: 3, width: 640, height: 360 },
+        exactLimitObservations,
+      ),
+      urlApi: {
+        createObjectURL: () => 'blob:exact-limit-webm',
+        revokeObjectURL: (url) => exactLimitObservations.revoked.push(url),
+      },
+    },
+  );
+  assert.equal(exactLimit.durationMs, 3000);
+  assert.deepEqual(exactLimitObservations.revoked, ['blob:exact-limit-webm']);
+
+  const overLimitObservations = { attributes: [], revoked: [] };
+  await assertRejectsCode(
+    () => Media.inspectMovingMedia(
+      new Blob([webmBytes], { type: 'video/webm' }),
+      {
+        createVideo: makeVideoFactory(
+          { duration: 3.0004, width: 640, height: 360 },
+          overLimitObservations,
+        ),
+        urlApi: {
+          createObjectURL: () => 'blob:over-limit-webm',
+          revokeObjectURL: (url) => overLimitObservations.revoked.push(url),
+        },
+      },
+    ),
+    'CHARACTER_MEDIA_TOO_LONG',
+  );
+  assert.deepEqual(overLimitObservations.revoked, ['blob:over-limit-webm']);
+
   const failedObservations = { attributes: [], revoked: [] };
   await assertRejectsCode(
     () => Media.inspectMovingMedia(
@@ -276,6 +392,69 @@ async function run() {
     'CHARACTER_MEDIA_DECODE_FAILED',
   );
   assert.deepEqual(failedObservations.revoked, ['blob:failed-webm']);
+
+  const getterObservations = { revoked: [] };
+  const getterVideo = {
+    muted: false,
+    playsInline: false,
+    preload: '',
+    setAttribute() {},
+    set src(_value) {
+      queueMicrotask(() => this.onloadedmetadata());
+    },
+    get duration() {
+      throw new Error('metadata getter failed');
+    },
+    get videoWidth() { return 640; },
+    get videoHeight() { return 360; },
+  };
+  await assertRejectsCode(
+    () => Media.inspectMovingMedia(
+      new Blob([webmBytes], { type: 'video/webm' }),
+      {
+        createVideo: () => getterVideo,
+        urlApi: {
+          createObjectURL: () => 'blob:getter-webm',
+          revokeObjectURL: (url) => getterObservations.revoked.push(url),
+        },
+      },
+    ),
+    'CHARACTER_MEDIA_DECODE_FAILED',
+  );
+  assert.equal(getterVideo.onloadedmetadata, null);
+  assert.equal(getterVideo.onerror, null);
+  assert.deepEqual(getterObservations.revoked, ['blob:getter-webm']);
+
+  for (const failurePoint of ['setup', 'load']) {
+    const throwObservations = { revoked: [] };
+    const throwingVideo = {
+      muted: false,
+      playsInline: false,
+      preload: '',
+      setAttribute() {
+        if (failurePoint === 'setup') throw new Error('setup failed');
+      },
+      set src(_value) {
+        if (failurePoint === 'load') throw new Error('load failed');
+      },
+    };
+    await assertRejectsCode(
+      () => Media.inspectMovingMedia(
+        new Blob([webmBytes], { type: 'video/webm' }),
+        {
+          createVideo: () => throwingVideo,
+          urlApi: {
+            createObjectURL: () => `blob:${failurePoint}-webm`,
+            revokeObjectURL: (url) => throwObservations.revoked.push(url),
+          },
+        },
+      ),
+      'CHARACTER_MEDIA_DECODE_FAILED',
+    );
+    assert.equal(throwingVideo.onloadedmetadata, null);
+    assert.equal(throwingVideo.onerror, null);
+    assert.deepEqual(throwObservations.revoked, [`blob:${failurePoint}-webm`]);
+  }
 
   console.log(JSON.stringify({ ok: true, checked: 'stepquest-v02-media' }, null, 2));
 }

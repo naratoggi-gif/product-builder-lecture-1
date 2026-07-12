@@ -173,6 +173,90 @@
     return { mimeType, byteLength, width, height, durationMs };
   }
 
+  function readEbmlElementId(bytes, offset, limit) {
+    if (offset >= limit) return null;
+    const first = bytes[offset];
+    let width = 1;
+    let marker = 0x80;
+    while (width <= 4 && !(first & marker)) {
+      width += 1;
+      marker >>= 1;
+    }
+    if (width > 4 || offset + width > limit) return null;
+
+    let dataValue = first & (marker - 1);
+    let encodedValue = first;
+    for (let index = 1; index < width; index += 1) {
+      dataValue = (dataValue * 0x100) + bytes[offset + index];
+      encodedValue = (encodedValue * 0x100) + bytes[offset + index];
+    }
+    const maxDataValue = (2 ** (7 * width)) - 1;
+    const shortestValue = width === 1 ? 1 : (2 ** (7 * (width - 1))) - 1;
+    if (
+      dataValue === 0
+      || dataValue === maxDataValue
+      || dataValue < shortestValue
+    ) {
+      return null;
+    }
+    return { value: encodedValue, nextOffset: offset + width };
+  }
+
+  function readEbmlDataSize(bytes, offset, limit) {
+    if (offset >= limit) return null;
+    const first = bytes[offset];
+    let width = 1;
+    let marker = 0x80;
+    while (width <= 8 && !(first & marker)) {
+      width += 1;
+      marker >>= 1;
+    }
+    if (width > 8 || offset + width > limit) return null;
+
+    let value = first & (marker - 1);
+    let unknownSize = value === marker - 1;
+    for (let index = 1; index < width; index += 1) {
+      const byte = bytes[offset + index];
+      unknownSize = unknownSize && byte === 0xff;
+      if (value > Math.floor((Number.MAX_SAFE_INTEGER - byte) / 0x100)) return null;
+      value = (value * 0x100) + byte;
+    }
+    if (unknownSize) return null;
+    return { value, nextOffset: offset + width };
+  }
+
+  function hasWebMHeader(bytes) {
+    const headerId = readEbmlElementId(bytes, 0, bytes.length);
+    if (!headerId || headerId.value !== 0x1a45dfa3) return false;
+    const headerSize = readEbmlDataSize(bytes, headerId.nextOffset, bytes.length);
+    if (!headerSize) return false;
+    const headerEnd = headerSize.nextOffset + headerSize.value;
+    if (headerEnd > bytes.length) return false;
+
+    let offset = headerSize.nextOffset;
+    let hasDocType = false;
+    while (offset < headerEnd) {
+      const childId = readEbmlElementId(bytes, offset, headerEnd);
+      if (!childId) return false;
+      const childSize = readEbmlDataSize(bytes, childId.nextOffset, headerEnd);
+      if (!childSize) return false;
+      const dataEnd = childSize.nextOffset + childSize.value;
+      if (dataEnd > headerEnd) return false;
+      if (childId.value === 0x4282) {
+        if (
+          hasDocType
+          || childSize.value !== 4
+          || ascii(bytes, childSize.nextOffset, childSize.value) !== 'webm'
+        ) {
+          return false;
+        }
+        hasDocType = true;
+      }
+      offset = dataEnd;
+    }
+    return offset === headerEnd && hasDocType;
+  }
+
   function detectMovingType(bytes) {
     if (
       bytes.length >= 12
@@ -181,15 +265,7 @@
     ) {
       return 'image/webp';
     }
-    if (
-      bytes.length >= 4
-      && bytes[0] === 0x1a
-      && bytes[1] === 0x45
-      && bytes[2] === 0xdf
-      && bytes[3] === 0xa3
-    ) {
-      return 'video/webm';
-    }
+    if (hasWebMHeader(bytes)) return 'video/webm';
     return null;
   }
 
@@ -224,25 +300,35 @@
 
     try {
       return await new Promise((resolve, reject) => {
-        const settle = (callback, value) => {
-          video.onloadedmetadata = null;
-          video.onerror = null;
-          callback(value);
+        let settled = false;
+        const settle = (metadata, failed = false) => {
+          if (settled) return;
+          settled = true;
+          try { video.onloadedmetadata = null; } catch (_error) { /* no-op */ }
+          try { video.onerror = null; } catch (_error) { /* no-op */ }
+          if (failed) reject(contractError(ERROR_CODES.DECODE_FAILED));
+          else resolve(metadata);
         };
-        video.muted = true;
-        video.playsInline = true;
-        video.preload = 'metadata';
-        video.setAttribute?.('playsinline', '');
-        video.onloadedmetadata = () => settle(resolve, {
-          width: video.videoWidth,
-          height: video.videoHeight,
-          durationMs: Math.round(video.duration * 1000),
-        });
-        video.onerror = () => settle(reject, contractError(ERROR_CODES.DECODE_FAILED));
         try {
+          video.muted = true;
+          video.playsInline = true;
+          video.preload = 'metadata';
+          video.setAttribute?.('playsinline', '');
+          video.onloadedmetadata = () => {
+            try {
+              settle({
+                width: video.videoWidth,
+                height: video.videoHeight,
+                durationMs: Math.ceil(video.duration * 1000),
+              });
+            } catch (_error) {
+              settle(null, true);
+            }
+          };
+          video.onerror = () => settle(null, true);
           video.src = objectUrl;
         } catch (_error) {
-          settle(reject, contractError(ERROR_CODES.DECODE_FAILED));
+          settle(null, true);
         }
       });
     } finally {
