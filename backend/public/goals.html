@@ -10,23 +10,25 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/assets/icons/stepquest.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/assets/css/app.css?v=0.1.1-alpha&build=v02-core-5" />
+  <link rel="stylesheet" href="/assets/css/app.css?v=0.1.1-alpha&build=v02-core-6" />
 </head>
 <body>
   <div id="app"></div>
   <script src="/dev/super-mode.js?v=0.1.1-alpha"></script>
-  <script src="/assets/js/stepquest-v02-domain.js?v=0.1.1-alpha&build=v02-core-5"></script>
-  <script src="/assets/js/stepquest-v02-storage.js?v=0.1.1-alpha&build=v02-core-5"></script>
-  <script src="/assets/js/stepquest-v02-backup.js?v=0.1.1-alpha&build=v02-core-5"></script>
-  <script src="/assets/js/stepquest-v02-character.js?v=0.1.1-alpha&build=v02-core-5"></script>
-  <script src="/assets/js/stepquest-v02-media.js?v=0.1.1-alpha&build=v02-core-5"></script>
-  <script src="/assets/js/stepquest-v02-fun.js?v=0.1.1-alpha&build=v02-core-5"></script>
-  <script src="/assets/js/stepquest-v02-fx.js?v=0.1.1-alpha&build=v02-core-5"></script>
+  <script src="/assets/js/stepquest-v02-domain.js?v=0.1.1-alpha&build=v02-core-6"></script>
+  <script src="/assets/js/stepquest-v02-storage.js?v=0.1.1-alpha&build=v02-core-6"></script>
+  <script src="/assets/js/stepquest-v02-backup.js?v=0.1.1-alpha&build=v02-core-6"></script>
+  <script src="/assets/js/stepquest-v02-character.js?v=0.1.1-alpha&build=v02-core-6"></script>
+  <script src="/assets/js/stepquest-v02-media.js?v=0.1.1-alpha&build=v02-core-6"></script>
+  <script src="/assets/js/stepquest-v02-fun.js?v=0.1.1-alpha&build=v02-core-6"></script>
+  <script src="/assets/js/stepquest-v02-fx.js?v=0.1.1-alpha&build=v02-core-6"></script>
   <script src="/assets/js/app.js?v=0.1.1-alpha"></script>
-  <script src="/assets/js/stepquest-v02-app.js?v=0.1.1-alpha&build=v02-core-5"></script>
-  <script src="/assets/js/stepquest-v02-ui.js?v=0.1.1-alpha&build=v02-core-5"></script>
+  <script src="/assets/js/stepquest-v02-app.js?v=0.1.1-alpha&build=v02-core-6"></script>
+  <script src="/assets/js/stepquest-v02-ui.js?v=0.1.1-alpha&build=v02-core-6"></script>
+  <script src="/assets/js/stepquest-pwa-update.js?v=0.1.1-alpha&build=v02-core-6"></script>
   <script>
     const App = window.StepQuestApp;
+    window.StepQuestPwaUpdate.mount({ build: 'v02-core-6' });
     const trackedReturnOffers = new Set();
     const ko = {
       pageTitle: '\uD070 \uBAA9\uD45C\uB97C 5\uCD08\uC9DC\uB9AC \uC2DC\uC791\uC73C\uB85C \uBC14\uAFC9\uB2C8\uB2E4.',
@@ -1360,16 +1362,20 @@
       } catch (error) {
         App.log(`${ko.initFailed}: ${error.message}`);
       }
-      await window.StepQuestV02UI.mount({ App, Core: window.StepQuestV02App });
+      try {
+        await window.StepQuestV02UI.mount({ App, Core: window.StepQuestV02App });
+      } catch (error) {
+        App.log(`v0.2 mount: ${error.message}`);
+        document.getElementById('app').innerHTML = `
+          <section id="v02-mount-error" class="panel v02-mount-error">
+            <span class="v02-kicker">Fun Core · v02-core-6</span>
+            <h2>새 버전을 여는 중 문제가 생겼습니다.</h2>
+            <p>진행 기록은 바꾸지 않았습니다.</p>
+            <button id="v02-reload-build">새 버전 다시 열기</button>
+          </section>`;
+        document.getElementById('v02-reload-build').addEventListener('click', () => location.reload());
+      }
     });
-
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch((error) => {
-          App.log(`service worker: ${error.message}`);
-        });
-      });
-    }
   </script>
 </body>
 </html>

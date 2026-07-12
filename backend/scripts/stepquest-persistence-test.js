@@ -385,16 +385,19 @@ assert.ok(goalsHtml.includes('returnCompleted'), 'completion feedback must ackno
 assert.ok(goalsHtml.includes('recent-trace'), 'stats panel must render recent attempts');
 assert.ok(goalsHtml.includes('v=0.1.1-alpha'), 'shell asset cache version must be bumped');
 assert.ok(serviceWorker.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must follow the app version');
-assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-5'"), 'service worker cache build must change when v0.2 shell assets change');
-const v02CssUrl = '/assets/css/app.css?v=0.1.1-alpha&build=v02-core-5';
+assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-6'"), 'service worker cache build must change when v0.2 shell assets change');
+const v02CssUrl = '/assets/css/app.css?v=0.1.1-alpha&build=v02-core-6';
 assert.equal(occurrenceCount(goalsHtml, `href="${v02CssUrl}"`), 1, 'goals shell must load the exact v0.2 CSS URL once');
 assert.equal(occurrenceCount(serviceWorker, `'${v02CssUrl}'`), 1, 'service worker must precache the exact v0.2 CSS URL once');
 const v02Modules = ['domain', 'storage', 'backup', 'character', 'media', 'fun', 'fx', 'app', 'ui'];
 v02Modules.forEach((name) => {
-  const assetUrl = `/assets/js/stepquest-v02-${name}.js?v=0.1.1-alpha&build=v02-core-5`;
+  const assetUrl = `/assets/js/stepquest-v02-${name}.js?v=0.1.1-alpha&build=v02-core-6`;
   assert.equal(occurrenceCount(goalsHtml, `src="${assetUrl}"`), 1, `goals shell must load ${name} exactly once`);
   assert.equal(occurrenceCount(serviceWorker, `'${assetUrl}'`), 1, `service worker must precache ${name} exactly once`);
 });
+const pwaUrl = '/assets/js/stepquest-pwa-update.js?v=0.1.1-alpha&build=v02-core-6';
+assert.equal(occurrenceCount(goalsHtml, pwaUrl), 1, 'goals shell must load the PWA updater exactly once');
+assert.equal(occurrenceCount(serviceWorker, `'${pwaUrl}'`), 1, 'service worker must precache the PWA updater exactly once');
 const shellModuleOffsets = v02Modules.map((name) => goalsHtml.indexOf(`/stepquest-v02-${name}.js`));
 assert.ok(shellModuleOffsets.every((offset) => offset >= 0), 'every v0.2 shell module must exist before ordering is checked');
 assert.deepEqual(
@@ -408,6 +411,14 @@ assert.deepEqual(
   [...workerModuleOffsets].sort((left, right) => left - right),
   workerModuleOffsets,
   'service worker modules must follow the shell dependency order',
+);
+assert.ok(
+  goalsHtml.indexOf(pwaUrl) > shellModuleOffsets[v02Modules.indexOf('ui')],
+  'PWA updater must load after the v0.2 UI and before the inline bootstrap',
+);
+assert.ok(
+  serviceWorker.indexOf(`'${pwaUrl}'`) > workerModuleOffsets[v02Modules.indexOf('ui')],
+  'service worker must precache the PWA updater after the v0.2 UI',
 );
 const legacyAppOffset = goalsHtml.indexOf('src="/assets/js/app.js?v=0.1.1-alpha"');
 assert.ok(
@@ -431,6 +442,8 @@ assert.equal(
   1,
   'service worker must precache legacy app exactly once',
 );
+assert.ok(!goalsHtml.includes('v02-core-5'), 'goals shell must not retain the previous v0.2 cache key');
+assert.ok(!serviceWorker.includes('v02-core-5'), 'service worker must not retain the previous v0.2 cache key');
 assert.ok(!goalsHtml.includes('v02-core-4'), 'goals shell must not retain the previous v0.2 cache key');
 assert.ok(!serviceWorker.includes('v02-core-4'), 'service worker must not retain the previous v0.2 cache key');
 assert.ok(!goalsHtml.includes('v02-core-3'), 'goals shell must not retain the previous v0.2 cache key');
@@ -449,6 +462,9 @@ assert.ok(mainTs.includes('mediaSrc: ["\'self\'", \'blob:\']'), 'CSP must allow 
   'zenitsu',
   'thunderclap',
   'sample-character',
+  'zenitsu_skill_thunderclap_v2',
+  '_legacy',
+  'sample-character-zenitsu',
   'e2e/fixtures',
 ].forEach((privateAsset) => {
   assert.ok(!goalsHtml.toLowerCase().includes(privateAsset), `goals shell must exclude ${privateAsset}`);
@@ -537,10 +553,11 @@ const v02Assets = [
   'stepquest-v02-fx.js',
   'stepquest-v02-app.js',
   'stepquest-v02-ui.js',
+  'stepquest-pwa-update.js',
 ];
 let priorAssetIndex = -1;
 v02Assets.forEach((asset) => {
-  const assetUrl = `/assets/js/${asset}?v=0.1.1-alpha&build=v02-core-5`;
+  const assetUrl = `/assets/js/${asset}?v=0.1.1-alpha&build=v02-core-6`;
   const assetIndex = goalsHtml.indexOf(assetUrl);
   assert.ok(assetIndex > priorAssetIndex, `goals shell must load ${asset} in dependency order`);
   assert.equal(occurrenceCount(goalsHtml, `src="${assetUrl}"`), 1, `goals shell must load ${asset} once`);

@@ -1982,6 +1982,35 @@ input, select {
   background: linear-gradient(135deg, var(--accent), #b7e7ce);
 }
 
+.v02-navigation [data-v02-build] {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-align: center;
+}
+
+.v02-mount-error {
+  width: min(100%, 560px);
+  margin: 32px auto;
+  text-align: center;
+}
+
+.v02-mount-error p {
+  color: var(--muted);
+}
+
+#v02-reload-build {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+#v02-reload-build:focus-visible {
+  outline: 3px solid var(--accent-2);
+  outline-offset: 3px;
+}
+
 .v02-mode :focus-visible {
   outline: 3px solid var(--accent-2);
   outline-offset: 3px;
