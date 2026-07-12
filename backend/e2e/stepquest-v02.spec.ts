@@ -250,9 +250,34 @@ async function installReadyMutationProbe(page) {
   });
 }
 
+async function installDialogueProbe(page) {
+  await page.addInitScript(() => {
+    let core;
+    (window as any).__slice6DialogueCalls = [];
+    Object.defineProperty(window, 'StepQuestV02App', {
+      configurable: true,
+      get: () => core,
+      set: (value) => {
+        const chooseDialogue = value.chooseDialogue.bind(value);
+        value.chooseDialogue = async (input) => {
+          const text = await chooseDialogue(input);
+          (window as any).__slice6DialogueCalls.push({ ...input, text });
+          return text;
+        };
+        core = value;
+      },
+    });
+  });
+}
+
+async function dialogueCalls(page) {
+  return page.evaluate(() => [...(window as any).__slice6DialogueCalls]);
+}
+
 async function resetV02(page) {
   await page.addInitScript({ path: funScriptPath });
   await page.goto('/goals.html');
+  await page.waitForFunction(() => Boolean(document.querySelector('#v02-wallet')));
   await page.evaluate(async () => {
     localStorage.clear();
     sessionStorage.clear();
@@ -539,10 +564,666 @@ async function reportAnchoredOutcome(page, outcome: 'partial' | 'interrupted', n
   await page.locator('#v02-save-outcome').click();
 }
 
-async function reloadAfterCombatHandoff(page) {
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
-  await page.reload();
+async function continuePendingBattleReport(page) {
+  const report = page.locator('#v02-battle-report');
+  await expect(report).toBeVisible();
+  await page.locator('#v02-continue-report').click();
+  await expect(report).toHaveCount(0);
 }
+
+async function finishCombatToBattleReport(page, attacks = true) {
+  if (attacks) {
+    await expect(page.locator('[data-v02-combat-skip]')).toBeVisible();
+    await page.locator('[data-v02-combat-skip]').click();
+  }
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+}
+
+async function latestReportedEncounterHp(page) {
+  return page.evaluate(() => {
+    const Core = (window as any).StepQuestV02App;
+    const state = Core.getSnapshot();
+    const report = [...state.events].reverse().find((event: any) => (
+      event.type === 'expedition_reported'
+    ));
+    const step = state.steps.find((item: any) => item.id === report?.stepId);
+    return (window as any).StepQuestV02Fun.deriveEncounterHp(step, state.rewards);
+  });
+}
+
+test('battle report persists across reload and Continue acknowledges its exact key', async ({ page }) => {
+  await resetV02(page);
+  await createGoal(page, 'persistent battle report');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await page.locator('[data-v02-combat-skip]').click();
+
+  let pendingKey = '';
+  await expect.poll(async () => {
+    pendingKey = await page.evaluate(async () => (
+      await (window as any).StepQuestV02App.getPendingBattleReport()
+    )?.key || '');
+    return pendingKey;
+  }).not.toBe('');
+
+  await page.addInitScript(() => {
+    let core;
+    Object.defineProperty(window, 'StepQuestV02App', {
+      configurable: true,
+      get: () => core,
+      set: (value) => {
+        const getPending = value.getPendingBattleReport.bind(value);
+        let first = true;
+        value.getPendingBattleReport = async () => {
+          if (first) {
+            first = false;
+            (window as any).__slice6PendingHydrationStarted = true;
+            await new Promise((resolve) => { (window as any).__releaseSlice6PendingHydration = resolve; });
+          }
+          return getPending();
+        };
+        core = value;
+      },
+    });
+  });
+  await page.reload();
+  await page.waitForFunction(() => (window as any).__slice6PendingHydrationStarted === true);
+  await expect(page.locator('#v02-battle-report, #v02-start-step, #v02-resume-anchor, .v02-obstacle')).toHaveCount(0);
+  await page.evaluate(() => (window as any).__releaseSlice6PendingHydration());
+  const report = page.locator('#v02-battle-report');
+  await expect(report).toBeVisible();
+  await expect(report).toHaveAttribute('data-v02-report-key', pendingKey);
+  await expect(page).toHaveURL(/#today$/);
+
+  await page.locator('#v02-continue-report').click();
+  await expect(report).toHaveCount(0);
+  await expect(page).toHaveURL(/#today$/);
+  expect(await page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    return repository.getMeta('acknowledgedBattleReportKey');
+  })).toBe(pendingKey);
+});
+
+test('battle report displays committed event Gold 2 1 and 0 with truthful discovery', async ({ page }) => {
+  const expectReport = async (expectedGold: number, expectedDiscovery: string, expectedDefeats: number) => {
+    const eventGold = await page.evaluate(() => {
+      const events = (window as any).StepQuestV02App.getSnapshot().events;
+      return [...events].reverse().find((event: any) => (
+        event.type === 'expedition_reported'
+      ))?.result?.goldGranted;
+    });
+    expect(eventGold).toBe(expectedGold);
+    await expect(page.locator('[data-v02-report-gold]')).toHaveText(`골드 ${eventGold}`);
+    await expect(page.locator('[data-v02-report-discovery]')).toHaveText(expectedDiscovery);
+    await expect(page.locator('[data-v02-report-defeats]')).toHaveText(`몬스터 ${expectedDefeats}`);
+  };
+
+  await resetV02(page);
+  await createGoal(page, 'completed report gold');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await finishCombatToBattleReport(page);
+  await expectReport(2, '새 발견', 1);
+  await continuePendingBattleReport(page);
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+
+  await resetV02(page);
+  await seedPhaseGoal(page, 'start', 'partial-report-gold');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="partial"]').click();
+  await page.locator('#v02-next-action').fill('다음 실제 손동작');
+  await page.locator('#v02-save-outcome').click();
+  await finishCombatToBattleReport(page);
+  await expectReport(1, '기존 조우', 0);
+  await continuePendingBattleReport(page);
+  await expect(page.locator('#v02-resume-anchor')).toContainText('다음 실제 손동작');
+
+  await resetV02(page);
+  await createGoal(page, 'interrupted report gold');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="interrupted"]').click();
+  await page.locator('#v02-next-action').fill('중단 뒤 다음 손동작');
+  await page.locator('#v02-save-outcome').click();
+  await finishCombatToBattleReport(page, false);
+  await expectReport(0, '기존 조우', 0);
+  await continuePendingBattleReport(page);
+  await expect(page.locator('#v02-resume-anchor')).toContainText('중단 뒤 다음 손동작');
+
+  await resetV02(page);
+  await createGoal(page, 'not started report gold');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await finishCombatToBattleReport(page, false);
+  await expectReport(0, '기존 조우', 0);
+  await continuePendingBattleReport(page);
+  await expect(page.locator('[data-v02-reason]').first()).toBeVisible();
+});
+
+test('battle report lifecycle observes meta-only acknowledgement from another tab', async ({ page }) => {
+  await resetV02(page);
+  await createGoal(page, 'meta only report acknowledgement');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await finishCombatToBattleReport(page);
+  const key = await page.locator('#v02-battle-report').getAttribute('data-v02-report-key');
+  await installLifecycleProbe(page);
+  await page.evaluate(async (reportKey) => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.setMeta('acknowledgedBattleReportKey', reportKey);
+  }, key);
+  await dispatchLifecycleAndWait(page, 'window', 'focus');
+  await expect(page.locator('#v02-battle-report')).toHaveCount(0);
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+});
+
+test('battle report Continue fails safe and refetches a newer pending report', async ({ page }) => {
+  await resetV02(page);
+  await createGoal(page, 'safe report acknowledgement');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await finishCombatToBattleReport(page);
+  const report = page.locator('#v02-battle-report');
+  const originalKey = await report.getAttribute('data-v02-report-key');
+  expect(originalKey).toBeTruthy();
+
+  await installLifecycleProbe(page);
+  await page.evaluate(() => {
+    const Core = (window as any).StepQuestV02App;
+    const originalPending = Core.getPendingBattleReport.bind(Core);
+    const probe: any = { mode: 'pending', latest: null, useLatest: false, calls: [] };
+    (window as any).__slice6ReportAckProbe = probe;
+    Core.acknowledgeBattleReport = (key: string) => {
+      probe.calls.push(key);
+      if (probe.mode === 'false') return Promise.resolve(false);
+      if (probe.mode === 'true') return Promise.resolve(true);
+      return new Promise((resolve, reject) => {
+        probe.settle = (mode: string) => {
+          probe.settle = null;
+          if (mode === 'throw') reject(new Error('ACK_WRITE_FAILED'));
+          else resolve(mode === 'true');
+        };
+      });
+    };
+    Core.getPendingBattleReport = async () => (probe.useLatest ? probe.latest : originalPending());
+  });
+
+  await page.locator('#v02-continue-report').click();
+  await expect.poll(() => page.evaluate(() => Boolean(
+    (window as any).__slice6ReportAckProbe.settle,
+  ))).toBe(true);
+  await dispatchLifecycleAndWait(page, 'window', 'focus');
+  await page.evaluate(() => (window as any).__slice6ReportAckProbe.settle('throw'));
+  await expect(report).toHaveAttribute('data-v02-report-key', originalKey!);
+  await expect(page.locator('#v02-continue-report')).toBeEnabled();
+
+  await page.evaluate(async () => {
+    const probe = (window as any).__slice6ReportAckProbe;
+    const current = await (window as any).StepQuestV02App.getPendingBattleReport();
+    probe.latest = {
+      ...current,
+      key: 'v02:report:concurrent-latest',
+      headline: '더 최신 전투 리포트',
+      goldGranted: 0,
+    };
+    probe.useLatest = true;
+    probe.mode = 'false';
+  });
+  await page.locator('#v02-continue-report').click();
+  await expect(report).toHaveAttribute('data-v02-report-key', 'v02:report:concurrent-latest');
+  await expect(page.locator('[data-v02-report-headline]')).toHaveText('더 최신 전투 리포트');
+  await expect(page.locator('[data-v02-report-gold]')).toHaveText('골드 0');
+
+  await page.evaluate(() => { (window as any).__slice6ReportAckProbe.mode = 'true'; });
+  await page.locator('#v02-continue-report').click();
+  await expect(report).toHaveAttribute('data-v02-report-key', 'v02:report:concurrent-latest');
+  await expect(page.locator('#v02-continue-report')).toBeEnabled();
+
+  await page.evaluate(() => { (window as any).__slice6ReportAckProbe.latest = null; });
+  await page.locator('#v02-continue-report').click();
+  await expect(report).toHaveCount(0);
+  await expect(page).toHaveURL(/#today$/);
+  expect(await page.evaluate(() => (window as any).__slice6ReportAckProbe.calls)).toEqual([
+    originalKey,
+    originalKey,
+    'v02:report:concurrent-latest',
+    'v02:report:concurrent-latest',
+  ]);
+});
+
+test('Codex hash history keeps unknown monster identity secret and stays read only', async ({ page }) => {
+  await resetV02(page);
+  const before = await page.evaluate(() => {
+    const state = (window as any).StepQuestV02App.getSnapshot();
+    return JSON.stringify({ events: state.events, rewards: state.rewards, wallet: state.wallet });
+  });
+
+  await expect(page).toHaveURL(/#today$/);
+  await page.locator('#v02-nav-codex').click();
+  await expect(page).toHaveURL(/#codex$/);
+  await expect(page.locator('#v02-codex')).toBeVisible();
+  await expect(page.locator('#v02-codex-heading')).toBeFocused();
+  await expect(page.locator('#v02-nav-codex')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('#v02-codex-empty')).toHaveText('첫 토벌 기록이 여기에 남습니다.');
+
+  const catalog = await page.evaluate(() => Object.values((window as any).StepQuestV02Fun.CATALOG)
+    .flatMap((group: any) => [...group.regular, ...group.boss])
+    .map(([id, name]: string[]) => ({ id, name })));
+  const unknownEntries = page.locator('[data-v02-codex-entry=""]');
+  await expect(unknownEntries).toHaveCount(catalog.length);
+  const unknownHtml = (await unknownEntries.evaluateAll((nodes) => (
+    nodes.map((node) => node.outerHTML).join('\n')
+  ))).normalize('NFC');
+  for (const { id, name } of catalog) {
+    expect(unknownHtml).not.toContain(id);
+    expect(unknownHtml).not.toContain(name.normalize('NFC'));
+  }
+  await expect(unknownEntries.first()).toHaveText('???');
+  await expect(unknownEntries.first()).toHaveAttribute('aria-label', '미발견 몬스터');
+
+  await page.locator('#v02-nav-today').click();
+  await expect(page).toHaveURL(/#today$/);
+  await expect(page.locator('#v02-create-goal')).toBeFocused();
+  await page.goBack();
+  await expect(page.locator('#v02-codex')).toBeVisible();
+  await page.goForward();
+  await expect(page.locator('#v02-codex')).toHaveCount(0);
+  await page.evaluate(() => { window.location.hash = '#unknown-route'; });
+  await expect(page).toHaveURL(/#today$/);
+
+  await page.evaluate(() => {
+    const Core = (window as any).StepQuestV02App;
+    const getStatus = Core.getStatus.bind(Core);
+    (window as any).__slice6OriginalGetStatus = getStatus;
+    Core.getStatus = () => ({ ...getStatus(), pendingAccountImport: true });
+    window.location.hash = '#codex';
+  });
+  await expect(page.locator('#v02-import-account')).toBeVisible();
+  await expect(page.locator('#v02-codex')).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).StepQuestV02App.getStatus = (window as any).__slice6OriginalGetStatus;
+    (window as any).StepQuestV02UI.render();
+  });
+
+  const after = await page.evaluate(() => {
+    const state = (window as any).StepQuestV02App.getSnapshot();
+    return JSON.stringify({ events: state.events, rewards: state.rewards, wallet: state.wallet });
+  });
+  expect(after).toBe(before);
+});
+
+test('Codex counts one completed encounter once while pending report keeps route priority', async ({ page }) => {
+  await resetV02(page);
+  await createGoal(page, 'Codex completed encounter');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await finishCombatToBattleReport(page);
+  const projection = await page.evaluate(async () => (
+    (window as any).StepQuestV02App.getPendingBattleReport()
+  ));
+
+  await page.evaluate(() => { window.location.hash = '#codex'; });
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  await expect(page.locator('#v02-codex')).toHaveCount(0);
+  await page.locator('#v02-continue-report').click();
+  await expect(page).toHaveURL(/#today$/);
+  await page.locator('#v02-nav-codex').click();
+
+  const entry = page.locator(`[data-v02-codex-entry="${projection.monsterId}"]`);
+  await expect(entry).toContainText(projection.monsterName);
+  await expect(entry.locator('[data-v02-codex-count]')).toHaveText('1');
+  const beforeReload = await page.evaluate(() => {
+    const state = (window as any).StepQuestV02App.getSnapshot();
+    return JSON.stringify({ events: state.events, rewards: state.rewards, wallet: state.wallet });
+  });
+  await page.reload();
+  await expect(page).toHaveURL(/#codex$/);
+  await expect(entry.locator('[data-v02-codex-count]')).toHaveText('1');
+  const afterReload = await page.evaluate(() => {
+    const state = (window as any).StepQuestV02App.getSnapshot();
+    return JSON.stringify({ events: state.events, rewards: state.rewards, wallet: state.wallet });
+  });
+  expect(afterReload).toBe(beforeReload);
+});
+
+test('Codex stays selected when a running expedition becomes ready', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await resetV02(page);
+  await createGoal(page, 'Codex timer route');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  const before = await expeditionObservation(page);
+  await page.locator('#v02-nav-codex').click();
+  await page.clock.fastForward(5 * 60 * 1000);
+  await expect(page.locator('#v02-codex')).toBeVisible();
+  await expect(page).toHaveURL(/#codex$/);
+  await expect(page.locator('#v02-expedition-ready')).toHaveCount(0);
+  expect(await expeditionObservation(page)).toEqual(before);
+});
+
+test('dialogue follows semantic report ready early departure priority without tick or hash reselection', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await installDialogueProbe(page);
+  await resetV02(page);
+  const bubble = page.locator('#v02-dialogue');
+  await expect(bubble).toBeVisible();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('first_daily');
+
+  await createGoal(page, '실제 대사 스텝');
+  const currentStep = await page.locator('[data-v02-current-step]').innerText();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('idle');
+  expect((await dialogueCalls(page)).at(-1)?.subject).toBe(currentStep);
+
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('departure');
+  const departure = (await dialogueCalls(page)).at(-1)!;
+  expect(departure.triggerKey).toBe(`departure:${departure.entityId}:2026-07-12`);
+  const departureText = await bubble.innerText();
+  await page.reload();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('departure');
+  await expect(bubble).toHaveText(departureText);
+  const departureCalls = (await dialogueCalls(page)).length;
+  await page.clock.fastForward(1_000);
+  await page.locator('#v02-nav-codex').click();
+  await page.locator('#v02-nav-today').click();
+  expect((await dialogueCalls(page)).length).toBe(departureCalls);
+  await expect(bubble).toHaveText(departureText);
+
+  await page.locator('#v02-open-report').click();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('early_return');
+  const earlyCalls = (await dialogueCalls(page)).length;
+  await page.locator('[data-v02-outcome="partial"]').click();
+  expect((await dialogueCalls(page)).length).toBe(earlyCalls);
+  await page.locator('#v02-cancel-report').click();
+  await page.clock.fastForward(5 * 60 * 1000);
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('ready');
+
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await finishCombatToBattleReport(page);
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('reported');
+  const reported = (await dialogueCalls(page)).at(-1)!;
+  expect(reported.subject).toBe(await page.locator('[data-v02-report-monster]').innerText());
+  await expect(bubble).not.toContainText(/늦|실패|실망|연속|결석|탓|잘못/);
+});
+
+test('dialogue prioritizes parked and Resume Anchor subjects while next desire keeps parked goals', async ({ page }) => {
+  const expectParkedDesire = async (status: string) => {
+    const expected = await page.evaluate((parkedStatus) => {
+      const state = (window as any).StepQuestV02App.getSnapshot();
+      state.camp.level = 5;
+      const parked = state.steps.find((item: any) => item.status === parkedStatus);
+      (window as any).StepQuestV02UI.render();
+      return `다음 마일스톤: ${parked.nextPhysicalAction || parked.title}`;
+    }, status);
+    await expect(page.locator('#v02-next-desire')).toHaveText(expected);
+  };
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await installDialogueProbe(page);
+  await resetV02(page);
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('first_daily');
+  const greetingCalls = (await dialogueCalls(page)).length;
+  const greetingText = await page.locator('#v02-dialogue').innerText();
+  await page.locator('#v02-nav-codex').click();
+  await page.locator('#v02-nav-today').click();
+  expect((await dialogueCalls(page)).length).toBe(greetingCalls);
+  await expect(page.locator('#v02-dialogue')).toHaveText(greetingText);
+
+  await page.reload();
+  await expect(page.locator('#v02-dialogue')).toBeVisible();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('idle');
+
+  await page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.setMeta('foregroundSession', {
+      lastForegroundAt: '2026-07-09T00:00:00.000Z',
+      lastForegroundLocalDate: '2026-07-09',
+    });
+  });
+  await page.reload();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('long_absence');
+  expect((await dialogueCalls(page)).at(-1)?.subject).toContain('캠프');
+
+  await createGoal(page, '막힌 실제 스텝');
+  const parkedStep = await page.locator('[data-v02-current-step]').innerText();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('idle');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await finishCombatToBattleReport(page, false);
+  await page.locator('#v02-continue-report').click();
+  await page.locator('[data-v02-reason="no_material"]').click();
+  await page.locator('#v02-block-note').fill('실제 케이블');
+  await page.locator('#v02-block-material').click();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('blocked');
+  expect((await dialogueCalls(page)).at(-1)?.subject).toBe(parkedStep);
+  await expectParkedDesire('blocked');
+
+  await page.locator('#v02-unblock-step').click();
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await finishCombatToBattleReport(page, false);
+  await page.locator('#v02-continue-report').click();
+  await page.locator('[data-v02-reason="waiting_person"]').click();
+  await page.locator('#v02-block-note').fill('실제 답변');
+  await page.locator('#v02-block-person').click();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('waiting');
+  await expectParkedDesire('waiting');
+
+  await page.locator('#v02-unblock-step').click();
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await finishCombatToBattleReport(page, false);
+  await page.locator('#v02-continue-report').click();
+  await page.locator('[data-v02-reason="not_now"]').click();
+  await page.locator('#v02-defer').click();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.context).toBe('deferred');
+  await expectParkedDesire('deferred');
+
+  await resetV02(page);
+  await seedPhaseGoal(page, 'start', 'dialogue-anchor');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="partial"]').click();
+  await page.locator('#v02-next-action').fill('앵커의 다음 실제 손동작');
+  await page.locator('#v02-save-outcome').click();
+  await finishCombatToBattleReport(page);
+  await page.locator('#v02-continue-report').click();
+  await expect(page.locator('#v02-resume-anchor')).toBeVisible();
+  await expect.poll(async () => (await dialogueCalls(page)).at(-1)?.subject)
+    .toContain('앵커의 다음 실제 손동작');
+  await expect(page.locator('#v02-dialogue')).not.toContainText(/늦|실패|실망|연속|결석|탓/);
+});
+
+test('next desire uses one Domain camp cost projection on Today and report but none on Codex', async ({ page }) => {
+  await resetV02(page);
+  const desire = page.locator('#v02-next-desire');
+  await expect(desire).toHaveCount(1);
+  await expect(desire).toHaveText('다음 캠프까지 골드 2.');
+
+  const probe = await page.evaluate(() => {
+    const Domain = (window as any).StepQuestV02Domain;
+    const Fun = (window as any).StepQuestV02Fun;
+    const originalCost = Domain.campUpgradeCost.bind(Domain);
+    const originalDesire = Fun.buildNextDesire.bind(Fun);
+    const calls: any = { costs: [], desires: [] };
+    (window as any).__slice6DesireProbe = calls;
+    Domain.campUpgradeCost = (level: number) => {
+      const cost = originalCost(level);
+      calls.costs.push({ level, cost });
+      return cost;
+    };
+    Fun.buildNextDesire = (input: any) => {
+      calls.desires.push(input);
+      return originalDesire(input);
+    };
+    (window as any).StepQuestV02UI.render();
+    return calls;
+  });
+  expect(probe.costs).toEqual([{ level: 0, cost: 2 }]);
+  expect(probe.desires).toHaveLength(1);
+  expect(probe.desires[0].camp.nextCost).toBe(2);
+
+  await createGoal(page, 'desire encounter lineage');
+  const stepTitle = await page.locator('[data-v02-current-step]').innerText();
+  await expect(desire).toHaveText(`“${stepTitle}” 완료 → ??? 발견`);
+  expect(await page.evaluate(() => (window as any).StepQuestV02App.getEncounterView())).not.toBeNull();
+
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await expect(desire).toHaveText(`“${stepTitle}” 완료 → ??? 발견`);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await finishCombatToBattleReport(page);
+  await expect(desire).toHaveCount(1);
+  await expect(desire).toHaveText('캠프를 지금 확장할 수 있어요.');
+  await page.evaluate(() => { window.location.hash = '#codex'; });
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  await expect(desire).toHaveCount(1);
+  await page.locator('#v02-continue-report').click();
+  await page.locator('#v02-nav-codex').click();
+  await expect(page.locator('#v02-codex')).toBeVisible();
+  await expect(desire).toHaveCount(0);
+});
+
+test('next desire covers affordable shortfall milestone and terminal design fallbacks', async ({ page }) => {
+  await resetV02(page);
+  const desire = page.locator('#v02-next-desire');
+  await expect(desire).toHaveText('다음 캠프까지 골드 2.');
+
+  await page.evaluate(() => {
+    const state = (window as any).StepQuestV02App.getSnapshot();
+    state.wallet.gold = 2;
+    (window as any).StepQuestV02UI.render();
+  });
+  await expect(desire).toHaveText('캠프를 지금 확장할 수 있어요.');
+  await expect(page.locator('#v02-upgrade-camp')).toContainText('골드 2');
+
+  await page.evaluate(() => {
+    const state = (window as any).StepQuestV02App.getSnapshot();
+    state.camp.level = 5;
+    state.wallet.gold = 0;
+    (window as any).StepQuestV02UI.render();
+  });
+  await expect(desire).toHaveText('새 목표가 다음 조우를 엽니다.');
+
+  await resetV02(page);
+  await createGoal(page, 'milestone desire goal');
+  const expectedMilestone = await page.evaluate(() => {
+    const Core = (window as any).StepQuestV02App;
+    const state = Core.getSnapshot();
+    const step = state.steps.find((item: any) => item.status === 'active');
+    const encounter = Core.getEncounterView();
+    state.camp.level = 5;
+    state.events.push({
+      id: 'desire-discovery-event',
+      type: 'expedition_reported',
+      idempotencyKey: 'desire-discovery-report',
+      expeditionId: 'desire-discovery-expedition',
+      stepId: step.id,
+      outcome: 'completed',
+      createdAt: '2026-07-12T00:00:00.000Z',
+      result: {
+        rewardLineage: step.rewardLineage || step.id,
+        category: step.category || 'generic',
+        reportVersion: 1,
+        goalMilestone: encounter.boss,
+        goldGranted: 0,
+      },
+    });
+    (window as any).StepQuestV02UI.render();
+    return `다음 마일스톤: ${step.nextPhysicalAction || step.title}`;
+  });
+  await expect(desire).toHaveText(expectedMilestone);
+  await expect(desire).toHaveCount(1);
+});
+
+test('next desire keeps partial and interrupted lineage plus Resume Anchor at max camp', async ({ page }) => {
+  for (const outcome of ['partial', 'interrupted'] as const) {
+    await resetV02(page);
+    await seedPhaseGoal(page, 'start', `desire-${outcome}`);
+    const stepTitle = await page.locator('[data-v02-current-step]').innerText();
+    const nextAction = `${outcome} 다음 실제 손동작`;
+    await page.locator('#v02-start-step').click();
+    await cancelFx(page);
+    await page.locator('#v02-open-report').click();
+    await page.locator(`[data-v02-outcome="${outcome}"]`).click();
+    await page.locator('#v02-next-action').fill(nextAction);
+    await page.locator('#v02-save-outcome').click();
+    await finishCombatToBattleReport(page, outcome === 'partial');
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open('stepquest', 3);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction('wallet', 'readwrite');
+          transaction.objectStore('wallet').put({ id: 'camp', level: 5 });
+          transaction.oncomplete = () => { database.close(); resolve(); };
+          transaction.onerror = () => reject(transaction.error);
+        };
+        request.onerror = () => reject(request.error);
+      });
+      await (window as any).StepQuestV02App.refreshSnapshot();
+      (window as any).StepQuestV02UI.render();
+    });
+    await expect(page.locator('#v02-next-desire')).toHaveText(`“${stepTitle}” 완료 → ??? 발견`);
+
+    if (outcome === 'partial') {
+      await page.evaluate(() => {
+        const Core = (window as any).StepQuestV02App;
+        const Domain = (window as any).StepQuestV02Domain;
+        const state = Core.getSnapshot();
+        const step = state.steps.find((item: any) => item.status === 'interrupted');
+        state.events.unshift({
+          id: 'desire-anchor-discovery',
+          type: 'expedition_reported',
+          idempotencyKey: 'desire-anchor-discovery',
+          expeditionId: 'desire-anchor-expedition',
+          stepId: step.id,
+          outcome: 'completed',
+          createdAt: '2026-07-11T00:00:00.000Z',
+          result: {
+            rewardLineage: step.rewardLineage || step.id,
+            category: step.category || 'generic',
+            reportVersion: 1,
+            goalMilestone: Domain.isGoalMilestone(step, state.steps),
+            goldGranted: 0,
+          },
+        });
+        (window as any).StepQuestV02UI.render();
+      });
+      await expect(page.locator('#v02-next-desire')).toHaveText(`다음 마일스톤: ${nextAction}`);
+    }
+
+    await continuePendingBattleReport(page);
+    await expect(page.locator('#v02-resume-anchor')).toContainText(nextAction);
+    await expect(page.locator('#v02-next-desire')).not.toHaveText('새 목표가 다음 조우를 엽니다.');
+  }
+});
 
 test('moving character imports exact WebM and restarts muted inline skill video at zero', runMovingCharacterWebmTest);
 
@@ -562,7 +1243,7 @@ test('moving character imports animated WebP idle and completed combat uses trut
   await expect(page.locator('#v02-expedition-active img[data-v02-character-media="idle"]')).toBeVisible();
 
   await page.evaluate(() => {
-    const observed: Record<string, number> = {};
+    const observed: Record<string, number | string> = {};
     (window as any).__slice6CombatStarts = observed;
     const handoffs = new WeakSet();
     const observer = new MutationObserver(() => {
@@ -572,13 +1253,25 @@ test('moving character imports animated WebP idle and completed combat uses trut
       if (!observed.fx && document.querySelector('[data-v02-fx-overlay]')) {
         observed.fx = performance.now();
       }
-      document.querySelectorAll('[data-v02-combat-complete]').forEach((node) => {
+      const damage = document.querySelector('[data-v02-damage]')?.textContent?.trim();
+      if (damage) observed.damage = damage;
+      const hp = document.querySelector('[data-v02-monster-hp]')?.getAttribute('aria-valuenow');
+      if (hp) observed.finalHp = hp;
+      const monsterState = document.querySelector('[data-v02-monster-state]')
+        ?.getAttribute('data-v02-monster-state');
+      if (monsterState) observed.monsterState = monsterState;
+      document.querySelectorAll('#v02-battle-report').forEach((node) => {
         if (handoffs.has(node)) return;
         handoffs.add(node);
         observed.handoffs = (observed.handoffs || 0) + 1;
       });
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
   });
   await page.locator('#v02-open-report').click();
   await page.locator('[data-v02-outcome="completed"]').click();
@@ -588,16 +1281,17 @@ test('moving character imports animated WebP idle and completed combat uses trut
   await expect(combat.locator('img[data-v02-character-media="skill"]')).toBeVisible();
   await expect(combat.locator('[data-v02-fx-overlay]')).toBeVisible();
   await expect(combat.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuemax', '2');
-  await expect(combat.locator('[data-v02-damage]')).toHaveText('2 데미지');
-  await expect(combat.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '0');
-  await expect(combat.locator('[data-v02-monster-state]')).toHaveAttribute('data-v02-monster-state', 'defeated');
   const starts = await page.evaluate(() => ({ ...(window as any).__slice6CombatStarts }));
-  expect(Math.abs(starts.skill - starts.fx)).toBeLessThan(50);
+  expect(Math.abs(Number(starts.skill) - Number(starts.fx))).toBeLessThan(50);
 
-  const handoff = page.locator('[data-v02-combat-complete]');
+  const handoff = page.locator('#v02-battle-report');
   await expect(handoff).toBeVisible();
-  await expect(handoff).toHaveAttribute('data-v02-final-hp', '0');
-  await expect(handoff).toHaveAttribute('data-v02-defeated', 'true');
+  expect(await latestReportedEncounterHp(page)).toBe(0);
+  await expect.poll(() => page.evaluate(() => ({
+    damage: (window as any).__slice6CombatStarts.damage,
+    finalHp: (window as any).__slice6CombatStarts.finalHp,
+    monsterState: (window as any).__slice6CombatStarts.monsterState,
+  }))).toEqual({ damage: '2 데미지', finalHp: '0', monsterState: 'defeated' });
   await expect.poll(() => page.evaluate(() => (
     (window as any).__slice6CombatStarts.handoffs
   ))).toBe(1);
@@ -607,6 +1301,7 @@ test('moving character imports animated WebP idle and completed combat uses trut
     await (window as any).StepQuestV02App.getPendingBattleReport()
   )?.key)).toBe(pendingKey);
   await page.reload();
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
   await page.waitForFunction(() => Boolean((window as any).StepQuestV02App?.getSnapshot?.()));
   expect(await page.evaluate(async () => {
     const repository = await (window as any).StepQuestV02Storage.openRepository();
@@ -644,7 +1339,7 @@ test('combat sequence report commit admits one atomic caller across save and out
         seenSequences.add(node);
         probe.sequences += 1;
       });
-      document.querySelectorAll('[data-v02-combat-complete]').forEach((node) => {
+      document.querySelectorAll('#v02-battle-report').forEach((node) => {
         if (seenHandoffs.has(node)) return;
         seenHandoffs.add(node);
         probe.handoffs += 1;
@@ -663,7 +1358,7 @@ test('combat sequence report commit admits one atomic caller across save and out
   await expect.poll(() => page.evaluate(() => (window as any).__slice6CommitRace.coreCalls)).toBe(1);
   await expect(page.locator('[data-v02-combat-skip]')).toBeVisible();
   await page.locator('[data-v02-combat-skip]').click();
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
+  await expect(page.locator('#v02-battle-report')).toHaveCount(1);
   await page.waitForTimeout(300);
   expect(await page.evaluate(() => ({ ...(window as any).__slice6CommitRace }))).toEqual({
     coreCalls: 1,
@@ -688,7 +1383,7 @@ test('combat sequence skip aborts media FX and hit then hands off final state on
       if (document.querySelector('[data-v02-character-media="skill"]')) probe.skill += 1;
       if (document.querySelector('[data-v02-fx-overlay]')) probe.fx += 1;
       if (document.querySelector('[data-v02-damage]')?.textContent?.trim()) probe.damage += 1;
-      document.querySelectorAll('[data-v02-combat-complete]').forEach((node) => {
+      document.querySelectorAll('#v02-battle-report').forEach((node) => {
         if (seenHandoffs.has(node)) return;
         seenHandoffs.add(node);
         probe.handoffs += 1;
@@ -699,10 +1394,9 @@ test('combat sequence skip aborts media FX and hit then hands off final state on
   await page.locator('[data-v02-outcome="completed"]').click();
   await page.locator('[data-v02-combat-skip]').click();
 
-  const handoff = page.locator('[data-v02-combat-complete]');
+  const handoff = page.locator('#v02-battle-report');
   await expect(handoff).toHaveCount(1, { timeout: 250 });
-  await expect(handoff).toHaveAttribute('data-v02-final-hp', '0');
-  await expect(handoff).toHaveAttribute('data-v02-defeated', 'true');
+  expect(await latestReportedEncounterHp(page)).toBe(0);
   await expect(page.locator('[data-v02-character-media="skill"]')).toHaveCount(0);
   await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
   await page.waitForTimeout(3_200);
@@ -760,7 +1454,7 @@ test('combat sequence lifecycle wake preserves one skill node URL focus and hand
     refreshCompleted: 0,
   });
   await page.locator('[data-v02-combat-skip]').click();
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
+  await expect(page.locator('#v02-battle-report')).toHaveCount(1);
   await expect.poll(() => page.evaluate(() => (
     (window as any).__slice6CombatWakeProbe.refreshCompleted
   ))).toBe(1);
@@ -769,7 +1463,7 @@ test('combat sequence lifecycle wake preserves one skill node URL focus and hand
     refreshStarted: 1,
     refreshCompleted: 1,
   });
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
+  await expect(page.locator('#v02-battle-report')).toHaveCount(1);
 });
 
 test('moving character reduced motion never mounts animated img or video', async ({ page }) => {
@@ -797,7 +1491,8 @@ test('moving character reduced motion never mounts animated img or video', async
     observer.observe(document.documentElement, { childList: true, subtree: true });
   });
   await page.locator('[data-v02-outcome="completed"]').click();
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '0');
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  expect(await latestReportedEncounterHp(page)).toBe(0);
   await expect(page.locator('[data-v02-character-media="idle"]')).toHaveCount(0);
   await expect(page.locator('[data-v02-character-media="skill"]')).toHaveCount(0);
   await expect(page.locator('video')).toHaveCount(0);
@@ -821,8 +1516,10 @@ test('combat sequence derives first repeated and completed damage from the same 
   await expect(firstCombat.locator('[data-v02-character-media="skill"]')).toBeVisible();
   await expect(firstCombat.locator('[data-v02-damage]')).toHaveText('1 데미지');
   await expect(firstCombat.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '1');
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '1');
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  expect(await latestReportedEncounterHp(page)).toBe(1);
 
+  await continuePendingBattleReport(page);
   await page.reload();
   await expect(page.locator('#v02-resume-anchor')).toBeVisible();
   await page.locator('#v02-resume-step').click();
@@ -848,13 +1545,15 @@ test('combat sequence derives first repeated and completed damage from the same 
     observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   });
   await page.locator('#v02-save-outcome').click();
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '1');
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  expect(await latestReportedEncounterHp(page)).toBe(1);
   const guardProbe = await page.evaluate(() => ({ ...(window as any).__slice6GuardProbe }));
   expect(guardProbe.guards).toBeGreaterThan(0);
   expect(guardProbe.skill).toBe(0);
   expect(guardProbe.fx).toBe(0);
   expect(guardProbe.damage).toBe(0);
 
+  await continuePendingBattleReport(page);
   await page.reload();
   await page.locator('#v02-resume-step').click();
   await expect(page.locator('#v02-start-step')).toBeVisible();
@@ -869,7 +1568,8 @@ test('combat sequence derives first repeated and completed damage from the same 
   const completed = page.locator('[data-v02-combat]');
   await expect(completed.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '1');
   await expect(completed.locator('[data-v02-damage]')).toHaveText('1 데미지');
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '0');
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  expect(await latestReportedEncounterHp(page)).toBe(0);
 });
 
 test('combat sequence gives entry partial a neutral zero-damage guard', async ({ page }) => {
@@ -899,7 +1599,8 @@ test('combat sequence gives entry partial a neutral zero-damage guard', async ({
   }));
   await page.locator('#v02-save-outcome').click();
   expect(await guardSeen).toEqual({ state: 'guarded', hp: '2', skill: 0, fx: 0, damage: '' });
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '2');
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  expect(await latestReportedEncounterHp(page)).toBe(2);
 });
 
 test('combat sequence never attacks for interrupted or not-started outcomes', async ({ page }) => {
@@ -927,12 +1628,14 @@ test('combat sequence never attacks for interrupted or not-started outcomes', as
     observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true });
   });
   await reportAnchoredOutcome(page, 'interrupted', 'resume without attack');
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '2');
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  expect(await latestReportedEncounterHp(page)).toBe(2);
   await expect(page.locator('[data-v02-combat], [data-v02-character-media="skill"], [data-v02-fx-overlay], [data-v02-damage]')).toHaveCount(0);
   expect(await page.evaluate(() => ({ ...(window as any).__slice6NoAttackProbe }))).toEqual({
     skill: 0, fx: 0, fxModes: [], hit: 0, damage: 0,
   });
 
+  await continuePendingBattleReport(page);
   await page.reload();
   await page.locator('#v02-resume-step').click();
   await expect(page.locator('#v02-start-step')).toBeVisible();
@@ -957,7 +1660,8 @@ test('combat sequence never attacks for interrupted or not-started outcomes', as
     observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true });
   });
   await page.locator('[data-v02-outcome="not_started"]').click();
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '2');
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  expect(await latestReportedEncounterHp(page)).toBe(2);
   await expect(page.locator('[data-v02-combat], [data-v02-character-media="skill"], [data-v02-fx-overlay], [data-v02-damage]')).toHaveCount(0);
   expect(await page.evaluate(() => ({ ...(window as any).__slice6NoAttackProbe }))).toEqual({
     skill: 0, fx: 0, fxModes: [], hit: 0, damage: 0,
@@ -1674,7 +2378,7 @@ test('partial progress restores a Resume Anchor after reload', async ({ page }) 
   await expect(page.locator('#v02-next-action')).toHaveValue('둘째 문장 첫 단어 쓰기');
   await expect(page.locator('#v02-last-action')).toHaveValue('첫 문장을 썼음');
   await page.locator('#v02-save-outcome').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await expect(page.locator('#v02-resume-anchor')).toContainText('둘째 문장 첫 단어 쓰기');
   await page.locator('#v02-resume-step').click();
   await expect(page.locator('#v02-start-step')).toBeVisible();
@@ -1689,7 +2393,7 @@ test('completed advances exactly one step', async ({ page }) => {
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="completed"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await expect(page.locator('[data-v02-current-step]')).not.toHaveText(before);
 });
 
@@ -1906,7 +2610,7 @@ test('skill FX runs only after departure and completed state renders', async ({ 
   await expect(page.locator('[data-v02-fx-mode="completed"]')).toBeVisible();
   await expect(page.locator('[data-v02-fx-mode="milestone"]')).toHaveCount(0);
   await page.locator('[data-v02-combat-skip]').click();
-  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
+  await expect(page.locator('#v02-battle-report')).toHaveCount(1);
 });
 
 test('skill FX uses one milestone cut-in on final completion', async ({ page }) => {
@@ -1952,7 +2656,7 @@ for (const outcome of ['partial', 'interrupted', 'not_started']) {
       await page.locator('#v02-save-outcome').click();
     }
     await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
-    await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
+    await expect(page.locator('#v02-battle-report')).toHaveCount(1);
   });
 }
 
@@ -1980,7 +2684,7 @@ test('interrupted requires and restores a Resume Anchor', async ({ page }) => {
   await expect(page.locator('#v02-next-action')).toBeFocused();
   await page.locator('#v02-next-action').fill('마지막 문장 아래 이름 쓰기');
   await page.locator('#v02-save-outcome').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await expect(page.locator('#v02-resume-anchor')).toContainText('마지막 문장 아래 이름 쓰기');
 });
 
@@ -1992,7 +2696,7 @@ test('manual shrink twice preserves reward lineage and wallet balance', async ({
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await page.locator('[data-v02-reason="too_big"]').click();
   await page.locator('#v02-smaller-action').fill('바닥 한 칸 보기');
   await page.locator('#v02-manual-shrink').click();
@@ -2006,7 +2710,7 @@ test('manual shrink twice preserves reward lineage and wallet balance', async ({
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await page.locator('[data-v02-reason="too_big"]').click();
   await page.locator('#v02-smaller-action').fill('바닥 먼지 한 점 보기');
   await page.locator('#v02-manual-shrink').click();
@@ -2024,7 +2728,7 @@ test('not started can defer and undefer with no wallet change', async ({ page })
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await expect(page.locator('[data-v02-reason="not_now"]')).toBeVisible();
   await page.reload();
   await expect(page.locator('[data-v02-reason="not_now"]')).toBeVisible();
@@ -2048,7 +2752,7 @@ test('mis-tap retry returns to start repeatedly without wallet changes', async (
     if (attempt === 0) await page.reload();
     await openOutcomeChooser(page);
     await page.locator('[data-v02-outcome="not_started"]').click();
-    await reloadAfterCombatHandoff(page);
+    await continuePendingBattleReport(page);
     await page.locator('#v02-retry-step').click();
     await expect(page.locator('#v02-start-step')).toBeVisible();
     await expect(page.locator('#v02-wallet')).toHaveText(wallet);
@@ -2092,7 +2796,7 @@ test('missing material parks the step with context and restores it', async ({ pa
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await page.locator('[data-v02-reason="no_material"]').click();
   await page.locator('#v02-block-note').fill('USB cable');
   await page.locator('#v02-block-material').click();
@@ -2111,7 +2815,7 @@ test('waiting for a person persists the response context', async ({ page }) => {
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await page.locator('[data-v02-reason="waiting_person"]').click();
   await page.locator('#v02-block-note').fill('designer approval');
   await page.locator('#v02-block-person').click();
@@ -2126,7 +2830,7 @@ test('tired route can defer and return in one tap', async ({ page }) => {
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await page.locator('[data-v02-reason="tired"]').click();
   await expect(page.locator('#v02-tired-smaller')).toBeVisible();
   await page.locator('#v02-tired-defer').click();
@@ -2142,7 +2846,7 @@ test('anxious route offers a preview-sized replacement', async ({ page }) => {
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await page.locator('[data-v02-reason="anxious"]').click();
   await expect(page.locator('#v02-anxious-helper')).toBeVisible();
   await page.locator('#v02-smaller-action').fill('Open the file preview');
@@ -2157,7 +2861,7 @@ test('legacy direct-retry history reopens its active return report', async ({ pa
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await expect(page.locator('[data-v02-reason="too_big"]')).toBeVisible();
 
   await page.evaluate(async () => {
@@ -2249,7 +2953,7 @@ test('completed expedition can upgrade and persist the base camp', async ({ page
   await createAndStart(page, 'Build the camp');
   await page.locator('#v02-open-report').click();
   await page.locator('[data-v02-outcome="completed"]').click();
-  await reloadAfterCombatHandoff(page);
+  await continuePendingBattleReport(page);
   await expect(page.locator('#v02-upgrade-camp')).toBeVisible();
   await expect(page.locator('#v02-wallet')).toContainText('골드 2');
 
@@ -2324,7 +3028,7 @@ test('exports valid JSON and rotates five recovery snapshots', async ({ page }) 
     await page.locator('#v02-start-step').click();
     await page.locator('#v02-open-report').click();
     await page.locator('[data-v02-outcome="completed"]').click();
-    await reloadAfterCombatHandoff(page);
+    await continuePendingBattleReport(page);
   }
   const exported = await page.evaluate(() => (window as any).StepQuestV02App.exportJson());
   expect(JSON.parse(exported).schemaVersion).toBe(3);
@@ -2670,6 +3374,9 @@ test('Slice 6 facade persists semantic dialogue and applies the exact 48-hour se
     const Core = (window as any).StepQuestV02App;
     const repository = await (window as any).StepQuestV02Storage.openRepository();
     await Core.init({ App, forceRefresh: true });
+    await repository.setMeta('foregroundSession', null);
+    await repository.setMeta('lastForegroundLocalDate', null);
+    await repository.setMeta('lastForegroundAt', null);
     const eventsBefore = JSON.stringify(Core.getSnapshot().events);
     const first = await Core.beginForegroundSession('2026-07-12');
     const repeated = await Core.beginForegroundSession('2026-07-12');

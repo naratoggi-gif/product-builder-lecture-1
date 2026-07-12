@@ -14,13 +14,17 @@
   let readyLatch = null;
   let readyAnnounced = null;
   let lifecycleBound = false;
+  let hashRouteBound = false;
   let mounted = false;
   let refreshQueue = Promise.resolve();
   let combatState = null;
-  let combatHandoff = null;
+  let pendingBattleReport = null;
   let combatPlayback = null;
   let combatLifecycleRefreshPending = false;
   let reportCommitInFlight = false;
+  let foregroundSession = { firstLocalDate: false, longAbsence: false };
+  let dialogueCache = null;
+  let dialoguePendingKey = null;
 
   const outcomeLabels = {
     completed: '완료',
@@ -50,6 +54,12 @@
   const h = (value) => App.h(String(value ?? ''));
   const key = (name, id) => `v02:${name}:${id}`;
   const anchorDraftKey = (expeditionId) => `stepquest_v02_anchor_draft_${expeditionId}`;
+
+  function normalizeRouteHash() {
+    if (['#today', '#codex'].includes(root.location.hash)) return root.location.hash;
+    root.history.replaceState(null, '', '#today');
+    return '#today';
+  }
 
   function readAnchorDraft(expeditionId) {
     if (!expeditionId) return null;
@@ -256,8 +266,14 @@
       selectedMinutes,
       expedition,
       expeditionRecord: canonicalString(expedition),
+      pendingReportKey: pendingBattleReport?.key || null,
       renderedPhase: renderedTimerPhase(),
     };
+  }
+
+  async function hydratePendingBattleReport() {
+    pendingBattleReport = await Core.getPendingBattleReport();
+    return pendingBattleReport;
   }
 
   function refreshCharacterUrlInPlace() {
@@ -402,6 +418,127 @@
       App.state?.reducedMotion
       || root.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     );
+  }
+
+  function currentLocalDate() {
+    const observed = new Date();
+    return [
+      observed.getFullYear(),
+      String(observed.getMonth() + 1).padStart(2, '0'),
+      String(observed.getDate()).padStart(2, '0'),
+    ].join('-');
+  }
+
+  function dialogueProjection(vm, timer) {
+    const localDate = currentLocalDate();
+    const expeditionStep = vm.expedition
+      ? vm.state.steps.find((item) => item.id === vm.expedition.stepId)
+      : null;
+    const campSubject = `캠프 Lv.${vm.state.camp?.level || 0}`;
+    if (pendingBattleReport) {
+      return {
+        context: 'reported',
+        entityId: pendingBattleReport.key,
+        localDate,
+        subject: pendingBattleReport.monsterName,
+      };
+    }
+    if (vm.expedition && timer?.phase === 'ready') {
+      return {
+        context: 'ready',
+        entityId: vm.expedition.id,
+        localDate,
+        subject: Core.getEncounterView()?.name || expeditionStep?.title || campSubject,
+      };
+    }
+    if (vm.expedition && reporting && reportingEntry === 'early') {
+      return {
+        context: 'early_return',
+        entityId: vm.expedition.id,
+        localDate,
+        subject: expeditionStep?.title || campSubject,
+      };
+    }
+    if (vm.expedition && timer?.phase === 'running') {
+      return {
+        context: 'departure',
+        entityId: vm.expedition.id,
+        localDate,
+        subject: expeditionStep?.title || campSubject,
+      };
+    }
+    if (vm.parked) {
+      return {
+        context: vm.parked.status,
+        entityId: vm.parked.id,
+        localDate,
+        subject: vm.parked.title,
+      };
+    }
+    const fallbackSubject = vm.anchor?.nextPhysicalAction
+      || vm.active?.title
+      || vm.interrupted?.title
+      || campSubject;
+    const fallbackEntityId = vm.anchor?.id
+      || vm.active?.id
+      || vm.interrupted?.id
+      || `camp:${vm.state.camp?.level || 0}`;
+    if (foregroundSession.longAbsence) {
+      return {
+        context: 'long_absence',
+        entityId: vm.anchor?.id || vm.active?.id || vm.interrupted?.id || `camp:${vm.state.camp?.level || 0}`,
+        localDate,
+        subject: fallbackSubject,
+      };
+    }
+    if (foregroundSession.firstLocalDate) {
+      return {
+        context: 'first_daily',
+        entityId: vm.anchor?.id || vm.active?.id || vm.interrupted?.id || `camp:${vm.state.camp?.level || 0}`,
+        localDate,
+        subject: fallbackSubject,
+      };
+    }
+    if (
+      ['first_daily', 'long_absence'].includes(dialogueCache?.input?.context)
+      && dialogueCache.input.entityId === fallbackEntityId
+      && dialogueCache.input.localDate === localDate
+    ) return dialogueCache.input;
+    return {
+      context: 'idle',
+      entityId: fallbackEntityId,
+      localDate,
+      subject: fallbackSubject,
+    };
+  }
+
+  function dialogueTriggerKey(input) {
+    return `${input.context}:${input.entityId || 'none'}:${input.localDate}`;
+  }
+
+  function syncDialogue(input) {
+    if (combatState) return;
+    const triggerKey = dialogueTriggerKey(input);
+    if (dialogueCache?.triggerKey === triggerKey || dialoguePendingKey === triggerKey) return;
+    dialoguePendingKey = triggerKey;
+    Core.chooseDialogue({ ...input, triggerKey }).then((text) => {
+      if (dialoguePendingKey !== triggerKey) return;
+      dialoguePendingKey = null;
+      dialogueCache = { triggerKey, text, input };
+      if (input.context === 'first_daily') foregroundSession.firstLocalDate = false;
+      if (input.context === 'long_absence') {
+        foregroundSession.longAbsence = false;
+        foregroundSession.firstLocalDate = false;
+      }
+      const bubble = document.getElementById('v02-dialogue');
+      if (bubble?.dataset.v02DialogueTrigger === triggerKey) {
+        bubble.textContent = text;
+        bubble.removeAttribute('aria-busy');
+      }
+    }).catch((error) => {
+      if (dialoguePendingKey === triggerKey) dialoguePendingKey = null;
+      App.toast(error.message, true);
+    });
   }
 
   function characterArt(slot = 'idle') {
@@ -558,17 +695,42 @@
     `;
   }
 
-  function combatCompletePanel() {
+  function battleReportPanel() {
     return `
       <section
+        id="v02-battle-report"
         class="panel v02-runner"
-        data-v02-combat-complete
-        data-v02-report-key="${h(combatHandoff.pending.key)}"
-        data-v02-final-hp="${combatHandoff.afterHp}"
-        data-v02-defeated="${combatHandoff.afterHp === 0}"
+        data-v02-report-key="${h(pendingBattleReport.key)}"
       >
-        <span class="v02-kicker">전투 기록 전달</span>
-        <h2>전투 리포트 준비 완료</h2>
+        <span class="v02-kicker">전투 리포트</span>
+        <h2 data-v02-report-headline>${h(pendingBattleReport.headline)}</h2>
+        <p data-v02-report-monster>${h(pendingBattleReport.monsterName)}</p>
+        <p data-v02-report-route>${h(pendingBattleReport.route?.label)}</p>
+        <p data-v02-report-discovery>${pendingBattleReport.newDiscovery ? '새 발견' : '기존 조우'}</p>
+        <p data-v02-report-defeats>몬스터 ${h(pendingBattleReport.defeatCount)}</p>
+        <p data-v02-report-gold>골드 ${h(pendingBattleReport.goldGranted)}</p>
+        <button id="v02-continue-report" type="button">계속</button>
+      </section>
+    `;
+  }
+
+  function codexPanel(codex) {
+    const discovered = codex.entries.filter((entry) => entry.discovered);
+    return `
+      <section id="v02-codex" class="panel v02-runner">
+        <span class="v02-kicker">몬스터 도감</span>
+        <h2 id="v02-codex-heading" tabindex="-1">원정에서 만난 존재</h2>
+        ${discovered.length ? '' : '<p id="v02-codex-empty">첫 토벌 기록이 여기에 남습니다.</p>'}
+        <div class="v02-codex-grid">
+          ${codex.entries.map((entry) => entry.discovered ? `
+            <article data-v02-codex-entry="${h(entry.id)}">
+              <h3>${h(entry.name)}</h3>
+              <span data-v02-codex-count>${h(entry.count)}</span>
+            </article>
+          ` : `
+            <article data-v02-codex-entry aria-label="미발견 몬스터"><span aria-hidden="true">???</span></article>
+          `).join('')}
+        </div>
       </section>
     `;
   }
@@ -580,11 +742,28 @@
     const rootNode = document.getElementById('page-root');
     const vm = viewModel();
     const status = Core.getStatus();
+    const route = normalizeRouteHash();
+    const codex = root.StepQuestV02Fun.buildCodex(vm.state.events);
     const timer = timerView(vm.expedition);
     const anchorDraft = vm.expedition ? readAnchorDraft(vm.expedition.id) : null;
     const campLevel = vm.state.camp?.level || 0;
-    const nextCampCost = 2 + campLevel;
+    const nextCampCost = root.StepQuestV02Domain.campUpgradeCost(campLevel);
     const canUpgradeCamp = campLevel < 5 && vm.state.wallet.gold >= nextCampCost;
+    const showNextDesire = route === '#today' || Boolean(pendingBattleReport);
+    const expeditionStep = vm.expedition
+      ? vm.state.steps.find((item) => item.id === vm.expedition.stepId)
+      : null;
+    const desireStep = vm.active || expeditionStep || (vm.interrupted ? {
+      ...vm.interrupted,
+      nextPhysicalAction: vm.anchor?.nextPhysicalAction || vm.interrupted.nextPhysicalAction,
+    } : null) || vm.parked;
+    const nextDesire = showNextDesire ? root.StepQuestV02Fun.buildNextDesire({
+      camp: { ...vm.state.camp, nextCost: nextCampCost },
+      wallet: vm.state.wallet,
+      activeStep: desireStep,
+      encounter: Core.getEncounterView(),
+      codex,
+    }) : null;
     const stage = characterStage();
     const wallet = `
       <div id="v02-wallet" class="v02-wallet" aria-label="보유 재화">
@@ -596,8 +775,8 @@
     let body;
     let hasCharacterStage = false;
 
-    if (combatHandoff) {
-      body = combatCompletePanel();
+    if (pendingBattleReport) {
+      body = battleReportPanel();
     } else if (combatState) {
       hasCharacterStage = true;
       body = combatPanel();
@@ -613,6 +792,8 @@
           </div>
         </section>
       `;
+    } else if (route === '#codex') {
+      body = codexPanel(codex);
     } else if (vm.pendingObstacle) {
       body = `
         <section class="panel v02-obstacle">
@@ -746,7 +927,7 @@
       `;
     }
 
-    const showCamp = !combatState && !combatHandoff && Boolean(
+    const showCamp = route === '#today' && !combatState && !pendingBattleReport && Boolean(
       vm.expedition
       || vm.parked
       || !vm.state.goals.length
@@ -766,8 +947,20 @@
         ` : ''}
       </section>
     ` : '';
-    rootNode.innerHTML = `${wallet}${body}${campPanel}${characterSettings(status, hasCharacterStage)}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
+    const navigation = `
+      <nav class="v02-navigation" aria-label="주요 화면">
+        <a id="v02-nav-today" href="#today"${route === '#today' ? ' aria-current="page"' : ''}>오늘</a>
+        <a id="v02-nav-codex" href="#codex"${route === '#codex' ? ' aria-current="page"' : ''}>도감</a>
+      </nav>
+    `;
+    const dialogueInput = dialogueProjection(vm, timer);
+    const dialogueKey = dialogueTriggerKey(dialogueInput);
+    const dialogueText = dialogueCache?.triggerKey === dialogueKey ? dialogueCache.text : '';
+    const dialogue = `<p id="v02-dialogue" data-v02-dialogue-trigger="${h(dialogueKey)}"${dialogueText ? '' : ' aria-busy="true"'}>${h(dialogueText || '…')}</p>`;
+    const desire = nextDesire ? `<p id="v02-next-desire">${h(nextDesire.text)}</p>` : '';
+    rootNode.innerHTML = `${navigation}${wallet}${dialogue}${body}${desire}${campPanel}${characterSettings(status, hasCharacterStage)}${storagePanel(status)}<p id="v02-live" aria-live="polite"></p>`;
     wire();
+    syncDialogue(dialogueInput);
     syncTimer(timer);
     if (!reporting && timer?.phase === 'ready') announceReady(vm.expedition.id);
     if (focusSelector) Promise.resolve().then(() => document.querySelector(focusSelector)?.focus());
@@ -875,11 +1068,7 @@
     stopCombatMedia();
     root.StepQuestV02FX?.cancel();
     try { playback.hitAnimation?.cancel(); } catch (_error) { /* no-op */ }
-    combatHandoff = {
-      pending: combatState.pending,
-      beforeHp: combatState.beforeHp,
-      afterHp: combatState.afterHp,
-    };
+    pendingBattleReport = combatState.pending;
     combatState = null;
     combatPlayback = null;
     render();
@@ -910,7 +1099,6 @@
   async function startCombatSequence(context) {
     const playback = createCombatPlaybackSession();
     combatPlayback = playback;
-    combatHandoff = null;
     const delta = context.beforeHp - context.afterHp;
     const attacks = delta > 0 && ['completed', 'partial'].includes(context.outcome);
     combatState = {
@@ -1362,6 +1550,37 @@
     document.getElementById('v02-combat-skip')?.addEventListener('click', () => {
       finalizeCombat(combatPlayback, true);
     });
+    document.getElementById('v02-continue-report')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      const reportKey = pendingBattleReport?.key;
+      if (!reportKey || button.disabled) return;
+      button.disabled = true;
+      try {
+        const acknowledged = await Core.acknowledgeBattleReport(reportKey);
+        if (!acknowledged) {
+          await hydratePendingBattleReport();
+          render();
+          return;
+        }
+        await Core.refreshSnapshot();
+        const latest = await Core.getPendingBattleReport();
+        if (latest) {
+          pendingBattleReport = latest;
+          render();
+          return;
+        }
+        if (pendingBattleReport && pendingBattleReport.key !== reportKey) {
+          render();
+          return;
+        }
+        pendingBattleReport = null;
+        root.history.replaceState(null, '', '#today');
+        render();
+      } catch (error) {
+        button.disabled = false;
+        App.toast(error.message, true);
+      }
+    });
   }
 
   function reconcileRefreshedPresentation(before) {
@@ -1393,6 +1612,7 @@
       && before.status === after.status
       && before.character === after.character
       && before.selectedMinutes === after.selectedMinutes
+      && before.pendingReportKey === after.pendingReportKey
     );
     if (stateUnchanged && after.renderedPhase === (timer?.phase || null)) {
       refreshCharacterUrlInPlace();
@@ -1410,6 +1630,7 @@
     }
     const before = lifecyclePresentation();
     await Core.refreshSnapshot();
+    await hydratePendingBattleReport();
     reconcileRefreshedPresentation(before);
   }
 
@@ -1431,6 +1652,13 @@
     document.addEventListener('visibilitychange', queueLifecycleRefresh);
     root.addEventListener('pageshow', queueLifecycleRefresh);
     root.addEventListener('focus', queueLifecycleRefresh);
+    if (!hashRouteBound) {
+      hashRouteBound = true;
+      root.addEventListener('hashchange', () => {
+        const route = normalizeRouteHash();
+        render(route === '#codex' ? '#v02-codex-heading' : '#page-root button');
+      });
+    }
   }
 
   async function mount(options) {
@@ -1445,6 +1673,7 @@
       await Core.init({ App });
       const nextSelectedMinutes = await Core.getLastExpeditionMinutes();
       await Core.refreshSnapshot();
+      await hydratePendingBattleReport();
       selectedMinutes = nextSelectedMinutes;
       if (wasMounted) {
         reconcileRefreshedPresentation(before);
@@ -1453,10 +1682,12 @@
       reporting = false;
       reportingEntry = null;
       combatState = null;
-      combatHandoff = null;
       combatPlayback = null;
       combatLifecycleRefreshPending = false;
       reportCommitInFlight = false;
+      foregroundSession = await Core.beginForegroundSession(currentLocalDate());
+      dialogueCache = null;
+      dialoguePendingKey = null;
       const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
       const draft = readAnchorDraft(expedition?.id);
       selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
@@ -1466,6 +1697,7 @@
       tiredShrink = false;
       campMessage = null;
       characterPanelOpen = false;
+      normalizeRouteHash();
       render();
       mounted = true;
     }, false);

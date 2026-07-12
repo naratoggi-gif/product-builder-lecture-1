@@ -79,7 +79,52 @@
     return progressed ? 1 : 2;
   }
 
-  function buildBattleReport({ event, expedition = {} }) {
+  function completedCatalogEncounter(event) {
+    const result = event?.result || {};
+    if (
+      event?.outcome !== 'completed'
+      || result.reportVersion !== REPORT_VERSION
+      || !result.rewardLineage
+      || !CATALOG[result.category]
+    ) return null;
+    return selectEncounter({
+      rewardLineage: result.rewardLineage,
+      category: result.category,
+      boss: Boolean(result.goalMilestone),
+    });
+  }
+
+  function isNewDiscovery(event, events) {
+    const sequence = Array.isArray(events) ? [...events] : [event];
+    if (!sequence.includes(event)) sequence.push(event);
+    sequence.sort((left, right) => (
+      String(left?.createdAt || '').localeCompare(String(right?.createdAt || ''))
+      || String(left?.idempotencyKey || '').localeCompare(String(right?.idempotencyKey || ''))
+    ));
+    const target = sequence.indexOf(event);
+    const seenReports = new Set();
+    const discovered = new Set();
+    for (let index = 0; index <= target; index += 1) {
+      const candidate = sequence[index];
+      const encounter = completedCatalogEncounter(candidate);
+      if (!encounter) {
+        if (index === target) return false;
+        continue;
+      }
+      const identity = `${candidate.idempotencyKey}:${candidate.expeditionId}`;
+      if (seenReports.has(identity)) {
+        if (index === target) return false;
+        continue;
+      }
+      seenReports.add(identity);
+      const first = !discovered.has(encounter.id);
+      if (index === target) return first;
+      discovered.add(encounter.id);
+    }
+    return false;
+  }
+
+  function buildBattleReport({ event, expedition = {}, events }) {
     const result = event.result || {};
     if (result.reportVersion !== REPORT_VERSION) throw new Error('REPORT_VERSION_UNSUPPORTED');
     const encounter = selectEncounter({
@@ -99,6 +144,7 @@
       headline: lines[hash32(event.expeditionId) % lines.length],
       goldGranted: result.goldGranted,
       defeatCount: event.outcome === 'completed' ? 1 : 0,
+      newDiscovery: isNewDiscovery(event, events),
     };
   }
 
@@ -150,7 +196,7 @@
       const shortfall = Math.max(0, camp.nextCost - wallet.gold);
       return { kind: 'camp', text: `다음 캠프까지 골드 ${shortfall}.` };
     }
-    if (activeStep) return { kind: 'milestone', text: `다음 이정표: ${activeStep.nextPhysicalAction || activeStep.title}` };
+    if (activeStep) return { kind: 'milestone', text: `다음 마일스톤: ${activeStep.nextPhysicalAction || activeStep.title}` };
     return { kind: 'terminal', text: '새 목표가 다음 조우를 엽니다.' };
   }
 

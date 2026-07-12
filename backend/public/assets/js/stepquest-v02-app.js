@@ -322,8 +322,10 @@
   function getEncounterView() {
     requireRepository();
     const expedition = snapshot.expeditions.find((item) => item.status === 'active');
-    if (!expedition) return null;
-    const step = snapshot.steps.find((item) => item.id === expedition.stepId);
+    const step = expedition
+      ? snapshot.steps.find((item) => item.id === expedition.stepId)
+      : snapshot.steps.find((item) => item.status === 'active')
+        || snapshot.steps.find((item) => item.status === 'interrupted');
     if (!step) return null;
     const Domain = root.StepQuestV02Domain;
     if (!Domain?.isGoalMilestone) throw new Error('DOMAIN_MODULE_NOT_LOADED');
@@ -357,7 +359,7 @@
     const expedition = snapshot.expeditions.find((item) => item.id === event.expeditionId);
     return {
       key: event.idempotencyKey,
-      ...Fun.buildBattleReport({ event, expedition }),
+      ...Fun.buildBattleReport({ event, expedition, events: snapshot.events }),
     };
   }
 
@@ -367,7 +369,8 @@
     const pending = await getPendingBattleReport();
     if (!pending || pending.key !== key) return false;
     await repository.setMeta('acknowledgedBattleReportKey', key);
-    return true;
+    snapshot = await repository.getSnapshot();
+    return (await getPendingBattleReport()) === null;
   }
 
   async function beginForegroundSession(localDate) {
