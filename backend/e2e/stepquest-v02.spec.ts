@@ -44,6 +44,70 @@ function makeAnimatedWebPBytes(durations: number[], width = 8, height = 8) {
   return Array.from(Buffer.concat([header, body]));
 }
 
+async function installTimerProbe(page) {
+  await page.addInitScript(() => {
+    const originalSetInterval = window.setInterval.bind(window);
+    const originalClearInterval = window.clearInterval.bind(window);
+    const activeIds = new Set();
+    const probe = {
+      created: 0,
+      cleared: 0,
+      active: 0,
+      delays: [],
+    };
+    (window as any).__slice6TimerProbe = probe;
+    (window as any).setInterval = (callback, delay, ...args) => {
+      const intervalId = originalSetInterval(callback, delay, ...args);
+      if (delay === 1000) {
+        activeIds.add(intervalId);
+        probe.created += 1;
+        probe.active = activeIds.size;
+        probe.delays.push(delay);
+      }
+      return intervalId;
+    };
+    (window as any).clearInterval = (intervalId) => {
+      if (activeIds.delete(intervalId)) {
+        probe.cleared += 1;
+        probe.active = activeIds.size;
+      }
+      return originalClearInterval(intervalId);
+    };
+  });
+}
+
+async function installReadyMutationProbe(page) {
+  await page.evaluate(() => {
+    const seenReadyPanels = new WeakSet();
+    const probe = {
+      readyInsertions: 0,
+      announcements: 0,
+      lastAnnouncement: '',
+    };
+    (window as any).__slice6ReadyProbe = probe;
+    const countReadyPanel = (panel) => {
+      if (seenReadyPanels.has(panel)) return;
+      seenReadyPanels.add(panel);
+      probe.readyInsertions += 1;
+    };
+    const observer = new MutationObserver((records) => {
+      records.forEach((record) => {
+        record.addedNodes.forEach((node) => {
+          if (!(node instanceof Element)) return;
+          if (node.id === 'v02-expedition-ready') countReadyPanel(node);
+          node.querySelectorAll('#v02-expedition-ready').forEach(countReadyPanel);
+        });
+      });
+      const announcement = document.getElementById('v02-live')?.textContent || '';
+      if (announcement && announcement !== probe.lastAnnouncement) {
+        probe.lastAnnouncement = announcement;
+        probe.announcements += 1;
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  });
+}
+
 async function resetV02(page) {
   await page.addInitScript({ path: funScriptPath });
   await page.goto('/goals.html');
@@ -94,6 +158,110 @@ async function openOutcomeChooser(page) {
   await expect(page.locator('#v02-return-report')).toBeVisible();
 }
 
+async function installLifecycleProbe(page) {
+  await page.evaluate(() => {
+    const Core = (window as any).StepQuestV02App;
+    const refreshSnapshot = Core.refreshSnapshot.bind(Core);
+    const probe = {
+      started: 0,
+      completed: 0,
+      active: 0,
+      maxActive: 0,
+      startedOrder: [],
+      completedOrder: [],
+    };
+    (window as any).__slice6LifecycleProbe = probe;
+    Core.refreshSnapshot = async () => {
+      const call = probe.started + 1;
+      probe.started = call;
+      probe.startedOrder.push(call);
+      probe.active += 1;
+      probe.maxActive = Math.max(probe.maxActive, probe.active);
+      try {
+        return await refreshSnapshot();
+      } finally {
+        probe.active -= 1;
+        probe.completed += 1;
+        probe.completedOrder.push(call);
+      }
+    };
+  });
+}
+
+async function lifecycleProbe(page) {
+  return page.evaluate(() => ({ ...(window as any).__slice6LifecycleProbe }));
+}
+
+async function dispatchLifecycleAndWait(page, target, type) {
+  const before = await lifecycleProbe(page);
+  await page.evaluate(({ eventTarget, eventType }) => {
+    const recipient = eventTarget === 'document' ? document : window;
+    recipient.dispatchEvent(new Event(eventType));
+  }, { eventTarget: target, eventType: type });
+  await expect.poll(async () => (await lifecycleProbe(page)).completed)
+    .toBeGreaterThanOrEqual(before.completed + 1);
+  const after = await lifecycleProbe(page);
+  expect(after.started - before.started).toBe(1);
+  expect(after.completed - before.completed).toBe(1);
+  expect(after.active).toBe(0);
+  expect(after.maxActive).toBe(1);
+  expect(after.completedOrder).toEqual(after.startedOrder);
+}
+
+async function expectElementPreserved(handle, selector, focused = true) {
+  if (!handle) throw new Error(`Expected an element handle for ${selector}`);
+  expect(await handle.evaluate((node, input) => ({
+    connected: node.isConnected,
+    current: node === document.querySelector(input.selector),
+    focused: node === document.activeElement,
+  }), { selector, focused })).toEqual({
+    connected: true,
+    current: true,
+    focused,
+  });
+}
+
+async function installDelayedMount(page) {
+  await page.addInitScript(() => {
+    let ui;
+    Object.defineProperty(window, 'StepQuestV02UI', {
+      configurable: true,
+      get: () => ui,
+      set: (value) => {
+        const mount = value.mount;
+        value.mount = async (options) => {
+          const Core = options.Core;
+          const getLastExpeditionMinutes = Core.getLastExpeditionMinutes.bind(Core);
+          const refreshSnapshot = Core.refreshSnapshot.bind(Core);
+          const refreshProbe = { started: 0, completed: 0, active: 0, maxActive: 0 };
+          (window as any).__slice6MountRefreshProbe = refreshProbe;
+          Core.refreshSnapshot = async () => {
+            refreshProbe.started += 1;
+            refreshProbe.active += 1;
+            refreshProbe.maxActive = Math.max(refreshProbe.maxActive, refreshProbe.active);
+            try {
+              return await refreshSnapshot();
+            } finally {
+              refreshProbe.active -= 1;
+              refreshProbe.completed += 1;
+            }
+          };
+          Core.getLastExpeditionMinutes = async () => {
+            const minutes = await getLastExpeditionMinutes();
+            (window as any).__slice6MountDelayed = true;
+            await new Promise((resolve) => {
+              (window as any).__releaseSlice6Mount = resolve;
+            });
+            return minutes;
+          };
+          return mount(options);
+        };
+        ui = value;
+      },
+    });
+  });
+}
+
 async function cancelFx(page) {
   await page.evaluate(() => (window as any).StepQuestV02FX.cancel());
   await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
@@ -129,6 +297,28 @@ test('expedition timer defaults invalid preferences to five minutes and keeps th
   await page.locator('[name="v02-expedition-minutes"][value="10"]').check();
   await expect(page.locator('[data-v02-expedition-teaser]')).toHaveText('10분 · 오래된 숲길 · ???의 흔적');
 
+  await installLifecycleProbe(page);
+  const runnerPanel = await page.locator('.v02-runner').elementHandle();
+  const durationRadio = await page.locator('[name="v02-expedition-minutes"][value="10"]').elementHandle();
+  await page.locator('[name="v02-expedition-minutes"][value="10"]').focus();
+  await expect(page.locator('[name="v02-expedition-minutes"][value="10"]')).toBeFocused();
+  await dispatchLifecycleAndWait(page, 'document', 'visibilitychange');
+  await expectElementPreserved(runnerPanel, '.v02-runner', false);
+  await expectElementPreserved(durationRadio, '[name="v02-expedition-minutes"][value="10"]');
+
+  const loginButton = await page.locator('#btn-login').elementHandle();
+  await page.locator('#btn-login').focus();
+  await expect(page.locator('#btn-login')).toBeFocused();
+  await dispatchLifecycleAndWait(page, 'window', 'pageshow');
+  await expectElementPreserved(runnerPanel, '.v02-runner', false);
+  await expectElementPreserved(loginButton, '#btn-login');
+
+  const navigationLink = await page.locator('.nav-link').first().elementHandle();
+  await dispatchLifecycleAndWait(page, 'window', 'focus');
+  await expectElementPreserved(runnerPanel, '.v02-runner', false);
+  await expectElementPreserved(loginButton, '#btn-login');
+  await expectElementPreserved(navigationLink, '.nav-link', false);
+
   await page.evaluate(async () => {
     const repository = await (window as any).StepQuestV02Storage.openRepository();
     await repository.setMeta('lastExpeditionMinutes', 25);
@@ -148,6 +338,7 @@ test('expedition timer defaults invalid preferences to five minutes and keeps th
 
 test('expedition timer reaches harvest without writing events rewards wallet or status', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await installTimerProbe(page);
   await resetV02(page);
   await createGoal(page, '절대 시각으로 돌아오는 원정');
   await page.locator('[name="v02-expedition-minutes"][value="5"]').check();
@@ -159,14 +350,54 @@ test('expedition timer reaches harvest without writing events rewards wallet or 
   await expect(page.locator('#v02-expedition-active')).toContainText('앱을 닫아도 됩니다.');
   await expect(page.locator('#v02-open-report')).toHaveText('일찍 돌아왔어요');
   await expect(page.locator('[data-v02-encounter]')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => ({ ...(window as any).__slice6TimerProbe }))).toEqual({
+    created: 1,
+    cleared: 0,
+    active: 1,
+    delays: [1000],
+  });
+  const runningPanel = await page.locator('#v02-expedition-active').elementHandle();
+  await installReadyMutationProbe(page);
   const before = await expeditionObservation(page);
 
+  await page.clock.fastForward(1000);
+  await expectElementPreserved(runningPanel, '#v02-expedition-active', false);
+  await page.locator('#v02-open-report').focus();
   await page.clock.fastForward(5 * 60 * 1000);
 
   await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+  await expect(page.locator('#v02-open-report')).not.toBeFocused();
   await expect(page.locator('#v02-expedition-ready')).not.toContainText(/골드|보상/);
   await expect(page.locator('#v02-open-report')).toHaveText('전리품 확인');
   expect(await expeditionObservation(page)).toEqual(before);
+  await expect.poll(() => page.evaluate(() => ({ ...(window as any).__slice6TimerProbe }))).toEqual({
+    created: 1,
+    cleared: 1,
+    active: 0,
+    delays: [1000],
+  });
+  await expect.poll(() => page.evaluate(() => ({ ...(window as any).__slice6ReadyProbe }))).toEqual({
+    readyInsertions: 1,
+    announcements: 1,
+    lastAnnouncement: '원정 전리품을 확인할 준비가 되었습니다.',
+  });
+  const readyPanel = await page.locator('#v02-expedition-ready').elementHandle();
+  await installLifecycleProbe(page);
+  await page.clock.fastForward(60 * 1000);
+  await dispatchLifecycleAndWait(page, 'window', 'focus');
+  await expectElementPreserved(readyPanel, '#v02-expedition-ready', false);
+  await expect(page.locator('#v02-live')).toHaveText('원정 전리품을 확인할 준비가 되었습니다.');
+  expect(await page.evaluate(() => ({ ...(window as any).__slice6ReadyProbe }))).toEqual({
+    readyInsertions: 1,
+    announcements: 1,
+    lastAnnouncement: '원정 전리품을 확인할 준비가 되었습니다.',
+  });
+  expect(await page.evaluate(() => ({ ...(window as any).__slice6TimerProbe }))).toEqual({
+    created: 1,
+    cleared: 1,
+    active: 0,
+    delays: [1000],
+  });
 });
 
 test('expedition timer reloads an unexpired expedition into its absolute countdown', async ({ page }) => {
@@ -176,11 +407,20 @@ test('expedition timer reloads an unexpired expedition into its absolute countdo
   await page.locator('[name="v02-expedition-minutes"][value="10"]').check();
   await page.locator('#v02-start-step').click();
   await expect(page.locator('#v02-expedition-active')).toBeVisible();
-  const expiresAt = await page.evaluate(() => (
-    (window as any).StepQuestV02App.getSnapshot().expeditions
-      .find((item) => item.status === 'active').expiresAt
-  ));
-  await page.clock.setFixedTime(new Date(Date.parse(expiresAt) - 6 * 60 * 1000));
+  const timing = await page.evaluate(() => {
+    const expedition = (window as any).StepQuestV02App.getSnapshot().expeditions
+      .find((item) => item.status === 'active');
+    return {
+      plannedMinutes: expedition.plannedMinutes,
+      startedAt: expedition.startedAt,
+      expiresAt: expedition.expiresAt,
+    };
+  });
+  expect(timing.plannedMinutes).toBe(10);
+  expect(Date.parse(timing.expiresAt) - Date.parse(timing.startedAt)).toBe(10 * 60 * 1000);
+  await page.clock.setFixedTime(new Date(timing.startedAt));
+  await expect(page.locator('[data-v02-countdown]')).toHaveText('10:00');
+  await page.clock.setFixedTime(new Date(Date.parse(timing.expiresAt) - 6 * 60 * 1000));
   await expect(page.locator('[data-v02-countdown]')).toHaveText('06:00');
 
   await page.reload();
@@ -211,13 +451,15 @@ test('harvest state opens directly after an expired reload and never promises Go
 });
 
 test('harvest state gives legacy timing a distinct return panel', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
   await resetV02(page);
   await createAndStart(page, '예전 기록으로 남은 원정');
   await page.evaluate(async () => {
     const expedition = (window as any).StepQuestV02App.getSnapshot().expeditions
       .find((item) => item.status === 'active');
-    const legacy = { ...expedition };
+    const legacy = { ...expedition, id: 'legacy:expedition["unsafe"]' };
     delete legacy.plannedMinutes;
     delete legacy.expiresAt;
     await new Promise<void>((resolve, reject) => {
@@ -225,6 +467,7 @@ test('harvest state gives legacy timing a distinct return panel', async ({ page 
       request.onsuccess = () => {
         const database = request.result;
         const transaction = database.transaction('expeditions', 'readwrite');
+        transaction.objectStore('expeditions').delete(expedition.id);
         transaction.objectStore('expeditions').put(legacy);
         transaction.oncomplete = () => { database.close(); resolve(); };
         transaction.onerror = () => reject(transaction.error);
@@ -241,6 +484,7 @@ test('harvest state gives legacy timing a distinct return panel', async ({ page 
   await page.locator('#v02-open-report').click();
   await expect(page.locator('#v02-return-report')).toBeVisible();
   await expect(page.locator('#v02-return-report')).toContainText('이전 원정');
+  expect(pageErrors).toEqual([]);
 });
 
 test('harvest state labels early return and cancel follows the current derived phase', async ({ page }) => {
@@ -277,8 +521,9 @@ test('harvest state latches ready when the system clock moves backward', async (
   await page.clock.fastForward(5 * 60 * 1000);
   await expect(page.locator('#v02-expedition-ready')).toBeVisible();
 
+  await installLifecycleProbe(page);
   await page.clock.setFixedTime(new Date(startedAt.getTime() + 60 * 1000));
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await dispatchLifecycleAndWait(page, 'window', 'focus');
 
   await expect(page.locator('#v02-expedition-ready')).toBeVisible();
   await expect(page.locator('#v02-expedition-active')).toHaveCount(0);
@@ -288,19 +533,19 @@ test('harvest state refreshes on wake and replaces a stale expedition after anot
   await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
   await resetV02(page);
   await createAndStart(page, '다른 탭과 맞추는 원정');
-  await page.evaluate(() => {
-    const Core = (window as any).StepQuestV02App;
-    const refreshSnapshot = Core.refreshSnapshot.bind(Core);
-    (window as any).__slice6RefreshCount = 0;
-    Core.refreshSnapshot = async () => {
-      (window as any).__slice6RefreshCount += 1;
-      return refreshSnapshot();
-    };
-  });
-  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect.poll(() => page.evaluate(() => (window as any).__slice6RefreshCount)).toBeGreaterThanOrEqual(3);
+  await installLifecycleProbe(page);
+  const runningPanel = await page.locator('#v02-expedition-active').elementHandle();
+  const earlyReturn = await page.locator('#v02-open-report').elementHandle();
+  await page.locator('#v02-open-report').focus();
+  for (const [target, type] of [
+    ['document', 'visibilitychange'],
+    ['window', 'pageshow'],
+    ['window', 'focus'],
+  ]) {
+    await dispatchLifecycleAndWait(page, target, type);
+    await expectElementPreserved(runningPanel, '#v02-expedition-active', false);
+    await expectElementPreserved(earlyReturn, '#v02-open-report');
+  }
 
   await page.locator('#v02-open-report').click();
   await page.locator('[data-v02-outcome="partial"]').click();
@@ -318,10 +563,44 @@ test('harvest state refreshes on wake and replaces a stale expedition after anot
     });
   });
 
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await dispatchLifecycleAndWait(page, 'window', 'focus');
 
   await expect(page.locator('#v02-resume-anchor')).toContainText('다른 탭에서 저장한 다음 행동');
   await expect(page.locator('#v02-return-report')).toHaveCount(0);
+  await secondPage.close();
+});
+
+test('harvest state initial mount refreshes a commit made during async initialization', async ({ page, context }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await resetV02(page);
+  await createAndStart(page, '초기 마운트 중 바뀌는 원정');
+  const secondPage = await context.newPage();
+  await secondPage.addInitScript({ path: funScriptPath });
+  await secondPage.goto('/goals.html');
+  await expect(secondPage.locator('#v02-expedition-active')).toBeVisible();
+
+  await installDelayedMount(page);
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => Boolean((window as any).__slice6MountDelayed))).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+  await secondPage.evaluate(async () => {
+    await (window as any).StepQuestV02App.reportCurrentExpedition({
+      outcome: 'partial',
+      idempotencyKey: 'slice6:mount-race:report',
+      anchor: { nextPhysicalAction: '최신 저장 상태에서 이어가기' },
+    });
+  });
+  await page.evaluate(() => (window as any).__releaseSlice6Mount());
+
+  await expect(page.locator('#v02-resume-anchor')).toContainText('최신 저장 상태에서 이어가기');
+  await expect(page.locator('#v02-expedition-active')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__slice6MountRefreshProbe.completed
+  ))).toBeGreaterThanOrEqual(2);
+  const refreshProbe = await page.evaluate(() => ({ ...(window as any).__slice6MountRefreshProbe }));
+  expect(refreshProbe.started).toBe(refreshProbe.completed);
+  expect(refreshProbe.active).toBe(0);
+  expect(refreshProbe.maxActive).toBe(1);
   await secondPage.close();
 });
 
@@ -336,8 +615,9 @@ test('harvest state preserves the open Resume Anchor draft and focus across expi
   await page.locator('#v02-note').fill('만료 뒤에도 남아야 하는 메모');
   await page.locator('#v02-next-action').focus();
 
+  await installLifecycleProbe(page);
   await page.clock.fastForward(5 * 60 * 1000);
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await dispatchLifecycleAndWait(page, 'window', 'focus');
 
   await expect(page.locator('#v02-return-report')).toBeVisible();
   await expect(page.locator('#v02-last-action')).toHaveValue('첫 줄을 적었음');

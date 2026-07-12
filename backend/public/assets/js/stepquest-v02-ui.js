@@ -169,8 +169,47 @@
   }
 
   function updateCountdown(timer, expeditionId) {
-    const countdown = document.querySelector(`[data-v02-countdown][data-v02-expedition-id="${expeditionId}"]`);
-    if (countdown) countdown.textContent = formatCountdown(timer.remainingMs);
+    const countdown = document.querySelector('[data-v02-countdown]');
+    if (countdown?.dataset.v02ExpeditionId === String(expeditionId)) {
+      countdown.textContent = formatCountdown(timer.remainingMs);
+    }
+  }
+
+  function renderedTimerPhase() {
+    if (document.getElementById('v02-expedition-active')) return 'running';
+    if (document.getElementById('v02-expedition-ready')) return 'ready';
+    if (document.getElementById('v02-expedition-legacy-ready')) return 'legacy_ready';
+    return null;
+  }
+
+  function stableCharacter() {
+    const {
+      imageUrl,
+      portraitUrl,
+      idleUrl,
+      skillUrl,
+      ...value
+    } = Core.getCharacter();
+    return value;
+  }
+
+  function lifecyclePresentation() {
+    const snapshot = Core.getSnapshot();
+    const expedition = snapshot.expeditions.find((item) => item.status === 'active') || null;
+    return {
+      snapshot: JSON.stringify(snapshot),
+      status: JSON.stringify(Core.getStatus()),
+      character: JSON.stringify(stableCharacter()),
+      expedition,
+      expeditionRecord: JSON.stringify(expedition),
+      renderedPhase: renderedTimerPhase(),
+    };
+  }
+
+  function refreshCharacterUrlInPlace() {
+    const nextUrl = Core.getCharacter().imageUrl;
+    const image = document.getElementById('v02-character-image');
+    if (image && nextUrl && image.getAttribute('src') !== nextUrl) image.setAttribute('src', nextUrl);
   }
 
   function timerTick() {
@@ -937,35 +976,55 @@
   }
 
   async function refreshFromLifecycle() {
-    const beforeExpedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-    const preserveForm = reporting && Boolean(beforeExpedition);
+    const before = lifecyclePresentation();
     await Core.refreshSnapshot();
-    const afterExpedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-    const expeditionChanged = beforeExpedition?.id !== afterExpedition?.id;
+    const after = lifecyclePresentation();
+    const expeditionChanged = before.expeditionRecord !== after.expeditionRecord;
 
     if (expeditionChanged) {
       reporting = false;
       reportingEntry = null;
-      const draft = readAnchorDraft(afterExpedition?.id);
+      const draft = readAnchorDraft(after.expedition?.id);
       selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
         ? draft.outcome
         : null;
       selectedReason = null;
       tiredShrink = false;
-      alignTimerSession(afterExpedition);
+      timerExpeditionId = null;
+      alignTimerSession(after.expedition);
     }
 
-    if (preserveForm && !expeditionChanged) {
-      syncTimer(timerView(afterExpedition));
+    const timer = timerView(after.expedition);
+    if (reporting && !expeditionChanged) {
+      refreshCharacterUrlInPlace();
+      syncTimer(timer);
+      return;
+    }
+
+    const stateUnchanged = (
+      before.snapshot === after.snapshot
+      && before.status === after.status
+      && before.character === after.character
+    );
+    if (stateUnchanged && before.renderedPhase === (timer?.phase || null)) {
+      refreshCharacterUrlInPlace();
+      if (timer?.phase === 'running') updateCountdown(timer, after.expedition.id);
+      syncTimer(timer);
       return;
     }
     render();
   }
 
+  function enqueueLifecycle(action, reportError = true) {
+    const pending = refreshQueue.then(action);
+    refreshQueue = pending.catch((error) => {
+      if (reportError) App.toast(error.message, true);
+    });
+    return pending;
+  }
+
   function queueLifecycleRefresh() {
-    refreshQueue = refreshQueue
-      .then(refreshFromLifecycle)
-      .catch((error) => App.toast(error.message, true));
+    enqueueLifecycle(refreshFromLifecycle);
   }
 
   function bindLifecycle() {
@@ -984,21 +1043,24 @@
     readyLatch = null;
     readyAnnounced = null;
     refreshQueue = Promise.resolve();
-    await Core.init({ App });
-    selectedMinutes = await Core.getLastExpeditionMinutes();
-    reporting = false;
-    reportingEntry = null;
-    const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
-    const draft = readAnchorDraft(expedition?.id);
-    selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
-      ? draft.outcome
-      : null;
-    selectedReason = null;
-    tiredShrink = false;
-    campMessage = null;
-    characterPanelOpen = false;
     bindLifecycle();
-    render();
+    await enqueueLifecycle(async () => {
+      await Core.init({ App });
+      selectedMinutes = await Core.getLastExpeditionMinutes();
+      await Core.refreshSnapshot();
+      reporting = false;
+      reportingEntry = null;
+      const expedition = Core.getSnapshot().expeditions.find((item) => item.status === 'active');
+      const draft = readAnchorDraft(expedition?.id);
+      selectedOutcome = ['partial', 'interrupted'].includes(draft?.outcome)
+        ? draft.outcome
+        : null;
+      selectedReason = null;
+      tiredShrink = false;
+      campMessage = null;
+      characterPanelOpen = false;
+      render();
+    }, false);
   }
 
   root.StepQuestV02UI = { mount, render };
