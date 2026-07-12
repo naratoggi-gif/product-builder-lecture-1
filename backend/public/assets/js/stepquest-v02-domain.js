@@ -7,6 +7,7 @@
   const WORK_PHASES = new Set(['start', 'continue', 'close']);
   const OUTCOMES = new Set(['completed', 'partial', 'interrupted', 'not_started']);
   const OBSTACLE_ROUTES = new Set(['manual_shrink', 'defer', 'retry', 'block']);
+  const EXPEDITION_MINUTES = new Set([5, 10, 25]);
   const CAMP_MAX_LEVEL = 5;
 
   function clone(value) {
@@ -77,6 +78,28 @@
     return step.rewardLineage || step.id;
   }
 
+  function expeditionExpiry(now, plannedMinutes) {
+    if (!EXPEDITION_MINUTES.has(plannedMinutes)) {
+      throw domainError('EXPEDITION_DURATION_INVALID');
+    }
+    const startedAt = new Date(now);
+    if (Number.isNaN(startedAt.getTime())) throw domainError('COMMAND_TIME_INVALID');
+    return new Date(startedAt.getTime() + plannedMinutes * 60_000).toISOString();
+  }
+
+  function isGoalMilestone(step, steps) {
+    return !steps.some((item) => (
+      item.goalId === step.goalId
+      && item.id !== step.id
+      && item.status !== 'replaced'
+      && item.orderIndex > step.orderIndex
+    ));
+  }
+
+  function campUpgradeCost(level) {
+    return 2 + level;
+  }
+
   function notStartedReportIsResolved(state, report) {
     const explicitlyRouted = state.events.some((event) => (
       event.type === 'obstacle_routed'
@@ -114,6 +137,8 @@
     const repeated = replay(source, command.idempotencyKey);
     if (repeated) return repeated;
 
+    const expiresAt = expeditionExpiry(command.now, command.plannedMinutes);
+
     const state = clone(source);
     const step = state.steps.find((item) => item.id === command.stepId && item.status === 'active');
     if (!step) throw domainError('STEP_NOT_ACTIVE');
@@ -130,6 +155,8 @@
       stepId: step.id,
       status: 'active',
       startedAt: command.now,
+      plannedMinutes: command.plannedMinutes,
+      expiresAt,
       goldCap: 2,
       goldGranted: 0,
     });
@@ -195,6 +222,7 @@
     );
     if (!step) throw domainError('STEP_NOT_STARTED');
     step.rewardLineage = rewardLineage(step);
+    const goalMilestone = isGoalMilestone(step, state.steps);
 
     let anchor = null;
     if (command.outcome === 'partial' || command.outcome === 'interrupted') {
@@ -291,6 +319,10 @@
         expeditionId: expedition.id,
         outcome: command.outcome,
         anchorId: anchor?.id || null,
+        rewardLineage: step.rewardLineage,
+        category: step.category || 'generic',
+        reportVersion: 1,
+        goalMilestone,
         stepCoinGranted,
         goldGranted,
       },
@@ -472,6 +504,7 @@
         phase: step.phase,
         entrySegmentId: step.entrySegmentId,
         rewardLineage: step.rewardLineage,
+        category: step.category,
         status: 'active',
         orderIndex: originalIndex,
         createdAt: command.now,
@@ -505,7 +538,7 @@
       ? Math.max(0, Math.min(CAMP_MAX_LEVEL, Math.trunc(rawLevel)))
       : 0;
     if (level >= CAMP_MAX_LEVEL) throw domainError('CAMP_MAX_LEVEL_REACHED');
-    const cost = 2 + level;
+    const cost = campUpgradeCost(level);
     if (state.wallet.gold < cost) throw domainError('GOLD_INSUFFICIENT');
 
     const nextLevel = level + 1;
@@ -559,6 +592,7 @@
       id: goalId,
       title: made.weekly.title,
       type: made.weekly.type || 'project',
+      category: made.weekly.category || 'generic',
       doneDefinition: made.weekly.doneDefinition || undefined,
       status: 'active',
       createdAt: made.weekly.createdAt || command.now,
@@ -571,6 +605,7 @@
         goalId,
         title: item.title,
         nextPhysicalAction: item.nextPhysicalAction || item.title,
+        category: item.category || goal.category,
         phase: item.phase || (
           index === 0
             ? 'orient'
@@ -606,6 +641,8 @@
   return {
     createInitialState,
     assignEntrySegments,
+    isGoalMilestone,
+    campUpgradeCost,
     importGoal,
     startStep,
     reportOutcome,
