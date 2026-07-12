@@ -20,11 +20,29 @@
     };
   }
 
+  function selectedCharacterAssetKeys(records) {
+    const selected = new Set();
+    (records.characters || []).forEach((character) => {
+      const media = character?.media || {};
+      [
+        media.portraitKey || character?.imageBlobKey,
+        media.idleKey,
+        media.skillKey,
+      ].forEach((key) => {
+        if (key) selected.add(key);
+      });
+    });
+    return selected;
+  }
+
   function buildFullExport(records, encodedAssets, now = new Date().toISOString()) {
+    const selected = selectedCharacterAssetKeys(records);
     return {
       ...buildExport(records, now),
       exportType: 'full-with-images',
-      assets: Array.isArray(encodedAssets) ? encodedAssets : [],
+      assets: Array.isArray(encodedAssets)
+        ? encodedAssets.filter((asset) => selected.has(asset?.id))
+        : [],
     };
   }
 

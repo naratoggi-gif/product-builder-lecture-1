@@ -35,13 +35,33 @@ async function run() {
       id: 'local-primary',
       name: '나의 모험가',
       imageBlobKey: 'character:local-primary:image',
+      media: {
+        portraitKey: 'character:local-primary:portrait',
+        idleKey: 'character:local-primary:idle',
+        skillKey: 'character:local-primary:skill',
+      },
+      mediaMetadata: {
+        portrait: {
+          mimeType: 'image/png', byteLength: 8, width: 512, height: 512,
+        },
+        idle: {
+          mimeType: 'image/webp', byteLength: 9, width: 512, height: 512, durationMs: 900,
+        },
+        skill: {
+          mimeType: 'video/webm', byteLength: 10, width: 512, height: 512, durationMs: 700,
+        },
+      },
       skillPreset: 'impact',
       skillName: '첫걸음',
       accentColor: '#65d9ff',
       createdAt: now,
       updatedAt: now,
     }],
-    assets: [{ id: 'character:local-primary:image', base64: 'must-not-leak' }],
+    assets: [{
+      id: 'character:local-primary:portrait',
+      blob: new Blob(['must-not-leak']),
+      base64: 'must-not-leak',
+    }],
     backups: [{ id: 'internal-only' }],
   };
   const exported = Backup.buildExport(records, now);
@@ -65,20 +85,43 @@ async function run() {
   assert.deepEqual(exported.events[0].result, records.events[0].result);
   assert.equal(JSON.stringify(exported).includes('must-not-leak'), false);
   assert.equal(JSON.stringify(exported).includes('base64'), false);
+  assert.equal(JSON.stringify(exported).includes('"blob"'), false);
   assert.deepEqual(JSON.parse(Backup.serializeExport(exported)), exported);
   assert.deepEqual(Backup.buildExport({ ...records, camp: undefined }, now).camp, { level: 0 });
   assert.deepEqual(Backup.buildExport({ ...records, characters: undefined }, now).characters, []);
 
-  const encodedAssets = [{
-    id: 'character:local-primary:image',
-    mimeType: 'image/png',
-    base64: 'AA==',
-  }];
+  const encodedAssets = [
+    {
+      id: 'character:local-primary:portrait',
+      mimeType: 'image/png',
+      base64: 'cG9ydHJhaXQ=',
+    },
+    {
+      id: 'character:local-primary:idle',
+      mimeType: 'image/webp',
+      base64: 'aWRsZQ==',
+    },
+    {
+      id: 'character:local-primary:skill',
+      mimeType: 'video/webm',
+      base64: 'c2tpbGw=',
+    },
+    {
+      id: 'character:local-primary:orphan',
+      mimeType: 'image/png',
+      base64: 'b3JwaGFu',
+    },
+  ];
   const full = Backup.buildFullExport(records, encodedAssets, now);
   assert.equal(full.schemaVersion, 3);
   assert.equal(full.exportType, 'full-with-images');
   assert.deepEqual(full.characters, records.characters);
-  assert.deepEqual(full.assets, encodedAssets);
+  assert.deepEqual(full.assets, encodedAssets.slice(0, 3));
+  assert.deepEqual(full.assets.map((asset) => asset.id), [
+    'character:local-primary:portrait',
+    'character:local-primary:idle',
+    'character:local-primary:skill',
+  ]);
 
   assert.deepEqual(await Backup.requestPersistentStorage(undefined), {
     supported: false,

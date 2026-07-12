@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict');
 const Character = require('../public/assets/js/stepquest-v02-character');
+const Media = require('../public/assets/js/stepquest-v02-media');
 
 async function run() {
   assert.equal(Character.PALETTE.length, 8);
@@ -40,6 +41,112 @@ async function run() {
   assert.throws(
     () => Character.normalizeMetadata({ accentColor: '#123456' }, now),
     /CHARACTER_COLOR_INVALID/,
+  );
+
+  assert.deepEqual(Character.MEDIA_KEYS, {
+    portrait: 'character:local-primary:portrait',
+    idle: 'character:local-primary:idle',
+    skill: 'character:local-primary:skill',
+  });
+  assert.deepEqual(Character.normalizeMediaKeys({
+    imageBlobKey: Character.IMAGE_BLOB_KEY,
+  }), {
+    portraitKey: Character.IMAGE_BLOB_KEY,
+  });
+  assert.deepEqual(Character.normalizeMediaKeys({
+    imageBlobKey: Character.IMAGE_BLOB_KEY,
+    media: {
+      portraitKey: Character.MEDIA_KEYS.portrait,
+      idleKey: Character.MEDIA_KEYS.idle,
+    },
+  }), {
+    portraitKey: Character.MEDIA_KEYS.portrait,
+    idleKey: Character.MEDIA_KEYS.idle,
+  });
+
+  const portrait = {
+    key: Character.MEDIA_KEYS.portrait,
+    mimeType: 'image/png',
+    byteLength: 2048,
+    width: 512,
+    height: 384,
+  };
+  const withPortrait = Character.withMediaSlot({
+    id: Character.CHARACTER_ID,
+    imageBlobKey: Character.IMAGE_BLOB_KEY,
+  }, 'portrait', portrait);
+  assert.deepEqual(withPortrait.media, {
+    portraitKey: Character.MEDIA_KEYS.portrait,
+  });
+  assert.equal(withPortrait.imageBlobKey, Character.MEDIA_KEYS.portrait);
+  assert.deepEqual(withPortrait.mediaMetadata.portrait, {
+    mimeType: 'image/png',
+    byteLength: 2048,
+    width: 512,
+    height: 384,
+  });
+
+  const inspected = {
+    key: Character.MEDIA_KEYS.idle,
+    mimeType: 'image/webp',
+    byteLength: 1024,
+    width: 512,
+    height: 512,
+    durationMs: 1200,
+  };
+  assert.throws(
+    () => Character.withMediaSlot({ id: Character.CHARACTER_ID }, 'idle', inspected),
+    /CHARACTER_PORTRAIT_REQUIRED/,
+  );
+  assert.throws(
+    () => Character.withMediaSlot(withPortrait, 'idle', {
+      ...inspected,
+      key: 'character:local-primary:not-idle',
+    }),
+    /CHARACTER_MEDIA_KEY_INVALID/,
+  );
+  assert.throws(
+    () => Character.withMediaSlot(withPortrait, 'idle', {
+      ...inspected,
+      byteLength: Media.MAX_CLIP_BYTES + 1,
+    }),
+    /CHARACTER_MEDIA_TOO_LARGE/,
+  );
+
+  const withIdle = Character.withMediaSlot(withPortrait, 'idle', inspected);
+  assert.deepEqual(withIdle.media, {
+    portraitKey: Character.MEDIA_KEYS.portrait,
+    idleKey: Character.MEDIA_KEYS.idle,
+  });
+  assert.deepEqual(withIdle.mediaMetadata.idle, {
+    mimeType: 'image/webp',
+    byteLength: 1024,
+    width: 512,
+    height: 512,
+    durationMs: 1200,
+  });
+  assert.throws(
+    () => Character.withMediaSlot({
+      ...withPortrait,
+      media: {
+        ...withPortrait.media,
+        idleKey: Character.MEDIA_KEYS.idle,
+      },
+      mediaMetadata: {
+        ...withPortrait.mediaMetadata,
+        idle: {
+          mimeType: 'image/webp',
+          byteLength: Media.MAX_TOTAL_BYTES,
+          width: 512,
+          height: 512,
+          durationMs: 1200,
+        },
+      },
+    }, 'skill', {
+      ...inspected,
+      key: Character.MEDIA_KEYS.skill,
+    }),
+    /CHARACTER_MEDIA_TOTAL_TOO_LARGE/,
   );
 
   const encoded = await Character.blobToBase64(new Blob([

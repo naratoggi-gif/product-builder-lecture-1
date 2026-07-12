@@ -178,8 +178,9 @@ test('keeps fallback legacy timing pairs byte-for-byte without migration metadat
   expect(result.migrationComplete).toBeNull();
 });
 
-test('persists local character blobs outside ordinary exports', async ({ page }) => {
+test('persists atomic local character media slots outside ordinary exports', async ({ page }) => {
   await clearBrowserState(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
   const result = await page.evaluate(async ({ now }) => {
     const repository = await (window as any).StepQuestV02Storage.openRepository();
     const metadata = {
@@ -205,34 +206,210 @@ test('persists local character blobs outside ordinary exports', async ({ page })
       invalidBlobKeyError = error.message;
     }
     await repository.saveCharacter(metadata, new Blob(['local-image'], { type: 'image/png' }));
-    const saved = await repository.getCharacter();
-    const blob = await repository.getCharacterBlob(metadata.imageBlobKey);
+    const Character = (window as any).StepQuestV02Character;
+    const legacyCharacter = await repository.getCharacter();
+    const legacyMedia = await repository.getCharacterMedia();
+
+    const portraitBlob = new Blob(['portrait-v2'], { type: 'image/png' });
+    let saved = Character.withMediaSlot(legacyCharacter, 'portrait', {
+      key: Character.MEDIA_KEYS.portrait,
+      mimeType: portraitBlob.type,
+      byteLength: portraitBlob.size,
+      width: 512,
+      height: 512,
+    });
+    saved = await repository.saveCharacterMediaSlot(saved, 'portrait', portraitBlob);
+
+    const idleBlob = new Blob(['idle-v1'], { type: 'image/webp' });
+    saved = Character.withMediaSlot(saved, 'idle', {
+      key: Character.MEDIA_KEYS.idle,
+      mimeType: idleBlob.type,
+      byteLength: idleBlob.size,
+      width: 512,
+      height: 512,
+      durationMs: 1000,
+    });
+    saved = await repository.saveCharacterMediaSlot(saved, 'idle', idleBlob);
+
+    const skillBlob = new Blob(['skill-v1'], { type: 'video/webm' });
+    saved = Character.withMediaSlot(saved, 'skill', {
+      key: Character.MEDIA_KEYS.skill,
+      mimeType: skillBlob.type,
+      byteLength: skillBlob.size,
+      width: 512,
+      height: 512,
+      durationMs: 700,
+    });
+    saved = await repository.saveCharacterMediaSlot(saved, 'skill', skillBlob);
+
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest');
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('assets', 'readwrite');
+        transaction.objectStore('assets').put({
+          id: 'character:local-primary:orphan',
+          blob: new Blob(['orphan'], { type: 'image/png' }),
+          mimeType: 'image/png',
+          updatedAt: now,
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    const beforeFailure = await repository.getCharacterMedia();
+    const replacementBlob = new Blob(['idle-v2'], { type: 'image/webp' });
+    const replacementMetadata = Character.withMediaSlot(beforeFailure.character, 'idle', {
+      key: Character.MEDIA_KEYS.idle,
+      mimeType: replacementBlob.type,
+      byteLength: replacementBlob.size,
+      width: 256,
+      height: 256,
+      durationMs: 600,
+    });
+    let invalidSlotKeyError = null;
+    try {
+      await repository.saveCharacterMediaSlot({
+        ...replacementMetadata,
+        media: { ...replacementMetadata.media, idleKey: 'character:local-primary:arbitrary' },
+      }, 'idle', replacementBlob);
+    } catch (error) {
+      invalidSlotKeyError = error.message;
+    }
+    const afterInvalidReplacement = await repository.getCharacterMedia();
+    const objectStorePrototype = IDBObjectStore.prototype as any;
+    const originalPut = objectStorePrototype.put;
+    let failCharacterWrite = true;
+    objectStorePrototype.put = function put(value, ...args) {
+      if (this.name === 'characters' && failCharacterWrite) {
+        failCharacterWrite = false;
+        throw new Error('FORCED_CHARACTER_WRITE_FAILURE');
+      }
+      return originalPut.call(this, value, ...args);
+    };
+    let replacementError = null;
+    try {
+      await repository.saveCharacterMediaSlot(replacementMetadata, 'idle', replacementBlob);
+    } catch (error) {
+      replacementError = error.message;
+    } finally {
+      objectStorePrototype.put = originalPut;
+    }
+    const afterFailure = await repository.getCharacterMedia();
+
+    saved = await repository.saveCharacterMediaSlot(replacementMetadata, 'idle', replacementBlob);
+    const media = await repository.getCharacterMedia();
+    const legacyBlob = await repository.getCharacterBlob(metadata.imageBlobKey);
+    const orphanBlob = await repository.getCharacterBlob('character:local-primary:orphan');
     const ordinary = await repository.exportRecords();
     const fullRecords = await repository.exportCharacterAssets();
+    const fullAssets = await Promise.all(fullRecords.assets.map(async (asset) => ({
+      id: asset.id,
+      type: asset.blob?.type,
+      text: await asset.blob?.text(),
+      keys: Object.keys(asset).sort(),
+    })));
     return {
       saved,
-      blobText: await blob.text(),
+      legacyPortraitKey: legacyCharacter.media?.portraitKey,
+      legacyPortraitText: await legacyMedia.portrait?.text(),
+      legacyIdle: legacyMedia.idle,
+      legacySkill: legacyMedia.skill,
+      legacyBlobAfterReplacement: legacyBlob,
+      replacementError,
+      invalidSlotKeyError,
+      invalidReplacementPreserved: (
+        JSON.stringify(afterInvalidReplacement.character) === JSON.stringify(beforeFailure.character)
+        && await afterInvalidReplacement.idle?.text() === 'idle-v1'
+      ),
+      failedMetadataPreserved: JSON.stringify(afterFailure.character) === JSON.stringify(beforeFailure.character),
+      failedBlobText: await afterFailure.idle?.text(),
+      mediaTexts: {
+        portrait: await media.portrait?.text(),
+        idle: await media.idle?.text(),
+        skill: await media.skill?.text(),
+      },
+      orphanText: await orphanBlob?.text(),
       ordinaryCharacters: ordinary.characters,
       ordinaryHasAssets: Object.prototype.hasOwnProperty.call(ordinary, 'assets'),
-      rollingCharacters: ordinary.backups[0]?.snapshot?.characters,
+      ordinaryJson: JSON.stringify(ordinary),
+      rollingSnapshotsHaveAssetBytes: ordinary.backups.some((backup) => (
+        Object.prototype.hasOwnProperty.call(backup.snapshot || {}, 'assets')
+        || JSON.stringify(backup.snapshot || {}).includes('base64')
+        || JSON.stringify(backup.snapshot || {}).includes('"blob"')
+      )),
       fullCharacterCount: fullRecords.characters.length,
       fullAssetCount: fullRecords.assets.length,
-      fullAssetSize: fullRecords.assets[0]?.blob?.size,
-      fullAssetKeys: Object.keys(fullRecords.assets[0] || {}).sort(),
+      fullAssets,
       invalidIdError,
       invalidBlobKeyError,
     };
   }, { now: NOW });
 
   expect(result.saved).toMatchObject({ id: 'local-primary', name: '로컬 영웅' });
-  expect(result.blobText).toBe('local-image');
-  expect(result.ordinaryCharacters).toEqual([expect.objectContaining({ id: 'local-primary' })]);
+  expect(result.legacyPortraitKey).toBe('character:local-primary:image');
+  expect(result.legacyPortraitText).toBe('local-image');
+  expect(result.legacyIdle).toBeNull();
+  expect(result.legacySkill).toBeNull();
+  expect(result.legacyBlobAfterReplacement).toBeNull();
+  expect(result.invalidSlotKeyError).toBe('CHARACTER_MEDIA_KEY_INVALID');
+  expect(result.invalidReplacementPreserved).toBe(true);
+  expect(result.replacementError).toBe('FORCED_CHARACTER_WRITE_FAILURE');
+  expect(result.failedMetadataPreserved).toBe(true);
+  expect(result.failedBlobText).toBe('idle-v1');
+  expect(result.mediaTexts).toEqual({
+    portrait: 'portrait-v2',
+    idle: 'idle-v2',
+    skill: 'skill-v1',
+  });
+  expect(result.orphanText).toBe('orphan');
+  expect(result.ordinaryCharacters).toEqual([expect.objectContaining({
+    id: 'local-primary',
+    media: {
+      portraitKey: 'character:local-primary:portrait',
+      idleKey: 'character:local-primary:idle',
+      skillKey: 'character:local-primary:skill',
+    },
+    mediaMetadata: {
+      portrait: {
+        mimeType: 'image/png', byteLength: 11, width: 512, height: 512,
+      },
+      idle: {
+        mimeType: 'image/webp', byteLength: 7, width: 256, height: 256, durationMs: 600,
+      },
+      skill: {
+        mimeType: 'video/webm', byteLength: 8, width: 512, height: 512, durationMs: 700,
+      },
+    },
+  })]);
   expect(result.ordinaryHasAssets).toBe(false);
-  expect(result.rollingCharacters).toEqual([expect.objectContaining({ id: 'local-primary' })]);
+  expect(result.ordinaryJson).not.toContain('base64');
+  expect(result.ordinaryJson).not.toContain('"blob"');
+  expect(result.rollingSnapshotsHaveAssetBytes).toBe(false);
   expect(result.fullCharacterCount).toBe(1);
-  expect(result.fullAssetCount).toBe(1);
-  expect(result.fullAssetSize).toBe(11);
-  expect(result.fullAssetKeys).toEqual(['blob', 'id', 'mimeType', 'updatedAt']);
+  expect(result.fullAssetCount).toBe(3);
+  expect(result.fullAssets).toEqual([
+    {
+      id: 'character:local-primary:idle',
+      type: 'image/webp',
+      text: 'idle-v2',
+      keys: ['blob', 'id', 'mimeType', 'updatedAt'],
+    },
+    {
+      id: 'character:local-primary:portrait',
+      type: 'image/png',
+      text: 'portrait-v2',
+      keys: ['blob', 'id', 'mimeType', 'updatedAt'],
+    },
+    {
+      id: 'character:local-primary:skill',
+      type: 'video/webm',
+      text: 'skill-v1',
+      keys: ['blob', 'id', 'mimeType', 'updatedAt'],
+    },
+  ]);
   expect(result.invalidIdError).toBe('CHARACTER_ID_INVALID');
   expect(result.invalidBlobKeyError).toBe('CHARACTER_IMAGE_BLOB_KEY_INVALID');
 });
@@ -476,26 +653,45 @@ test('falls back to localStorage when IndexedDB cannot open', async ({ page }) =
       idFactory: (prefix) => `${prefix}-30`,
     });
     let saveError = null;
+    let mediaSaveError = null;
     try {
       await repository.saveCharacter({ id: 'local-primary' }, new Blob(['x']));
     } catch (error) {
       saveError = error.message;
+    }
+    try {
+      await repository.saveCharacterMediaSlot(
+        { id: 'local-primary', media: { portraitKey: 'character:local-primary:portrait' } },
+        'portrait',
+        new Blob(['x']),
+      );
+    } catch (error) {
+      mediaSaveError = error.message;
     }
     return {
       mode: repository.mode,
       snapshot: await repository.getSnapshot(),
       character: await repository.getCharacter(),
       characterBlob: await repository.getCharacterBlob('missing'),
+      characterMedia: await repository.getCharacterMedia(),
       characterRecords: await repository.exportCharacterAssets(),
       saveError,
+      mediaSaveError,
     };
   }, { now: NOW });
   expect(beforeReload.mode).toBe('localStorage');
   expect(beforeReload.snapshot.goals[0].title).toBe('대체 저장 테스트');
   expect(beforeReload.character).toBeNull();
   expect(beforeReload.characterBlob).toBeNull();
+  expect(beforeReload.characterMedia).toEqual({
+    character: null,
+    portrait: null,
+    idle: null,
+    skill: null,
+  });
   expect(beforeReload.characterRecords).toEqual({ characters: [], assets: [] });
   expect(beforeReload.saveError).toBe('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
+  expect(beforeReload.mediaSaveError).toBe('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
 
   await page.reload();
   const afterReload = await page.evaluate(async () => {

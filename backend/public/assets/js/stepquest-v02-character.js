@@ -5,6 +5,11 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, (root) => {
   const CHARACTER_ID = 'local-primary';
   const IMAGE_BLOB_KEY = 'character:local-primary:image';
+  const MEDIA_KEYS = Object.freeze({
+    portrait: 'character:local-primary:portrait',
+    idle: 'character:local-primary:idle',
+    skill: 'character:local-primary:skill',
+  });
   const PRESETS = Object.freeze(['impact', 'dash', 'slash', 'cast']);
   const PALETTE = Object.freeze([
     '#65d9ff',
@@ -54,6 +59,108 @@
       accentColor,
       createdAt: input.createdAt || now,
       updatedAt: now,
+    };
+  }
+
+  function normalizeMediaKeys(input = {}) {
+    const source = input.media && typeof input.media === 'object' ? input.media : {};
+    const media = {};
+    const portraitKey = source.portraitKey || input.imageBlobKey;
+    if (portraitKey) media.portraitKey = String(portraitKey);
+    if (source.idleKey) media.idleKey = String(source.idleKey);
+    if (source.skillKey) media.skillKey = String(source.skillKey);
+    return media;
+  }
+
+  function mediaApi() {
+    if (root?.StepQuestV02Media) return root.StepQuestV02Media;
+    if (typeof module === 'object' && module.exports && typeof require === 'function') {
+      return require('./stepquest-v02-media');
+    }
+    throw contractError('CHARACTER_MEDIA_API_UNAVAILABLE');
+  }
+
+  function portraitMetadata(inspected) {
+    if (!IMAGE_TYPES.includes(inspected?.mimeType)) {
+      throw contractError('CHARACTER_IMAGE_TYPE_UNSUPPORTED');
+    }
+    if (!Number.isSafeInteger(inspected.byteLength) || inspected.byteLength <= 0) {
+      throw contractError('CHARACTER_IMAGE_BLOB_INVALID');
+    }
+    if (
+      !Number.isSafeInteger(inspected.width)
+      || !Number.isSafeInteger(inspected.height)
+      || inspected.width <= 0
+      || inspected.height <= 0
+      || inspected.width > 512
+      || inspected.height > 512
+    ) {
+      throw contractError('CHARACTER_IMAGE_DIMENSIONS_INVALID');
+    }
+    return {
+      mimeType: inspected.mimeType,
+      byteLength: inspected.byteLength,
+      width: inspected.width,
+      height: inspected.height,
+    };
+  }
+
+  function copySlotMetadata(metadata, moving) {
+    if (!metadata || typeof metadata !== 'object') return null;
+    const copy = {
+      mimeType: metadata.mimeType,
+      byteLength: metadata.byteLength,
+      width: metadata.width,
+      height: metadata.height,
+    };
+    if (moving) copy.durationMs = metadata.durationMs;
+    return copy;
+  }
+
+  function withMediaSlot(character = {}, slot, inspected = {}) {
+    if (character.id !== CHARACTER_ID) throw contractError('CHARACTER_ID_INVALID');
+    if (!Object.prototype.hasOwnProperty.call(MEDIA_KEYS, slot)) {
+      throw contractError('CHARACTER_MEDIA_SLOT_INVALID');
+    }
+    if (inspected.key !== MEDIA_KEYS[slot]) {
+      throw contractError('CHARACTER_MEDIA_KEY_INVALID');
+    }
+
+    const media = normalizeMediaKeys(character);
+    const hasPortrait = media.portraitKey === MEDIA_KEYS.portrait
+      || media.portraitKey === IMAGE_BLOB_KEY;
+    if (slot !== 'portrait' && !hasPortrait) {
+      throw contractError('CHARACTER_PORTRAIT_REQUIRED');
+    }
+
+    const normalized = slot === 'portrait'
+      ? portraitMetadata(inspected)
+      : mediaApi().validateMovingMetadata(inspected);
+    media[`${slot}Key`] = MEDIA_KEYS[slot];
+
+    const mediaMetadata = {};
+    ['portrait', 'idle', 'skill'].forEach((name) => {
+      const existing = copySlotMetadata(character.mediaMetadata?.[name], name !== 'portrait');
+      if (existing && media[`${name}Key`]) mediaMetadata[name] = existing;
+    });
+    mediaMetadata[slot] = normalized;
+
+    const movingBytes = ['idle', 'skill'].reduce((total, name) => {
+      const byteLength = mediaMetadata[name]?.byteLength || 0;
+      if (!Number.isSafeInteger(byteLength) || byteLength < 0) {
+        throw contractError('CHARACTER_MEDIA_METADATA_INVALID');
+      }
+      return total + byteLength;
+    }, 0);
+    if (movingBytes > mediaApi().MAX_TOTAL_BYTES) {
+      throw contractError('CHARACTER_MEDIA_TOTAL_TOO_LARGE');
+    }
+
+    return {
+      ...character,
+      imageBlobKey: media.portraitKey,
+      media,
+      mediaMetadata,
     };
   }
 
@@ -144,11 +251,14 @@
   return {
     CHARACTER_ID,
     IMAGE_BLOB_KEY,
+    MEDIA_KEYS,
     PRESETS,
     PALETTE,
     IMAGE_TYPES,
     fitWithin,
     normalizeMetadata,
+    normalizeMediaKeys,
+    withMediaSlot,
     prepareImage,
     blobToBase64,
   };

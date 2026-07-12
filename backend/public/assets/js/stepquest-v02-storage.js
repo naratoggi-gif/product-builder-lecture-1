@@ -18,6 +18,12 @@
     'wallet',
   ];
   const PRESENTATION_STORES = ['characters', 'assets'];
+  const LEGACY_CHARACTER_IMAGE_KEY = 'character:local-primary:image';
+  const CHARACTER_MEDIA_KEYS = Object.freeze({
+    portrait: 'character:local-primary:portrait',
+    idle: 'character:local-primary:idle',
+    skill: 'character:local-primary:skill',
+  });
   const ALL_STORES = [...STATE_STORES, 'meta', 'backups', 'characters'];
   const SIGNIFICANT_OPERATIONS = new Set([
     'startStep',
@@ -34,6 +40,33 @@
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
+  }
+
+  function characterMediaKeys(character = {}) {
+    const source = character.media && typeof character.media === 'object'
+      ? character.media
+      : {};
+    const media = {};
+    const portraitKey = source.portraitKey || character.imageBlobKey;
+    if (portraitKey) media.portraitKey = String(portraitKey);
+    if (source.idleKey) media.idleKey = String(source.idleKey);
+    if (source.skillKey) media.skillKey = String(source.skillKey);
+    return media;
+  }
+
+  function normalizeCharacter(character) {
+    if (!character) return null;
+    const copy = clone(character);
+    const media = characterMediaKeys(copy);
+    return Object.keys(media).length ? { ...copy, media } : copy;
+  }
+
+  function assetBlob(asset) {
+    if (asset?.blob) return asset.blob;
+    if (asset?.bytes && root.Blob) {
+      return new root.Blob([asset.bytes], { type: asset.mimeType || 'image/png' });
+    }
+    return null;
   }
 
   function requestResult(request) {
@@ -428,7 +461,7 @@
       const done = transactionDone(transaction);
       const character = await requestResult(transaction.objectStore('characters').get('local-primary'));
       await done;
-      return character ? clone(character) : null;
+      return normalizeCharacter(character);
     }
 
     async function getCharacterBlob(key) {
@@ -437,52 +470,67 @@
       const done = transactionDone(transaction);
       const asset = await requestResult(transaction.objectStore('assets').get(key));
       await done;
-      if (asset?.blob) return asset.blob;
-      if (asset?.bytes && root.Blob) {
-        return new root.Blob([asset.bytes], { type: asset.mimeType || 'image/png' });
-      }
-      return null;
+      return assetBlob(asset);
     }
 
-    async function saveCharacter(metadata, blob) {
-      if (!metadata?.id || !metadata?.imageBlobKey) throw new Error('CHARACTER_METADATA_INVALID');
-      if (metadata.id !== 'local-primary') throw new Error('CHARACTER_ID_INVALID');
-      if (metadata.imageBlobKey !== 'character:local-primary:image') {
-        throw new Error('CHARACTER_IMAGE_BLOB_KEY_INVALID');
-      }
-      if (!blob || typeof blob.arrayBuffer !== 'function') throw new Error('CHARACTER_IMAGE_BLOB_INVALID');
-      const [state, previous, existingBackups] = await Promise.all([
-        getSnapshot(),
-        getCharacter(),
-        (async () => {
-          const readTransaction = database.transaction('backups', 'readonly');
-          const readDone = transactionDone(readTransaction);
-          const backups = await requestResult(readTransaction.objectStore('backups').getAll());
-          await readDone;
-          return backups;
-        })(),
+    async function getCharacterMedia() {
+      const transaction = database.transaction(PRESENTATION_STORES, 'readonly');
+      const done = transactionDone(transaction);
+      const [storedCharacter, assets] = await Promise.all([
+        requestResult(transaction.objectStore('characters').get('local-primary')),
+        requestResult(transaction.objectStore('assets').getAll()),
       ]);
+      await done;
+      const character = normalizeCharacter(storedCharacter);
+      const media = characterMediaKeys(character || {});
+      const byId = new Map(assets.map((asset) => [asset.id, asset]));
+      return {
+        character,
+        portrait: assetBlob(byId.get(media.portraitKey)) || null,
+        idle: assetBlob(byId.get(media.idleKey)) || null,
+        skill: assetBlob(byId.get(media.skillKey)) || null,
+      };
+    }
+
+    async function persistCharacterAsset(inputMetadata, slot, key, blob, operation) {
+      const state = await getSnapshot();
+      const metadata = clone(inputMetadata);
       const commit = async (assetValue) => {
         const transaction = database.transaction(['characters', 'assets', 'backups'], 'readwrite');
         const done = transactionDone(transaction);
+        const writes = [];
         try {
           const characterStore = transaction.objectStore('characters');
           const assetStore = transaction.objectStore('assets');
-          const writes = [requestResult(assetStore.put({
-            id: metadata.imageBlobKey,
-            ...assetValue,
-            mimeType: blob.type || 'image/png',
-            updatedAt: metadata.updatedAt,
-          }))];
-          writes.push(requestResult(characterStore.put(clone(metadata))));
-          if (previous?.imageBlobKey && previous.imageBlobKey !== metadata.imageBlobKey) {
-            writes.push(requestResult(assetStore.delete(previous.imageBlobKey)));
-          }
           const backupStore = transaction.objectStore('backups');
+          const [previous, existingBackups] = await Promise.all([
+            requestResult(characterStore.get('local-primary')),
+            requestResult(backupStore.getAll()),
+          ]);
+          writes.push(requestResult(assetStore.put({
+            id: key,
+            ...assetValue,
+            mimeType: blob.type || metadata.mediaMetadata?.[slot]?.mimeType || 'image/png',
+            updatedAt: metadata.updatedAt,
+          })));
+          writes.push(requestResult(characterStore.put(metadata)));
+
+          const previousMedia = characterMediaKeys(previous || {});
+          const oldKeys = new Set([previousMedia[`${slot}Key`]]);
+          if (slot === 'portrait') {
+            oldKeys.add(previous?.imageBlobKey);
+            oldKeys.add(LEGACY_CHARACTER_IMAGE_KEY);
+          }
+          oldKeys.forEach((oldKey) => {
+            if (oldKey && oldKey !== key) {
+              writes.push(requestResult(assetStore.delete(oldKey)));
+            }
+          });
+
           const createdAt = metadata.updatedAt || new Date().toISOString();
           writes.push(requestResult(backupStore.put({
-            id: `${createdAt}:saveCharacter:${Math.random().toString(16).slice(2)}`,
-            operation: 'saveCharacter',
+            id: `${createdAt}:${operation}:${Math.random().toString(16).slice(2)}`,
+            operation,
             createdAt,
             snapshot: clone({ ...state, characters: [clone(metadata)] }),
           })));
@@ -494,6 +542,7 @@
           await done;
         } catch (error) {
           abortQuietly(transaction);
+          await Promise.allSettled(writes);
           try { await done; } catch (_transactionError) { /* preserve the original error */ }
           throw error;
         }
@@ -510,6 +559,69 @@
       return clone(metadata);
     }
 
+    async function saveCharacter(metadata, blob) {
+      if (!metadata?.id || !metadata?.imageBlobKey) throw new Error('CHARACTER_METADATA_INVALID');
+      if (metadata.id !== 'local-primary') throw new Error('CHARACTER_ID_INVALID');
+      if (metadata.imageBlobKey !== LEGACY_CHARACTER_IMAGE_KEY) {
+        throw new Error('CHARACTER_IMAGE_BLOB_KEY_INVALID');
+      }
+      if (!blob || typeof blob.arrayBuffer !== 'function') throw new Error('CHARACTER_IMAGE_BLOB_INVALID');
+      return persistCharacterAsset(
+        metadata,
+        'portrait',
+        LEGACY_CHARACTER_IMAGE_KEY,
+        blob,
+        'saveCharacter',
+      );
+    }
+
+    async function saveCharacterMediaSlot(metadata, slot, blob) {
+      if (metadata?.id !== 'local-primary') throw new Error('CHARACTER_ID_INVALID');
+      if (!Object.prototype.hasOwnProperty.call(CHARACTER_MEDIA_KEYS, slot)) {
+        throw new Error('CHARACTER_MEDIA_SLOT_INVALID');
+      }
+      if (!blob || typeof blob.arrayBuffer !== 'function') {
+        throw new Error('CHARACTER_MEDIA_BLOB_INVALID');
+      }
+
+      const key = CHARACTER_MEDIA_KEYS[slot];
+      const media = characterMediaKeys(metadata);
+      if (
+        media[`${slot}Key`] !== key
+        || (slot === 'portrait' && metadata.imageBlobKey !== key)
+      ) {
+        throw new Error('CHARACTER_MEDIA_KEY_INVALID');
+      }
+      if (
+        slot !== 'portrait'
+        && media.portraitKey !== CHARACTER_MEDIA_KEYS.portrait
+        && media.portraitKey !== LEGACY_CHARACTER_IMAGE_KEY
+      ) {
+        throw new Error('CHARACTER_PORTRAIT_REQUIRED');
+      }
+
+      const inspected = metadata.mediaMetadata?.[slot];
+      const dimensionsValid = Number.isSafeInteger(inspected?.width)
+        && inspected.width > 0
+        && Number.isSafeInteger(inspected?.height)
+        && inspected.height > 0;
+      const durationValid = slot === 'portrait'
+        || (Number.isFinite(inspected?.durationMs) && inspected.durationMs > 0);
+      if (
+        !inspected
+        || !Number.isSafeInteger(inspected.byteLength)
+        || inspected.byteLength <= 0
+        || inspected.byteLength !== blob.size
+        || !inspected.mimeType
+        || inspected.mimeType !== blob.type
+        || !dimensionsValid
+        || !durationValid
+      ) {
+        throw new Error('CHARACTER_MEDIA_METADATA_INVALID');
+      }
+      return persistCharacterAsset(metadata, slot, key, blob, 'saveCharacterMediaSlot');
+    }
+
     async function exportCharacterAssets() {
       const transaction = database.transaction(PRESENTATION_STORES, 'readonly');
       const done = transactionDone(transaction);
@@ -518,15 +630,18 @@
         requestResult(transaction.objectStore('assets').getAll()),
       ]);
       await done;
+      const normalizedCharacters = characters.map(normalizeCharacter);
+      const selected = new Set();
+      normalizedCharacters.forEach((character) => {
+        Object.values(characterMediaKeys(character)).forEach((key) => selected.add(key));
+      });
       return {
-        characters: clone(characters),
-        assets: assets.map((asset) => ({
+        characters: normalizedCharacters,
+        assets: assets.filter((asset) => selected.has(asset.id)).map((asset) => ({
           id: asset.id,
           mimeType: asset.mimeType || asset.blob?.type || 'image/png',
           updatedAt: asset.updatedAt,
-          blob: asset.blob || (asset.bytes && root.Blob
-            ? new root.Blob([asset.bytes], { type: asset.mimeType || 'image/png' })
-            : null),
+          blob: assetBlob(asset),
         })),
       };
     }
@@ -614,7 +729,7 @@
         requestResult(transaction.objectStore('characters').getAll()),
       ]);
       await done;
-      return { ...state, backups, characters: clone(characters) };
+      return { ...state, backups, characters: characters.map(normalizeCharacter) };
     }
 
     async function recoverFallback(state, backups = [], revision = 0, metadata = {}) {
@@ -666,7 +781,9 @@
       setMeta,
       getCharacter,
       getCharacterBlob,
+      getCharacterMedia,
       saveCharacter,
+      saveCharacterMediaSlot,
       exportCharacterAssets,
       exportRecords,
       recoverFallback,
@@ -802,7 +919,20 @@
 
     async function getCharacterBlob() { return null; }
 
+    async function getCharacterMedia() {
+      return {
+        character: null,
+        portrait: null,
+        idle: null,
+        skill: null,
+      };
+    }
+
     async function saveCharacter() {
+      throw new Error('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
+    }
+
+    async function saveCharacterMediaSlot() {
       throw new Error('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
     }
 
@@ -820,7 +950,9 @@
       setMeta,
       getCharacter,
       getCharacterBlob,
+      getCharacterMedia,
       saveCharacter,
+      saveCharacterMediaSlot,
       exportCharacterAssets,
       exportRecords,
     };
