@@ -112,9 +112,9 @@ assert.equal(Fun.buildCodex([reportEvent, reportEvent]).entries.find((entry) => 
 const firstDialogue = Fun.selectDialogue({ context: 'ready', entityId: 'expedition-1', localDate: '2026-07-12', subject: '잉크 슬라임' });
 assert.equal(firstDialogue, Fun.selectDialogue({ context: 'ready', entityId: 'expedition-1', localDate: '2026-07-12', subject: '잉크 슬라임' }));
 assert.notEqual(firstDialogue, Fun.selectDialogue({ context: 'ready', entityId: 'expedition-1', localDate: '2026-07-12', subject: '잉크 슬라임', previousText: firstDialogue }));
-assert.match(Fun.buildNextDesire({ camp: { level: 1 }, wallet: { gold: 3 }, activeStep: null, encounter: null, codex: { entries: [] } }).text, /지금 확장/);
+assert.match(Fun.buildNextDesire({ camp: { level: 1, nextCost: 3 }, wallet: { gold: 3 }, activeStep: null, encounter: null, codex: { entries: [] } }).text, /지금 확장/);
 assert.match(Fun.buildNextDesire({
-  camp: { level: 1 }, wallet: { gold: 0 }, activeStep: { title: '첫 문장 쓰기' }, encounter,
+  camp: { level: 1, nextCost: 3 }, wallet: { gold: 0 }, activeStep: { title: '첫 문장 쓰기' }, encounter,
   codex: { entries: [{ id: encounter.id, discovered: false }] },
 }).text, /첫 문장 쓰기.*\?\?\?/);
 ```
@@ -269,8 +269,7 @@ Expected: FAIL with `Cannot find module '../public/assets/js/stepquest-v02-fun.j
 
   function buildNextDesire({ camp, wallet, activeStep, encounter, codex }) {
     if (camp.level < 5) {
-      const cost = 2 + camp.level;
-      const shortfall = Math.max(0, cost - wallet.gold);
+      const shortfall = Math.max(0, camp.nextCost - wallet.gold);
       if (shortfall === 0) return { kind: 'camp', text: '캠프를 지금 확장할 수 있어요.' };
     }
     const current = encounter && codex.entries.find((entry) => entry.id === encounter.id);
@@ -278,7 +277,7 @@ Expected: FAIL with `Cannot find module '../public/assets/js/stepquest-v02-fun.j
       return { kind: 'codex', text: `“${activeStep.title}” 완료 → ??? 발견` };
     }
     if (camp.level < 5) {
-      const shortfall = Math.max(0, 2 + camp.level - wallet.gold);
+      const shortfall = Math.max(0, camp.nextCost - wallet.gold);
       return { kind: 'camp', text: `다음 캠프까지 골드 ${shortfall}.` };
     }
     if (activeStep) return { kind: 'milestone', text: `다음 이정표: ${activeStep.nextPhysicalAction || activeStep.title}` };
@@ -319,7 +318,7 @@ git commit -m "Add Slice 6 Fun Core projections"
 
 **Interfaces:**
 - Consumes: `startStep(..., { plannedMinutes })` and existing `reportOutcome` commands.
-- Produces: timed expedition records, exported `isGoalMilestone(step, steps)`, and v1 facts in `expedition_reported.result`.
+- Produces: timed expedition records, exported `isGoalMilestone(step, steps)` and `campUpgradeCost(level)`, and v1 facts in `expedition_reported.result`.
 
 - [ ] **Step 1: Add failing tests for allowed durations, computed expiry, category retention, and unchanged economics**
 
@@ -374,7 +373,7 @@ assert.throws(() => Domain.startStep(makeState(['start']), {
 }), /EXPEDITION_DURATION_INVALID/);
 ```
 
-Mechanically add `plannedMinutes: 5` to every pre-existing valid `startStep` test command. Missing, string, `0`, `15`, and `NaN` duration commands must all assert `EXPEDITION_DURATION_INVALID`; this keeps the domain contract strict while the UI owns the first-use default. Add tests for exported `Domain.isGoalMilestone(step, steps)` with final and non-final steps. Add a `manual_shrink` regression that asserts the replacement copies `category` as well as phase, entry segment, and reward lineage, then assert `selectEncounter` returns the same monster before and after replacement.
+Mechanically add `plannedMinutes: 5` to every pre-existing valid `startStep` test command. Missing, string, `0`, `15`, and `NaN` duration commands must all assert `EXPEDITION_DURATION_INVALID`; this keeps the domain contract strict while the UI owns the first-use default. Add tests for exported `Domain.isGoalMilestone(step, steps)` with final and non-final steps. Add `campUpgradeCost(level)` tests for levels 0–4 and make existing `upgradeCamp` call that helper without changing any cost. Add a `manual_shrink` regression that asserts the replacement copies `category` as well as phase, entry segment, and reward lineage, then assert `selectEncounter` returns the same monster before and after replacement.
 
 - [ ] **Step 2: Verify RED**
 
@@ -395,7 +394,7 @@ function expeditionExpiry(now, plannedMinutes) {
 }
 ```
 
-Persist `category: made.weekly.category || 'generic'` on Goal and `category: item.category || goal.category` on Step. Copy `category: step.category` when `manual_shrink` creates a replacement. In `startStep`, set `plannedMinutes` and `expiresAt: expeditionExpiry(command.now, command.plannedMinutes)`. Add and export the side-effect-free `isGoalMilestone(step, steps)` helper. In `reportOutcome`, call it before statuses change and add the five projection fields to `event.result`; leave every reward constant and idempotency key unchanged. The facade calls the same exported domain helper before report commit, so the encounter cannot switch between regular and boss.
+Persist `category: made.weekly.category || 'generic'` on Goal and `category: item.category || goal.category` on Step. Copy `category: step.category` when `manual_shrink` creates a replacement. In `startStep`, set `plannedMinutes` and `expiresAt: expeditionExpiry(command.now, command.plannedMinutes)`. Add and export the side-effect-free `isGoalMilestone(step, steps)` helper. Extract the existing `2 + level` expression into exported `campUpgradeCost(level)` and use it from `upgradeCamp`; this is a no-behavior-change refactor so Fun receives `nextCost` instead of duplicating economy logic. In `reportOutcome`, call `isGoalMilestone` before statuses change and add the five projection fields to `event.result`; leave every reward constant and idempotency key unchanged. The facade calls the same exported domain helper before report commit, so the encounter cannot switch between regular and boss.
 
 - [ ] **Step 4: Run domain and lineage regression tests**
 
@@ -862,7 +861,7 @@ Expected: new screens/selectors absent.
 
 - [ ] **Step 3: Render projections without duplicating business rules**
 
-Use `Fun.buildBattleReport`, `Fun.buildCodex`, `Core.chooseDialogue`, and `Fun.buildNextDesire` directly. The UI must not infer nominal Gold from outcome. Use a trigger key made from context, relevant entity id, and local date; timer ticks and navigation do not call `chooseDialogue`. On `[계속]`, acknowledge the matching report first, then render current snapshot routing.
+Use `Fun.buildBattleReport`, `Fun.buildCodex`, `Core.chooseDialogue`, and `Fun.buildNextDesire` directly. Pass `camp.nextCost` from `Domain.campUpgradeCost(camp.level)` so the presentation never duplicates camp economy logic. The UI must not infer nominal Gold from outcome. Use a trigger key made from context, relevant entity id, and local date; timer ticks and navigation do not call `chooseDialogue`. On `[계속]`, acknowledge the matching report first, then render current snapshot routing.
 
 - [ ] **Step 4: Run focused and existing obstacle/anchor regressions**
 
