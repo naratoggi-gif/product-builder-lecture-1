@@ -25,6 +25,7 @@
   let foregroundSession = { firstLocalDate: false, longAbsence: false };
   let dialogueCache = null;
   let dialoguePendingKey = null;
+  const failedCharacterMedia = new Map();
 
   const outcomeLabels = {
     completed: '완료',
@@ -541,16 +542,78 @@
     });
   }
 
+  function characterMediaKey(character, slot) {
+    const metadata = character.mediaMetadata?.[slot] || {};
+    return [
+      slot,
+      metadata.mimeType,
+      metadata.byteLength,
+      metadata.width,
+      metadata.height,
+      metadata.durationMs,
+      character.updatedAt,
+    ].join(':');
+  }
+
+  function createPortraitElement(character) {
+    if (character.portraitUrl || character.imageUrl) {
+      const image = document.createElement('img');
+      image.id = 'v02-character-image';
+      image.dataset.v02CharacterMedia = 'portrait';
+      image.src = character.portraitUrl || character.imageUrl;
+      image.alt = character.name;
+      return image;
+    }
+    const fallback = document.createElement('span');
+    fallback.className = 'v02-default-character';
+    fallback.setAttribute('aria-hidden', 'true');
+    fallback.append(document.createElement('i'));
+    return fallback;
+  }
+
+  function downgradeCharacterMedia(element) {
+    if (!element?.matches?.('[data-v02-character-media][data-v02-animated]')) return;
+    if (!element.isConnected) return;
+    const slot = element.dataset.v02CharacterMedia;
+    if (!['idle', 'skill'].includes(slot)) return;
+    const character = Core.getCharacter();
+    const currentKey = characterMediaKey(character, slot);
+    if (element.dataset.v02MediaKey !== currentKey) return;
+    failedCharacterMedia.set(slot, currentKey);
+    if (element.tagName === 'VIDEO') {
+      try { element.pause(); } catch (_error) { /* no-op */ }
+    }
+    element.replaceWith(createPortraitElement(character));
+  }
+
+  function handleCharacterMediaError(event) {
+    downgradeCharacterMedia(event.target);
+  }
+
+  function observeCharacterVideoPlayback(video) {
+    if (!video?.isConnected) return;
+    video.muted = true;
+    video.playsInline = true;
+    try {
+      const started = video.play();
+      if (started?.catch) started.catch(() => downgradeCharacterMedia(video));
+    } catch (_error) {
+      downgradeCharacterMedia(video);
+    }
+  }
+
   function characterArt(slot = 'idle') {
     const character = Core.getCharacter();
     const metadata = character.mediaMetadata?.[slot];
     const mediaUrl = character[`${slot}Url`];
-    if (!reducedMotionEnabled() && mediaUrl && metadata?.mimeType === 'image/webp') {
-      return `<img data-v02-character-media="${slot}" data-v02-animated src="${h(mediaUrl)}" alt="${h(character.name)}" />`;
+    const mediaKey = characterMediaKey(character, slot);
+    const mediaFailed = failedCharacterMedia.get(slot) === mediaKey;
+    if (!mediaFailed && !reducedMotionEnabled() && mediaUrl && metadata?.mimeType === 'image/webp') {
+      return `<img data-v02-character-media="${slot}" data-v02-media-key="${h(mediaKey)}" data-v02-animated src="${h(mediaUrl)}" alt="${h(character.name)}" />`;
     }
-    if (!reducedMotionEnabled() && mediaUrl && metadata?.mimeType === 'video/webm') {
+    if (!mediaFailed && !reducedMotionEnabled() && mediaUrl && metadata?.mimeType === 'video/webm') {
       const playback = slot === 'idle' ? ' autoplay loop' : '';
-      return `<video data-v02-character-media="${slot}" data-v02-animated src="${h(mediaUrl)}" muted playsinline${playback} aria-label="${h(character.name)}"></video>`;
+      return `<video data-v02-character-media="${slot}" data-v02-media-key="${h(mediaKey)}" data-v02-animated src="${h(mediaUrl)}" muted playsinline${playback} aria-label="${h(character.name)}"></video>`;
     }
     return character.portraitUrl || character.imageUrl
       ? `<img id="v02-character-image" data-v02-character-media="portrait" src="${h(character.portraitUrl || character.imageUrl)}" alt="${h(character.name)}" />`
@@ -1037,12 +1100,7 @@
       media.playsInline = true;
       media.loop = false;
       try { media.currentTime = 0; } catch (_error) { /* no-op */ }
-      try {
-        const started = media.play();
-        if (started?.catch) started.catch(() => undefined);
-      } catch (_error) {
-        // FX remains the playback fallback when autoplay is unavailable.
-      }
+      observeCharacterVideoPlayback(media);
     }
     return waitForCombat(playback, duration);
   }
@@ -1240,6 +1298,9 @@
   }
 
   function wire() {
+    observeCharacterVideoPlayback(
+      document.querySelector('video[data-v02-character-media="idle"]'),
+    );
     document.querySelectorAll('[name="v02-expedition-minutes"]').forEach((field) => {
       field.addEventListener('change', () => {
         const minutes = Number(field.value);
@@ -1658,6 +1719,7 @@
   function bindLifecycle() {
     if (lifecycleBound) return;
     lifecycleBound = true;
+    document.addEventListener('error', handleCharacterMediaError, true);
     document.addEventListener('visibilitychange', queueLifecycleRefresh);
     document.addEventListener('change', (event) => {
       if (event.target?.id !== 'reduced-motion-toggle') return;

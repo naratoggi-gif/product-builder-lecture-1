@@ -236,7 +236,16 @@ async function run() {
     'CHARACTER_MEDIA_WEBP_INVALID',
   );
 
-  const inspectedWebP = await Media.inspectMovingMedia(new Blob([webp], { type: 'image/webp' }));
+  const decodedWebPCalls = [];
+  const inspectedWebP = await Media.inspectMovingMedia(
+    new Blob([webp], { type: 'image/webp' }),
+    {
+      decodeImage: async (blob) => {
+        decodedWebPCalls.push(blob);
+        return { width: 320, height: 240 };
+      },
+    },
+  );
   assert.deepEqual(inspectedWebP, {
     mimeType: 'image/webp',
     byteLength: webp.length,
@@ -244,6 +253,165 @@ async function run() {
     height: 240,
     durationMs: 2100,
   });
+  assert.equal(decodedWebPCalls.length, 1);
+
+  const undecodableWebP = makeAnimatedWebP([500, 500], { width: 8, height: 8 });
+  await assertRejectsCode(
+    () => Media.inspectMovingMedia(
+      new Blob([undecodableWebP], { type: 'image/webp' }),
+      { decodeImage: async () => { throw new Error('no frame payload'); } },
+    ),
+    'CHARACTER_MEDIA_DECODE_FAILED',
+  );
+
+  let cappedWebPDecodeCalls = 0;
+  for (const capped of [
+    {
+      bytes: makeAnimatedWebP([1_000], { width: Media.MAX_EDGE + 1, height: 8 }),
+      code: 'CHARACTER_MEDIA_DIMENSIONS_TOO_LARGE',
+      decoded: { width: Media.MAX_EDGE + 1, height: 8 },
+    },
+    {
+      bytes: makeAnimatedWebP([Media.MAX_DURATION_MS + 1], { width: 8, height: 8 }),
+      code: 'CHARACTER_MEDIA_TOO_LONG',
+      decoded: { width: 8, height: 8 },
+    },
+  ]) {
+    await assertRejectsCode(
+      () => Media.inspectMovingMedia(
+        new Blob([capped.bytes], { type: 'image/webp' }),
+        {
+          decodeImage: async () => {
+            cappedWebPDecodeCalls += 1;
+            return capped.decoded;
+          },
+        },
+      ),
+      capped.code,
+    );
+  }
+  assert.equal(cappedWebPDecodeCalls, 0);
+
+  await assertRejectsCode(
+    () => Media.inspectMovingMedia(
+      new Blob([webp], { type: 'image/webp' }),
+      { decodeImage: async () => ({ width: 319, height: 240 }) },
+    ),
+    'CHARACTER_MEDIA_WEBP_INVALID',
+  );
+
+  for (const decoded of [
+    null,
+    { width: '320', height: 240 },
+    { width: 320, height: 0 },
+    Object.defineProperty({ height: 240 }, 'width', {
+      get() { throw new Error('decoded width getter failed'); },
+    }),
+  ]) {
+    await assertRejectsCode(
+      () => Media.inspectMovingMedia(
+        new Blob([webp], { type: 'image/webp' }),
+        { decodeImage: async () => decoded },
+      ),
+      'CHARACTER_MEDIA_DECODE_FAILED',
+    );
+  }
+
+  const imageObservations = { revoked: [] };
+  const decodedImage = {
+    naturalWidth: 320,
+    naturalHeight: 240,
+    set src(_value) {
+      queueMicrotask(() => this.onload());
+    },
+  };
+  await Media.inspectMovingMedia(
+    new Blob([webp], { type: 'image/webp' }),
+    {
+      createImage: () => decodedImage,
+      urlApi: {
+        createObjectURL: () => 'blob:decoded-webp',
+        revokeObjectURL: (url) => imageObservations.revoked.push(url),
+      },
+      decodeTimeoutMs: 25,
+    },
+  );
+  assert.equal(decodedImage.onload, null);
+  assert.equal(decodedImage.onerror, null);
+  assert.deepEqual(imageObservations.revoked, ['blob:decoded-webp']);
+
+  const failedImageObservations = { revoked: [], scheduled: [], cleared: [] };
+  const failedImage = {
+    set src(_value) {
+      queueMicrotask(() => this.onerror(new Error('runtime decode failed')));
+    },
+  };
+  const nativeSetTimeout = globalThis.setTimeout;
+  const nativeClearTimeout = globalThis.clearTimeout;
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    const timer = nativeSetTimeout(callback, delay, ...args);
+    failedImageObservations.scheduled.push(timer);
+    return timer;
+  };
+  globalThis.clearTimeout = (timer) => {
+    failedImageObservations.cleared.push(timer);
+    return nativeClearTimeout(timer);
+  };
+  try {
+    await assertRejectsCode(
+      () => Media.inspectMovingMedia(
+        new Blob([webp], { type: 'image/webp' }),
+        {
+          createImage: () => failedImage,
+          urlApi: {
+            createObjectURL: () => 'blob:failed-webp',
+            revokeObjectURL: (url) => failedImageObservations.revoked.push(url),
+          },
+          decodeTimeoutMs: 25,
+        },
+      ),
+      'CHARACTER_MEDIA_DECODE_FAILED',
+    );
+  } finally {
+    globalThis.setTimeout = nativeSetTimeout;
+    globalThis.clearTimeout = nativeClearTimeout;
+  }
+  assert.equal(failedImage.onload, null);
+  assert.equal(failedImage.onerror, null);
+  assert.equal(failedImageObservations.scheduled.length, 1);
+  assert.deepEqual(failedImageObservations.cleared, failedImageObservations.scheduled);
+  assert.deepEqual(failedImageObservations.revoked, ['blob:failed-webp']);
+
+  for (const failurePoint of ['setup', 'load']) {
+    const throwObservations = { revoked: [] };
+    const throwingImage = failurePoint === 'setup'
+      ? Object.defineProperty({}, 'onload', {
+        configurable: true,
+        set() { throw new Error('image handler setup failed'); },
+      })
+      : {
+        set src(_value) { throw new Error('image load failed'); },
+      };
+    await assertRejectsCode(
+      () => Media.inspectMovingMedia(
+        new Blob([webp], { type: 'image/webp' }),
+        {
+          createImage: () => throwingImage,
+          urlApi: {
+            createObjectURL: () => `blob:${failurePoint}-webp`,
+            revokeObjectURL: (url) => throwObservations.revoked.push(url),
+          },
+          decodeTimeoutMs: 25,
+        },
+      ),
+      'CHARACTER_MEDIA_DECODE_FAILED',
+    );
+    if (failurePoint === 'load') {
+      assert.equal(throwingImage.onload, null);
+      assert.equal(throwingImage.onerror, null);
+    }
+    assert.deepEqual(throwObservations.revoked, [`blob:${failurePoint}-webp`]);
+  }
 
   const webmBytes = makeEbmlHeader('webm');
   await assertRejectsCode(

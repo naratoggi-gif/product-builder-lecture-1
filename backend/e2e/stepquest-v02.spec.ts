@@ -51,6 +51,24 @@ function makeAnimatedWebPBytes(durations: number[], width = 8, height = 8) {
   return Array.from(Buffer.concat([header, body]));
 }
 
+function withAnimatedWebPDurations(source: Buffer, durations: number[]) {
+  const bytes = Buffer.from(source);
+  let offset = 12;
+  let frameIndex = 0;
+  while (offset < bytes.length) {
+    const type = bytes.toString('ascii', offset, offset + 4);
+    const size = bytes.readUInt32LE(offset + 4);
+    if (type === 'ANMF') {
+      if (frameIndex >= durations.length) throw new Error('ANIMATED_WEBP_DURATION_COUNT_MISMATCH');
+      writeUint24LE(bytes, offset + 8 + 12, durations[frameIndex]);
+      frameIndex += 1;
+    }
+    offset += 8 + size + (size % 2);
+  }
+  if (frameIndex !== durations.length) throw new Error('ANIMATED_WEBP_DURATION_COUNT_MISMATCH');
+  return bytes;
+}
+
 async function installTimerProbe(page) {
   await page.addInitScript(() => {
     const originalSetInterval = window.setInterval.bind(window);
@@ -1361,6 +1379,249 @@ test('next desire keeps partial and interrupted lineage plus Resume Anchor at ma
 });
 
 test('moving character imports exact WebM and restarts muted inline skill video at zero', runMovingCharacterWebmTest);
+
+test('moving character rejects structurally animated WebP with no decodable frame before persistence', async ({ page }) => {
+  await resetV02(page);
+  const result = await page.evaluate(async ({ portraitBytes, headerOnlyBytes }) => {
+    const Core = (window as any).StepQuestV02App;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await Core.importCharacterMedia(
+      'portrait',
+      new File(
+        [Uint8Array.from(portraitBytes)],
+        'decode-guard-portrait.png',
+        { type: 'image/png' },
+      ),
+    );
+    const project = async () => {
+      const media = await repository.getCharacterMedia();
+      return {
+        character: JSON.stringify(media.character),
+        hasIdle: Boolean(media.idle),
+        commits: await repository.getMeta('commitsSinceExternalBackup'),
+      };
+    };
+    const before = await project();
+    let error = null;
+    try {
+      await Core.importCharacterMedia(
+        'idle',
+        new File(
+          [Uint8Array.from(headerOnlyBytes)],
+          'header-only.webp',
+          { type: 'image/webp' },
+        ),
+      );
+    } catch (caught) {
+      error = caught.message;
+    }
+    (window as any).StepQuestV02UI.render();
+    return {
+      error,
+      before,
+      after: await project(),
+      renderedIdle: Boolean(document.querySelector('[data-v02-character-media="idle"]')),
+    };
+  }, {
+    portraitBytes: Array.from(tinyPortrait),
+    headerOnlyBytes: makeAnimatedWebPBytes([500, 500]),
+  });
+
+  expect(result.error).toBe('CHARACTER_MEDIA_DECODE_FAILED');
+  expect(result.after).toEqual(result.before);
+  expect(result.before.hasIdle).toBe(false);
+  expect(result.renderedIdle).toBe(false);
+  await expect(page.locator('[data-v02-character-media="idle"]')).toHaveCount(0);
+  await expect(page.locator('#v02-character-image')).toBeVisible();
+});
+
+test('moving character runtime img and video errors fall back to portrait without blocking combat FX', async ({ page }) => {
+  test.setTimeout(60_000);
+  await resetV02(page);
+  await importMovingCharacter(page);
+
+  await page.evaluate(async (webmBytes) => {
+    const Core = (window as any).StepQuestV02App;
+    const Character = (window as any).StepQuestV02Character;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const current = await repository.getCharacterMedia();
+    const metadata = Character.withMediaSlot(current.character, 'idle', {
+      key: Character.MEDIA_KEYS.idle,
+      mimeType: 'video/webm',
+      byteLength: webmBytes.length,
+      width: 32,
+      height: 32,
+      durationMs: 600,
+    });
+    await repository.saveCharacterMediaSlot(
+      metadata,
+      'idle',
+      new Blob([Uint8Array.from(webmBytes)], { type: 'video/webm' }),
+    );
+    const probe = { videoMounted: 0, fxMounted: false, reportMounted: false };
+    (window as any).__slice6MediaFallbackProbe = probe;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('video[data-v02-character-media="idle"]')) probe.videoMounted += 1;
+      if (document.querySelector('[data-v02-fx-overlay]')) probe.fxMounted = true;
+      if (document.querySelector('#v02-battle-report')) probe.reportMounted = true;
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    await Core.refreshSnapshot();
+    (window as any).StepQuestV02UI.render();
+  }, Array.from(sparkWebmBytes));
+
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__slice6MediaFallbackProbe.videoMounted
+  ))).toBeGreaterThan(0);
+  const idleVideo = page.locator('video[data-v02-character-media="idle"]');
+  if (await idleVideo.count()) await idleVideo.dispatchEvent('error');
+  await expect(page.locator('#v02-character-image')).toBeVisible();
+  await expect(page.locator('[data-v02-character-media="idle"]')).toHaveCount(0);
+
+  await createGoal(page, 'runtime media fallback');
+  await expect(page.locator('#v02-character-image')).toBeVisible();
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+
+  const skillImage = page.locator('img[data-v02-character-media="skill"]');
+  await expect(skillImage).toBeVisible();
+  await skillImage.dispatchEvent('error');
+  await expect(page.locator('[data-v02-combat] #v02-character-image')).toBeVisible();
+  await expect(page.locator('[data-v02-character-media="skill"]')).toHaveCount(0);
+  await expect(page.locator('[data-v02-fx-overlay]')).toBeVisible();
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  expect(await latestReportedEncounterHp(page)).toBe(0);
+  expect(await page.evaluate(() => ({ ...(window as any).__slice6MediaFallbackProbe }))).toMatchObject({
+    fxMounted: true,
+    reportMounted: true,
+  });
+});
+
+test('moving character rejected idle video playback falls back to portrait', async ({ page }) => {
+  await resetV02(page);
+  await importMovingCharacter(page);
+  const result = await page.evaluate(async (webmBytes) => {
+    const Core = (window as any).StepQuestV02App;
+    const Character = (window as any).StepQuestV02Character;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const current = await repository.getCharacterMedia();
+    const metadata = Character.withMediaSlot(current.character, 'idle', {
+      key: Character.MEDIA_KEYS.idle,
+      mimeType: 'video/webm',
+      byteLength: webmBytes.length,
+      width: 32,
+      height: 32,
+      durationMs: 600,
+    });
+    await repository.saveCharacterMediaSlot(
+      metadata,
+      'idle',
+      new Blob([Uint8Array.from(webmBytes)], { type: 'video/webm' }),
+    );
+    const originalPlay = HTMLMediaElement.prototype.play;
+    const probe = { playCalls: 0, videoMounted: false, fallbackMounted: false };
+    (window as any).__slice6IdlePlayFallbackProbe = probe;
+    HTMLMediaElement.prototype.play = function patchedPlay() {
+      if ((this as HTMLElement).dataset.v02CharacterMedia === 'idle') {
+        probe.playCalls += 1;
+        return Promise.reject(new DOMException('autoplay blocked', 'NotAllowedError'));
+      }
+      return originalPlay.call(this);
+    };
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('video[data-v02-character-media="idle"]')) probe.videoMounted = true;
+      if (document.querySelector('[data-v02-character-stage] #v02-character-image')) {
+        probe.fallbackMounted = true;
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    await Core.refreshSnapshot();
+    (window as any).StepQuestV02UI.render();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { ...probe };
+  }, Array.from(sparkWebmBytes));
+
+  expect(result).toEqual({ playCalls: 1, videoMounted: true, fallbackMounted: true });
+  await expect(page.locator('video[data-v02-character-media="idle"]')).toHaveCount(0);
+  await expect(page.locator('#v02-character-image')).toBeVisible();
+});
+
+test('moving character thrown and rejected skill video playback falls back while FX and report finish', async ({ page }) => {
+  test.setTimeout(120_000);
+  for (const failureMode of ['throw', 'reject']) {
+    await resetV02(page);
+    await importMovingCharacter(page);
+    await page.evaluate(async ({ webmBytes, mode }) => {
+      const Core = (window as any).StepQuestV02App;
+      const Character = (window as any).StepQuestV02Character;
+      const repository = await (window as any).StepQuestV02Storage.openRepository();
+      const current = await repository.getCharacterMedia();
+      const metadata = Character.withMediaSlot(current.character, 'skill', {
+        key: Character.MEDIA_KEYS.skill,
+        mimeType: 'video/webm',
+        byteLength: webmBytes.length,
+        width: 32,
+        height: 32,
+        durationMs: 600,
+      });
+      await repository.saveCharacterMediaSlot(
+        metadata,
+        'skill',
+        new Blob([Uint8Array.from(webmBytes)], { type: 'video/webm' }),
+      );
+      const originalPlay = HTMLMediaElement.prototype.play;
+      const probe = {
+        mode,
+        playCalls: 0,
+        videoMounted: false,
+        fallbackMounted: false,
+        fxMounted: false,
+        reportMounted: false,
+      };
+      (window as any).__slice6SkillPlayFallbackProbe = probe;
+      HTMLMediaElement.prototype.play = function patchedPlay() {
+        if ((this as HTMLElement).dataset.v02CharacterMedia === 'skill') {
+          probe.playCalls += 1;
+          probe.videoMounted = this.isConnected;
+          if (mode === 'throw') throw new DOMException('play threw', 'NotAllowedError');
+          return Promise.reject(new DOMException('play rejected', 'NotAllowedError'));
+        }
+        return originalPlay.call(this);
+      };
+      const observer = new MutationObserver(() => {
+        if (document.querySelector('video[data-v02-character-media="skill"]')) probe.videoMounted = true;
+        if (document.querySelector('[data-v02-combat] #v02-character-image')) {
+          probe.fallbackMounted = true;
+        }
+        if (document.querySelector('[data-v02-fx-overlay]')) probe.fxMounted = true;
+        if (document.querySelector('#v02-battle-report')) probe.reportMounted = true;
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+      await Core.refreshSnapshot();
+      (window as any).StepQuestV02UI.render();
+    }, { webmBytes: Array.from(sparkWebmBytes), mode: failureMode });
+
+    await createGoal(page, `skill play ${failureMode}`);
+    await page.locator('#v02-start-step').click();
+    await cancelFx(page);
+    await page.locator('#v02-open-report').click();
+    await page.locator('[data-v02-outcome="completed"]').click();
+    await expect(page.locator('#v02-battle-report')).toBeVisible();
+    expect(await latestReportedEncounterHp(page)).toBe(0);
+    expect(await page.evaluate(() => ({
+      ...(window as any).__slice6SkillPlayFallbackProbe,
+    }))).toEqual({
+      mode: failureMode,
+      playCalls: 1,
+      videoMounted: true,
+      fallbackMounted: true,
+      fxMounted: true,
+      reportMounted: true,
+    });
+  }
+});
 
 test('moving character imports animated WebP idle and completed combat uses truthful HP delta', async ({ page }) => {
   await page.addInitScript({ path: mediaScriptPath });
@@ -3837,12 +4098,12 @@ test('Slice 6 facade persists semantic dialogue and applies the exact 48-hour se
   expect(afterReload.next).not.toBe(firstPass.line);
 });
 
-test('Slice 6 facade imports synthetic media and revokes every replaced object URL without failure loss', async ({ page }) => {
+test('Slice 6 facade imports decodable procedural media and revokes every replaced object URL without failure loss', async ({ page }) => {
   const portraitBytes = Array.from(Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
     'base64',
   ));
-  const movingBytes = makeAnimatedWebPBytes([400, 600]);
+  const movingBytes = Array.from(sparkLoopBytes);
   await resetV02(page);
   await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
 
@@ -3962,8 +4223,8 @@ test('Slice 6 facade imports synthetic media and revokes every replaced object U
   expect(result.blobsPresent).toBe(true);
   expect(result.mediaMetadata).toMatchObject({
     portrait: { mimeType: 'image/png', width: 1, height: 1 },
-    idle: { mimeType: 'image/webp', width: 8, height: 8, durationMs: 1_000 },
-    skill: { mimeType: 'image/webp', width: 8, height: 8, durationMs: 1_000 },
+    idle: { mimeType: 'image/webp', width: 8, height: 8, durationMs: 2_000 },
+    skill: { mimeType: 'image/webp', width: 8, height: 8, durationMs: 2_000 },
   });
 });
 
@@ -4301,7 +4562,7 @@ test('Slice 6 facade swaps media URLs only after a complete refresh projection',
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
     'base64',
   ));
-  const movingBytes = makeAnimatedWebPBytes([400, 600]);
+  const movingBytes = Array.from(sparkLoopBytes);
   await resetV02(page);
   await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
 
@@ -4433,8 +4694,8 @@ test('Slice 6 facade treats persisted media as committed when URL refresh fails'
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
     'base64',
   ));
-  const movingBytes = makeAnimatedWebPBytes([400, 600]);
-  const replacementBytes = makeAnimatedWebPBytes([250, 350]);
+  const movingBytes = Array.from(sparkLoopBytes);
+  const replacementBytes = Array.from(withAnimatedWebPDurations(sparkLoopBytes, [250, 350]));
   await resetV02(page);
   await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
 
@@ -4490,7 +4751,12 @@ test('Slice 6 facade treats persisted media as committed when URL refresh fails'
     const nativeCreate = urlApi.createObjectURL.bind(urlApi);
     const nativeRevoke = urlApi.revokeObjectURL.bind(urlApi);
     const revoked: string[] = [];
-    urlApi.createObjectURL = () => { throw new Error('PRESENTATION_REFRESH_FAILED'); };
+    let createCalls = 0;
+    urlApi.createObjectURL = (blob) => {
+      createCalls += 1;
+      if (createCalls === 1) return nativeCreate(blob);
+      throw new Error('PRESENTATION_REFRESH_FAILED');
+    };
     urlApi.revokeObjectURL = (value) => {
       revoked.push(value);
       nativeRevoke(value);
@@ -4521,7 +4787,7 @@ test('Slice 6 facade treats persisted media as committed when URL refresh fails'
         afterPersistenceFailure.idleUrl,
         afterPersistenceFailure.skillUrl,
       ].every((value, index) => value === beforeUrls[index]),
-      persistenceKeptData: persistedAfterFailure.character.mediaMetadata.skill.durationMs === 1000,
+      persistenceKeptData: persistedAfterFailure.character.mediaMetadata.skill.durationMs === 2000,
       backupAfterPersistenceFailure,
       committedError,
       committedResultDuration: committedResult?.mediaMetadata?.skill?.durationMs ?? null,
@@ -4551,7 +4817,7 @@ test('Slice 6 facade treats persisted media as committed when URL refresh fails'
   expect(result.backupAfterPersistenceFailure).toBe(0);
   expect(result.committedError).toBeNull();
   expect(result.committedResultDuration).toBe(600);
-  expect(result.committedOldProjectionDuration).toBe(1000);
+  expect(result.committedOldProjectionDuration).toBe(2000);
   expect(result.committedKeptOldUrls).toBe(true);
   expect(result.committedKeptOldOwnership).toBe(true);
   expect(result.persistedDuration).toBe(600);

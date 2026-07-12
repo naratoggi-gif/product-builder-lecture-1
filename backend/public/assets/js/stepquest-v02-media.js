@@ -269,6 +269,128 @@
     return null;
   }
 
+  async function decodeWebPWithElement(blob, options) {
+    const documentValue = options.documentValue || root?.document;
+    const urlApi = options.urlApi || root?.URL;
+    const createImage = options.createImage || (
+      typeof root?.Image === 'function'
+        ? () => new root.Image()
+        : documentValue?.createElement
+          ? () => documentValue.createElement('img')
+          : null
+    );
+    if (
+      typeof createImage !== 'function'
+      || typeof urlApi?.createObjectURL !== 'function'
+      || typeof urlApi?.revokeObjectURL !== 'function'
+    ) {
+      throw contractError(ERROR_CODES.DECODE_UNAVAILABLE);
+    }
+
+    let image;
+    try {
+      image = createImage();
+    } catch (_error) {
+      throw contractError(ERROR_CODES.DECODE_FAILED);
+    }
+    if (!image) throw contractError(ERROR_CODES.DECODE_UNAVAILABLE);
+
+    let objectUrl;
+    try {
+      objectUrl = urlApi.createObjectURL(blob);
+    } catch (_error) {
+      throw contractError(ERROR_CODES.DECODE_FAILED);
+    }
+
+    try {
+      return await new Promise((resolve, reject) => {
+        let settled = false;
+        let decodeTimer = null;
+        const configuredDecodeTimeout = Number(options.decodeTimeoutMs);
+        const decodeTimeoutMs = Number.isFinite(configuredDecodeTimeout) && configuredDecodeTimeout > 0
+          ? Math.min(configuredDecodeTimeout, 5000)
+          : 5000;
+        const scheduleTimeout = typeof root?.setTimeout === 'function'
+          ? root.setTimeout.bind(root)
+          : null;
+        const cancelTimeout = typeof root?.clearTimeout === 'function'
+          ? root.clearTimeout.bind(root)
+          : null;
+        const cleanup = () => {
+          if (decodeTimer !== null && cancelTimeout) cancelTimeout(decodeTimer);
+          decodeTimer = null;
+          try { image.onload = null; } catch (_error) { /* no-op */ }
+          try { image.onerror = null; } catch (_error) { /* no-op */ }
+        };
+        const settle = (metadata, failed = false) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          if (failed) reject(contractError(ERROR_CODES.DECODE_FAILED));
+          else resolve(metadata);
+        };
+        try {
+          image.onload = () => {
+            try {
+              const width = Number(image.naturalWidth);
+              const height = Number(image.naturalHeight);
+              if (!Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0) {
+                settle(null, true);
+                return;
+              }
+              settle({ width, height });
+            } catch (_error) {
+              settle(null, true);
+            }
+          };
+          image.onerror = () => settle(null, true);
+          if (!scheduleTimeout) {
+            settle(null, true);
+            return;
+          }
+          decodeTimer = scheduleTimeout(() => settle(null, true), decodeTimeoutMs);
+          image.src = objectUrl;
+        } catch (_error) {
+          settle(null, true);
+        }
+      });
+    } finally {
+      try {
+        urlApi.revokeObjectURL(objectUrl);
+      } catch (_error) {
+        // Revocation was attempted; preserve the inspection result or decode error.
+      }
+    }
+  }
+
+  async function decodeWebP(blob, options) {
+    let decoded;
+    if (typeof options.decodeImage === 'function') {
+      try {
+        decoded = await options.decodeImage(blob);
+      } catch (_error) {
+        throw contractError(ERROR_CODES.DECODE_FAILED);
+      }
+    } else {
+      decoded = await decodeWebPWithElement(blob, options);
+    }
+    try {
+      const width = decoded.width;
+      const height = decoded.height;
+      if (
+        !Number.isSafeInteger(width)
+        || width <= 0
+        || !Number.isSafeInteger(height)
+        || height <= 0
+      ) {
+        throw contractError(ERROR_CODES.DECODE_FAILED);
+      }
+      return { width, height };
+    } catch (_error) {
+      throw contractError(ERROR_CODES.DECODE_FAILED);
+    }
+  }
+
   async function decodeWebMAttempt(blob, options) {
     const documentValue = options.documentValue || root?.document;
     const urlApi = options.urlApi || root?.URL;
@@ -422,9 +544,21 @@
       throw contractError(ERROR_CODES.MAGIC_MISMATCH);
     }
 
-    const decoded = blob.type === 'image/webp'
-      ? parseAnimatedWebP(bytes)
-      : await decodeWebM(blob, options);
+    let decoded;
+    if (blob.type === 'image/webp') {
+      const parsed = parseAnimatedWebP(bytes);
+      const validated = validateMovingMetadata({
+        mimeType: blob.type,
+        byteLength: blob.size,
+        ...parsed,
+      });
+      const image = await decodeWebP(blob, options);
+      if (image.width !== parsed.width || image.height !== parsed.height) {
+        throw contractError(ERROR_CODES.WEBP_INVALID);
+      }
+      return validated;
+    }
+    decoded = await decodeWebM(blob, options);
     return validateMovingMetadata({
       mimeType: blob.type,
       byteLength: blob.size,
