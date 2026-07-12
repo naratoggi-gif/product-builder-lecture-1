@@ -1,6 +1,6 @@
 # StepQuest v0.2 Slice 6 — Fun Core 재설계
 
-> 상태: 소유자 리뷰 대기
+> 상태: 설계 승인 · 구현 계획 완료
 > 목표: 알림이나 벌점 없이도 `출발 → 기다림 → 수확 → 타격 → 다음 욕망`이 이어져 앱을 다시 열 이유를 만든다.
 > 경제 불변: 타이머, 몬스터, 데미지, 대사, 도감, 미디어는 코인·골드·스텝 수·보상 캡을 바꾸지 않는다.
 
@@ -123,9 +123,9 @@ interface ExpeditionTiming {
 2. 기존 outcome 4택을 보여준다. 아직 골드 액수를 약속하거나 지급하지 않는다.
 3. `partial`·`interrupted`는 기존 Resume Anchor 입력을 유지한다.
 4. 보고 커밋 뒤에만 실제 `goldGranted`와 피격 결과를 알 수 있다.
-5. app facade는 보고 이벤트 키를 `pendingBattleReportKey` meta에 저장한다.
+5. app facade는 최신 v1 보고 이벤트와 `acknowledgedBattleReportKey` meta를 비교해 pending 리포트를 파생한다. 보고 커밋 뒤 별도 pending 쓰기를 두지 않는다.
 6. 전투 연출 후 리포트를 표시한다. 사용자가 앱을 닫아도 `[계속]` 전에는 같은 리포트를 다시 연다.
-7. `[계속]`에서 pending key를 지우고 다음 상태로 이동한다.
+7. `[계속]`에서 해당 이벤트 키를 `acknowledgedBattleReportKey`로 저장한 뒤 다음 상태로 이동한다. 쓰기가 실패하면 리포트가 다시 나타나는 안전한 방향으로 실패한다.
 
 | outcome | 처치 | HP 변화 | 계속 후 이동 |
 |---|---:|---:|---|
@@ -335,7 +335,7 @@ skill clip 시작
 
 - IndexedDB version은 3을 유지한다.
 - timing, category, report projection은 기존 store 레코드의 additive 필드다.
-- last duration, pending report, dialogue cursor는 meta이며 경제 snapshot에 포함하지 않는다.
+- last duration, acknowledged report key, dialogue cursor, foreground timestamps는 meta이며 경제 snapshot에 포함하지 않는다.
 - active expedition 시작도 significant backup으로 취급한다.
 - 새 presentation module을 `stepquest-v02-fun.js`로 분리한다.
 - 변경된 HTML, CSS, domain, storage, app, UI, fun module의 build key를 모두 `v02-core-5`로 맞춘다.
