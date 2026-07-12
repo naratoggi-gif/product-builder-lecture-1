@@ -500,18 +500,29 @@
     requireRepository();
     if (repository.mode !== 'indexedDB') throw new Error('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
     const Character = root.StepQuestV02Character;
-    if (!Character?.prepareImage || !Character?.normalizeMetadata) {
+    if (!Character?.prepareImage || !Character?.normalizeMetadata || !Character?.withMediaSlot) {
       throw new Error('CHARACTER_MODULE_NOT_LOADED');
     }
     const prepared = await Character.prepareImage(input?.file);
     const saved = await repository.getCharacter();
     const timestamp = now();
-    const metadata = Character.normalizeMetadata({
+    const profile = Character.normalizeMetadata({
+      ...(saved || {}),
       ...input,
       createdAt: saved?.createdAt || timestamp,
-      imageBlobKey: Character.IMAGE_BLOB_KEY,
+      imageBlobKey: Character.MEDIA_KEYS.portrait,
     }, timestamp);
-    await repository.saveCharacter(metadata, prepared.blob);
+    const metadata = Character.withMediaSlot({
+      ...(saved || {}),
+      ...profile,
+    }, 'portrait', {
+      key: Character.MEDIA_KEYS.portrait,
+      mimeType: prepared.blob.type,
+      byteLength: prepared.blob.size,
+      width: prepared.width,
+      height: prepared.height,
+    });
+    await repository.saveCharacterMediaSlot(metadata, 'portrait', prepared.blob);
     await refreshCharacter();
     await afterSignificantCommit();
     return { ...metadata, width: prepared.width, height: prepared.height };

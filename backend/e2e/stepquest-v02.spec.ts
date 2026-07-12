@@ -1944,6 +1944,74 @@ test('combat sequence never attacks for interrupted or not-started outcomes', as
   });
 });
 
+test('replacing a portrait preserves moving media and profile changes atomically', async ({ page }) => {
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  await importMovingCharacter(page);
+
+  const readCharacterMedia = () => page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const current = await repository.getCharacterMedia();
+    const exported = await repository.exportCharacterAssets();
+    const bytes = async (blob) => (
+      blob ? Array.from(new Uint8Array(await blob.arrayBuffer())) : null
+    );
+    return {
+      character: current.character,
+      portraitBytes: await bytes(current.portrait),
+      idleBytes: await bytes(current.idle),
+      skillBytes: await bytes(current.skill),
+      exportedAssetIds: exported.assets.map((asset) => asset.id).sort(),
+    };
+  });
+  const before = await readCharacterMedia();
+
+  await page.locator('#v02-character-file').setInputFiles({
+    name: 'slice6-portrait-replacement.png',
+    mimeType: 'image/png',
+    buffer: tinyPortrait,
+  });
+  await page.locator('#v02-character-name').fill('교체 후 영웅');
+  await page.locator('#v02-character-preset').selectOption('slash');
+  await page.locator('#v02-character-skill-name').fill('번개 베기');
+  await page.locator('#v02-character-color').selectOption('#ffd166');
+  await page.locator('#v02-save-character').click();
+  await expect(page.locator('[data-v02-character-name]')).toHaveText('교체 후 영웅');
+
+  const after = await readCharacterMedia();
+  expect(after.character).toMatchObject({
+    name: '교체 후 영웅',
+    skillPreset: 'slash',
+    skillName: '번개 베기',
+    accentColor: '#ffd166',
+    media: {
+      portraitKey: 'character:local-primary:portrait',
+      idleKey: 'character:local-primary:idle',
+      skillKey: 'character:local-primary:skill',
+    },
+    mediaMetadata: {
+      idle: before.character.mediaMetadata.idle,
+      skill: before.character.mediaMetadata.skill,
+    },
+  });
+  expect(after.idleBytes).toEqual(before.idleBytes);
+  expect(after.skillBytes).toEqual(before.skillBytes);
+  expect(after.portraitBytes).not.toBeNull();
+  expect(after.exportedAssetIds).toEqual([
+    'character:local-primary:idle',
+    'character:local-primary:portrait',
+    'character:local-primary:skill',
+  ]);
+
+  await page.reload();
+  await expect(page.locator('[data-v02-character-name]')).toHaveText('교체 후 영웅');
+  await expect(page.locator('[data-v02-character-media="idle"]')).toBeVisible();
+  const reloaded = await readCharacterMedia();
+  expect(reloaded.character.mediaMetadata).toEqual(after.character.mediaMetadata);
+  expect(reloaded.idleBytes).toEqual(before.idleBytes);
+  expect(reloaded.skillBytes).toEqual(before.skillBytes);
+});
+
 async function runMovingCharacterWebmTest({ page }, testInfo) {
   test.skip(testInfo.project.name !== 'desktop-chrome', 'WebM import is proved separately in desktop Chrome');
   testInfo.setTimeout(60_000);
