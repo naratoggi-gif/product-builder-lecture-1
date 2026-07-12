@@ -1,7 +1,14 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const funScriptPath = path.resolve('public/assets/js/stepquest-v02-fun.js');
+const mediaScriptPath = path.resolve('public/assets/js/stepquest-v02-media.js');
+const sparkLoopBytes = readFileSync(path.resolve('e2e/fixtures/slice6-spark-loop.webp'));
+const tinyPortrait = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+);
 
 function writeUint24LE(buffer: Buffer, offset: number, value: number) {
   buffer[offset] = value & 0xff;
@@ -42,6 +49,115 @@ function makeAnimatedWebPBytes(durations: number[], width = 8, height = 8) {
   header.write('RIFF', 0, 4, 'ascii');
   header.writeUInt32LE(body.length, 4);
   return Array.from(Buffer.concat([header, body]));
+}
+
+async function makeWebmFixture(page: Page) {
+  return page.evaluate(async () => {
+    if (
+      typeof MediaRecorder !== 'function'
+      || !MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+    ) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#f5b400';
+    context.fillRect(0, 0, 32, 32);
+    const stream = canvas.captureStream(0);
+    const videoTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+    const chunks: BlobPart[] = [];
+    try {
+      recorder.ondataavailable = (event) => chunks.push(event.data);
+      recorder.start();
+      videoTrack.requestFrame();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      context.fillStyle = '#ffe38a';
+      context.fillRect(0, 0, 32, 32);
+      videoTrack.requestFrame();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      let stopTimeout = 0;
+      const stopped = Promise.race([
+        new Promise((resolve) => { recorder.onstop = resolve; }),
+        new Promise<never>((_resolve, reject) => {
+          stopTimeout = window.setTimeout(
+            () => reject(new Error('MediaRecorder stop event timed out')),
+            2_000,
+          );
+        }),
+      ]);
+      recorder.stop();
+      try {
+        await stopped;
+      } finally {
+        window.clearTimeout(stopTimeout);
+      }
+      const bytes = new Uint8Array(await new Blob(chunks, { type: recorder.mimeType }).arrayBuffer());
+      if (bytes.byteLength === 0) throw new Error('MediaRecorder produced an empty WebM fixture');
+      return Array.from(bytes);
+    } finally {
+      if (recorder.state !== 'inactive') recorder.stop();
+      stream.getTracks().forEach((track) => track.stop());
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+    }
+  });
+}
+
+async function makeIsolatedWebmFixture(browser: Browser) {
+  const evidence: Array<Record<string, unknown>> = [];
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    let attemptBrowser: Browser | null = null;
+    let fixturePage: Page | null = null;
+    let attemptTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      attemptBrowser = await browser.browserType().launch({ headless: true });
+      const attemptContext = await attemptBrowser.newContext();
+      fixturePage = await attemptContext.newPage();
+      await fixturePage.addScriptTag({ path: mediaScriptPath });
+      const bytes = await Promise.race([
+        makeWebmFixture(fixturePage),
+        new Promise<never>((_resolve, reject) => {
+          attemptTimer = setTimeout(
+            () => reject(new Error('MediaRecorder fixture attempt timed out')),
+            10_000,
+          );
+        }),
+      ]);
+      if (!bytes) {
+        evidence.push({ attempt, status: 'unsupported' });
+        return { bytes: null, evidence };
+      }
+      const metadata = await fixturePage.evaluate(async (input) => (
+        (window as any).StepQuestV02Media.inspectMovingMedia(
+          new Blob([new Uint8Array(input)], { type: 'video/webm' }),
+          { decodeTimeoutMs: 5_000 },
+        )
+      ), bytes);
+      evidence.push({ attempt, status: 'accepted', metadata });
+      return { bytes, evidence };
+    } catch (error) {
+      evidence.push({
+        attempt,
+        status: 'rejected',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      if (attemptTimer) clearTimeout(attemptTimer);
+      await fixturePage?.close().catch(() => {});
+      await attemptBrowser?.close().catch(() => {});
+    }
+  }
+  return { bytes: null, evidence };
+}
+
+async function allowBlobMediaForWebmFixture(page: Page) {
+  await page.route('**/goals.html', async (route) => {
+    const response = await route.fetch();
+    const headers = response.headers();
+    headers['content-security-policy'] = `${headers['content-security-policy'] || "default-src 'self'"}; media-src 'self' blob:`;
+    await route.fulfill({ response, headers });
+  });
 }
 
 async function installTimerProbe(page) {
@@ -324,6 +440,7 @@ async function installDelayedMount(page) {
 }
 
 async function cancelFx(page) {
+  await expect(page.locator('[data-v02-fx-overlay]')).toBeVisible();
   await page.evaluate(() => (window as any).StepQuestV02FX.cancel());
   await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
 }
@@ -345,6 +462,650 @@ async function expeditionObservation(page) {
     };
   });
 }
+
+async function importMovingCharacter(page) {
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('#v02-character-file').setInputFiles({
+    name: 'slice6-portrait.png',
+    mimeType: 'image/png',
+    buffer: tinyPortrait,
+  });
+  await page.locator('#v02-save-character').click();
+  await expect(page.locator('#v02-character-image')).toHaveAttribute('src', /^blob:/);
+
+  await expect(page.locator('#v02-character-idle-file')).toBeVisible();
+  await expect(page.locator('#v02-character-skill-file')).toBeVisible();
+  await page.locator('#v02-character-idle-file').setInputFiles({
+    name: 'slice6-spark-loop.webp', mimeType: 'image/webp', buffer: sparkLoopBytes,
+  });
+  await page.locator('#v02-save-character-idle').click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).StepQuestV02App.getCharacter().mediaMetadata?.idle?.durationMs
+  ))).toBe(2_000);
+  await page.locator('#v02-character-skill-file').setInputFiles({
+    name: 'slice6-spark-loop.webp', mimeType: 'image/webp', buffer: sparkLoopBytes,
+  });
+  await page.locator('#v02-save-character-skill').click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).StepQuestV02App.getCharacter().mediaMetadata?.skill?.durationMs
+  ))).toBe(2_000);
+}
+
+async function seedPhaseGoal(page, phase: string, suffix: string) {
+  await page.evaluate(async ({ stepPhase, idSuffix }) => {
+    const now = new Date().toISOString();
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.importGoal({
+      weekly: {
+        id: `combat-goal-${idSuffix}`,
+        title: `combat goal ${idSuffix}`,
+        category: 'writing',
+        createdAt: now,
+      },
+      micro: [
+        {
+          id: `combat-step-${idSuffix}`,
+          title: `combat step ${idSuffix}`,
+          category: 'writing',
+          phase: stepPhase,
+          createdAt: now,
+        },
+        {
+          id: `combat-close-${idSuffix}`,
+          title: `combat close ${idSuffix}`,
+          category: 'writing',
+          phase: 'close',
+          createdAt: now,
+        },
+      ],
+    }, {
+      idempotencyKey: `combat-goal-${idSuffix}:import`,
+      now,
+      idFactory: (prefix) => `${prefix}-${idSuffix}`,
+    });
+    await (window as any).StepQuestV02App.init({
+      App: (window as any).StepQuestApp,
+      forceRefresh: true,
+    });
+    (window as any).StepQuestV02UI.render();
+  }, { stepPhase: phase, idSuffix: suffix });
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+}
+
+async function reportAnchoredOutcome(page, outcome: 'partial' | 'interrupted', nextAction: string) {
+  await page.locator('#v02-open-report').click();
+  await page.locator(`[data-v02-outcome="${outcome}"]`).click();
+  await page.locator('#v02-next-action').fill(nextAction);
+  await page.locator('#v02-save-outcome').click();
+}
+
+async function reloadAfterCombatHandoff(page) {
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
+  await page.reload();
+}
+
+test('moving character imports exact WebM and restarts muted inline skill video at zero', runMovingCharacterWebmTest);
+
+test('moving character imports animated WebP idle and completed combat uses truthful HP delta', async ({ page }) => {
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  await importMovingCharacter(page);
+
+  const idle = page.locator('img[data-v02-character-media="idle"]');
+  await expect(idle).toBeVisible();
+  await expect(idle).toHaveAttribute('src', /^blob:/);
+  await expect(page.locator('video[data-v02-character-media="idle"]')).toHaveCount(0);
+
+  await createGoal(page, 'animated WebP combat');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await expect(page.locator('#v02-expedition-active img[data-v02-character-media="idle"]')).toBeVisible();
+
+  await page.evaluate(() => {
+    const observed: Record<string, number> = {};
+    (window as any).__slice6CombatStarts = observed;
+    const handoffs = new WeakSet();
+    const observer = new MutationObserver(() => {
+      if (!observed.skill && document.querySelector('[data-v02-character-media="skill"]')) {
+        observed.skill = performance.now();
+      }
+      if (!observed.fx && document.querySelector('[data-v02-fx-overlay]')) {
+        observed.fx = performance.now();
+      }
+      document.querySelectorAll('[data-v02-combat-complete]').forEach((node) => {
+        if (handoffs.has(node)) return;
+        handoffs.add(node);
+        observed.handoffs = (observed.handoffs || 0) + 1;
+      });
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  });
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+
+  const combat = page.locator('[data-v02-combat]');
+  await expect(combat).toBeVisible();
+  await expect(combat.locator('img[data-v02-character-media="skill"]')).toBeVisible();
+  await expect(combat.locator('[data-v02-fx-overlay]')).toBeVisible();
+  await expect(combat.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuemax', '2');
+  await expect(combat.locator('[data-v02-damage]')).toHaveText('2 데미지');
+  await expect(combat.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '0');
+  await expect(combat.locator('[data-v02-monster-state]')).toHaveAttribute('data-v02-monster-state', 'defeated');
+  const starts = await page.evaluate(() => ({ ...(window as any).__slice6CombatStarts }));
+  expect(Math.abs(starts.skill - starts.fx)).toBeLessThan(50);
+
+  const handoff = page.locator('[data-v02-combat-complete]');
+  await expect(handoff).toBeVisible();
+  await expect(handoff).toHaveAttribute('data-v02-final-hp', '0');
+  await expect(handoff).toHaveAttribute('data-v02-defeated', 'true');
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__slice6CombatStarts.handoffs
+  ))).toBe(1);
+  const pendingKey = await handoff.getAttribute('data-v02-report-key');
+  expect(pendingKey).toBeTruthy();
+  expect(await page.evaluate(async () => (
+    await (window as any).StepQuestV02App.getPendingBattleReport()
+  )?.key)).toBe(pendingKey);
+  await page.reload();
+  await page.waitForFunction(() => Boolean((window as any).StepQuestV02App?.getSnapshot?.()));
+  expect(await page.evaluate(async () => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    return {
+      key: (await (window as any).StepQuestV02App.getPendingBattleReport())?.key,
+      acknowledged: await repository.getMeta('acknowledgedBattleReportKey') ?? null,
+    };
+  })).toEqual({ key: pendingKey, acknowledged: null });
+});
+
+test('combat sequence report commit admits one atomic caller across save and outcome controls', async ({ page }) => {
+  await resetV02(page);
+  await seedPhaseGoal(page, 'start', 'atomic-commit');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="partial"]').click();
+  await page.locator('#v02-next-action').fill('keep one report command');
+
+  await page.evaluate(() => {
+    const Core = (window as any).StepQuestV02App;
+    const originalReport = Core.reportCurrentExpedition.bind(Core);
+    const probe = { coreCalls: 0, sequences: 0, handoffs: 0 };
+    const seenSequences = new WeakSet();
+    const seenHandoffs = new WeakSet();
+    (window as any).__slice6CommitRace = probe;
+    Core.reportCurrentExpedition = async (...args) => {
+      probe.coreCalls += 1;
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+      return originalReport(...args);
+    };
+    const observer = new MutationObserver(() => {
+      document.querySelectorAll('[data-v02-combat]').forEach((node) => {
+        if (seenSequences.has(node)) return;
+        seenSequences.add(node);
+        probe.sequences += 1;
+      });
+      document.querySelectorAll('[data-v02-combat-complete]').forEach((node) => {
+        if (seenHandoffs.has(node)) return;
+        seenHandoffs.add(node);
+        probe.handoffs += 1;
+      });
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  });
+
+  const controlsDisabled = await page.evaluate(() => {
+    (document.querySelector('#v02-save-outcome') as HTMLButtonElement).click();
+    (document.querySelector('[data-v02-outcome="completed"]') as HTMLButtonElement).click();
+    return Array.from(document.querySelectorAll('#v02-return-report button, #v02-return-report input, #v02-return-report textarea'))
+      .every((control) => (control as HTMLButtonElement | HTMLInputElement | HTMLTextAreaElement).disabled);
+  });
+  expect(controlsDisabled).toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as any).__slice6CommitRace.coreCalls)).toBe(1);
+  await expect(page.locator('[data-v02-combat-skip]')).toBeVisible();
+  await page.locator('[data-v02-combat-skip]').click();
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => ({ ...(window as any).__slice6CommitRace }))).toEqual({
+    coreCalls: 1,
+    sequences: 1,
+    handoffs: 1,
+  });
+});
+
+test('combat sequence skip aborts media FX and hit then hands off final state once', async ({ page }) => {
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  await importMovingCharacter(page);
+  await createGoal(page, 'skip one combat controller');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.evaluate(() => {
+    const probe = { skill: 0, fx: 0, handoffs: 0, damage: 0 };
+    (window as any).__slice6SkipProbe = probe;
+    const seenHandoffs = new WeakSet();
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[data-v02-character-media="skill"]')) probe.skill += 1;
+      if (document.querySelector('[data-v02-fx-overlay]')) probe.fx += 1;
+      if (document.querySelector('[data-v02-damage]')?.textContent?.trim()) probe.damage += 1;
+      document.querySelectorAll('[data-v02-combat-complete]').forEach((node) => {
+        if (seenHandoffs.has(node)) return;
+        seenHandoffs.add(node);
+        probe.handoffs += 1;
+      });
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  });
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await page.locator('[data-v02-combat-skip]').click();
+
+  const handoff = page.locator('[data-v02-combat-complete]');
+  await expect(handoff).toHaveCount(1, { timeout: 250 });
+  await expect(handoff).toHaveAttribute('data-v02-final-hp', '0');
+  await expect(handoff).toHaveAttribute('data-v02-defeated', 'true');
+  await expect(page.locator('[data-v02-character-media="skill"]')).toHaveCount(0);
+  await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+  await page.waitForTimeout(3_200);
+  await expect(handoff).toHaveCount(1);
+  await expect(page.locator('[data-v02-damage]')).toHaveCount(0);
+  const probe = await page.evaluate(() => ({ ...(window as any).__slice6SkipProbe }));
+  expect(probe.skill).toBeGreaterThan(0);
+  expect(probe.fx).toBeGreaterThan(0);
+  expect(probe.handoffs).toBe(1);
+  expect(probe.damage).toBe(0);
+});
+
+test('combat sequence lifecycle wake preserves one skill node URL focus and handoff', async ({ page }) => {
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  await importMovingCharacter(page);
+  await createGoal(page, 'combat lifecycle preservation');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  const skill = page.locator('[data-v02-character-media="skill"]');
+  const skillHandle = await skill.elementHandle();
+  const source = await skill.getAttribute('src');
+  await page.evaluate(() => {
+    const originalRevoke = URL.revokeObjectURL.bind(URL);
+    const Core = (window as any).StepQuestV02App;
+    const refreshSnapshot = Core.refreshSnapshot.bind(Core);
+    const probe = { revoked: 0, refreshStarted: 0, refreshCompleted: 0 };
+    (window as any).__slice6CombatWakeProbe = probe;
+    Core.refreshSnapshot = async () => {
+      probe.refreshStarted += 1;
+      try {
+        return await refreshSnapshot();
+      } finally {
+        probe.refreshCompleted += 1;
+      }
+    };
+    URL.revokeObjectURL = (value) => {
+      probe.revoked += 1;
+      originalRevoke(value);
+    };
+    (document.querySelector('[data-v02-combat-skip]') as HTMLButtonElement).focus();
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('pageshow'));
+    window.dispatchEvent(new Event('focus'));
+  });
+  await page.waitForTimeout(300);
+  await expectElementPreserved(skillHandle, '[data-v02-character-media="skill"]', false);
+  await expect(skill).toHaveAttribute('src', source!);
+  await expect(page.locator('[data-v02-combat-skip]')).toBeFocused();
+  expect(await page.evaluate(() => ({ ...(window as any).__slice6CombatWakeProbe }))).toEqual({
+    revoked: 0,
+    refreshStarted: 0,
+    refreshCompleted: 0,
+  });
+  await page.locator('[data-v02-combat-skip]').click();
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__slice6CombatWakeProbe.refreshCompleted
+  ))).toBe(1);
+  expect(await page.evaluate(() => ({ ...(window as any).__slice6CombatWakeProbe }))).toEqual({
+    revoked: 3,
+    refreshStarted: 1,
+    refreshCompleted: 1,
+  });
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
+});
+
+test('moving character reduced motion never mounts animated img or video', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  await importMovingCharacter(page);
+
+  await expect(page.locator('[data-v02-character-media="idle"]')).toHaveCount(0);
+  await expect(page.locator('[data-v02-character-media="skill"]')).toHaveCount(0);
+  await expect(page.locator('video')).toHaveCount(0);
+  await expect(page.locator('#v02-character-image')).toBeVisible();
+
+  await createGoal(page, 'reduced motion combat');
+  await page.locator('#v02-start-step').click();
+  await page.locator('#v02-open-report').click();
+  await page.evaluate(() => {
+    const probe = { animatedMedia: 0 };
+    (window as any).__slice6ReducedMotionProbe = probe;
+    const observer = new MutationObserver(() => {
+      probe.animatedMedia += document.querySelectorAll(
+        '[data-v02-character-media="idle"], [data-v02-character-media="skill"], video',
+      ).length;
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  });
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '0');
+  await expect(page.locator('[data-v02-character-media="idle"]')).toHaveCount(0);
+  await expect(page.locator('[data-v02-character-media="skill"]')).toHaveCount(0);
+  await expect(page.locator('video')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__slice6ReducedMotionProbe.animatedMedia)).toBe(0);
+});
+
+test('combat sequence derives first repeated and completed damage from the same start-phase lineage', async ({ page }) => {
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  await importMovingCharacter(page);
+  await seedPhaseGoal(page, 'start', 'truthful-lineage');
+
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await reportAnchoredOutcome(page, 'partial', 'continue the same lineage');
+  const firstCombat = page.locator('[data-v02-combat]');
+  await expect(firstCombat.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '2');
+  const progressFx = firstCombat.locator('[data-v02-fx-mode="progress"]');
+  await expect(progressFx).toHaveAttribute('data-v02-fx-duration', '720');
+  await expect(progressFx.locator('[data-v02-fx-step="cutin"]')).toHaveCount(0);
+  await expect(firstCombat.locator('[data-v02-character-media="skill"]')).toBeVisible();
+  await expect(firstCombat.locator('[data-v02-damage]')).toHaveText('1 데미지');
+  await expect(firstCombat.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '1');
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '1');
+
+  await page.reload();
+  await expect(page.locator('#v02-resume-anchor')).toBeVisible();
+  await page.locator('#v02-resume-step').click();
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+  expect(await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().steps
+      .find((step) => step.id === 'combat-step-truthful-lineage')?.status
+  ))).toBe('active');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="partial"]').click();
+  await page.locator('#v02-next-action').fill('repeat without new entitlement');
+  await page.evaluate(() => {
+    const probe = { guards: 0, skill: 0, fx: 0, damage: 0 };
+    (window as any).__slice6GuardProbe = probe;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[data-v02-combat-phase="guard"]')) probe.guards += 1;
+      if (document.querySelector('[data-v02-character-media="skill"]')) probe.skill += 1;
+      if (document.querySelector('[data-v02-fx-overlay]')) probe.fx += 1;
+      if (document.querySelector('[data-v02-damage]')?.textContent?.trim()) probe.damage += 1;
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  });
+  await page.locator('#v02-save-outcome').click();
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '1');
+  const guardProbe = await page.evaluate(() => ({ ...(window as any).__slice6GuardProbe }));
+  expect(guardProbe.guards).toBeGreaterThan(0);
+  expect(guardProbe.skill).toBe(0);
+  expect(guardProbe.fx).toBe(0);
+  expect(guardProbe.damage).toBe(0);
+
+  await page.reload();
+  await page.locator('#v02-resume-step').click();
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+  expect(await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().steps
+      .find((step) => step.id === 'combat-step-truthful-lineage')?.status
+  ))).toBe('active');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  const completed = page.locator('[data-v02-combat]');
+  await expect(completed.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '1');
+  await expect(completed.locator('[data-v02-damage]')).toHaveText('1 데미지');
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '0');
+});
+
+test('combat sequence gives entry partial a neutral zero-damage guard', async ({ page }) => {
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  await importMovingCharacter(page);
+  await seedPhaseGoal(page, 'open', 'entry-guard');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="partial"]').click();
+  await page.locator('#v02-next-action').fill('entry remains neutral');
+  const guardSeen = page.evaluate(() => new Promise((resolve) => {
+    const observer = new MutationObserver(() => {
+      const guard = document.querySelector('[data-v02-combat-phase="guard"]');
+      if (!guard) return;
+      resolve({
+        state: guard.querySelector('[data-v02-monster-state]')?.getAttribute('data-v02-monster-state'),
+        hp: guard.querySelector('[data-v02-monster-hp]')?.getAttribute('aria-valuenow'),
+        skill: guard.querySelectorAll('[data-v02-character-media="skill"]').length,
+        fx: guard.querySelectorAll('[data-v02-fx-overlay]').length,
+        damage: guard.querySelector('[data-v02-damage]')?.textContent || '',
+      });
+      observer.disconnect();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }));
+  await page.locator('#v02-save-outcome').click();
+  expect(await guardSeen).toEqual({ state: 'guarded', hp: '2', skill: 0, fx: 0, damage: '' });
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '2');
+});
+
+test('combat sequence never attacks for interrupted or not-started outcomes', async ({ page }) => {
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  await importMovingCharacter(page);
+  await createGoal(page, 'no attack outcomes');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.evaluate(() => {
+    const probe = { skill: 0, fx: 0, fxModes: [] as string[], hit: 0, damage: 0 };
+    const seenFx = new WeakSet();
+    (window as any).__slice6NoAttackProbe = probe;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[data-v02-character-media="skill"]')) probe.skill += 1;
+      document.querySelectorAll('[data-v02-fx-overlay]').forEach((node) => {
+        if (seenFx.has(node)) return;
+        seenFx.add(node);
+        probe.fx += 1;
+        probe.fxModes.push((node as HTMLElement).dataset.v02FxMode || 'unknown');
+      });
+      if (document.querySelector('[data-v02-monster-state="hit"], [data-v02-monster-state="defeated"]')) probe.hit += 1;
+      if (document.querySelector('[data-v02-damage]')?.textContent?.trim()) probe.damage += 1;
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true });
+  });
+  await reportAnchoredOutcome(page, 'interrupted', 'resume without attack');
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '2');
+  await expect(page.locator('[data-v02-combat], [data-v02-character-media="skill"], [data-v02-fx-overlay], [data-v02-damage]')).toHaveCount(0);
+  expect(await page.evaluate(() => ({ ...(window as any).__slice6NoAttackProbe }))).toEqual({
+    skill: 0, fx: 0, fxModes: [], hit: 0, damage: 0,
+  });
+
+  await page.reload();
+  await page.locator('#v02-resume-step').click();
+  await expect(page.locator('#v02-start-step')).toBeVisible();
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.locator('#v02-open-report').click();
+  await page.evaluate(() => {
+    const probe = { skill: 0, fx: 0, fxModes: [] as string[], hit: 0, damage: 0 };
+    const seenFx = new WeakSet();
+    (window as any).__slice6NoAttackProbe = probe;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[data-v02-character-media="skill"]')) probe.skill += 1;
+      document.querySelectorAll('[data-v02-fx-overlay]').forEach((node) => {
+        if (seenFx.has(node)) return;
+        seenFx.add(node);
+        probe.fx += 1;
+        probe.fxModes.push((node as HTMLElement).dataset.v02FxMode || 'unknown');
+      });
+      if (document.querySelector('[data-v02-monster-state="hit"], [data-v02-monster-state="defeated"]')) probe.hit += 1;
+      if (document.querySelector('[data-v02-damage]')?.textContent?.trim()) probe.damage += 1;
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true });
+  });
+  await page.locator('[data-v02-outcome="not_started"]').click();
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveAttribute('data-v02-final-hp', '2');
+  await expect(page.locator('[data-v02-combat], [data-v02-character-media="skill"], [data-v02-fx-overlay], [data-v02-damage]')).toHaveCount(0);
+  expect(await page.evaluate(() => ({ ...(window as any).__slice6NoAttackProbe }))).toEqual({
+    skill: 0, fx: 0, fxModes: [], hit: 0, damage: 0,
+  });
+});
+
+async function runMovingCharacterWebmTest({ page, browser }, testInfo) {
+  test.skip(testInfo.project.name !== 'desktop-chrome', 'WebM import is proved separately in desktop Chrome');
+  testInfo.setTimeout(60_000);
+  await allowBlobMediaForWebmFixture(page);
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  const fixture = await makeIsolatedWebmFixture(browser);
+  await testInfo.attach('webm-fixture-attempts', {
+    body: Buffer.from(JSON.stringify(fixture.evidence, null, 2)),
+    contentType: 'application/json',
+  });
+  expect(fixture.bytes, `desktop Chrome must produce an inspected VP8 WebM: ${JSON.stringify(fixture.evidence)}`).not.toBeNull();
+  if (!fixture.bytes) throw new Error(`VP8 WebM fixture attempts failed: ${JSON.stringify(fixture.evidence)}`);
+  await page.locator('#v02-character-settings > summary').click();
+  await page.locator('#v02-character-file').setInputFiles({
+    name: 'webm-portrait.png', mimeType: 'image/png', buffer: tinyPortrait,
+  });
+  await page.locator('#v02-save-character').click();
+  await expect(page.locator('#v02-character-image')).toHaveAttribute('src', /^blob:/);
+  await expect(page.locator('#v02-character-idle-file')).toBeEnabled();
+  const webmFile = { name: 'spark.webm', mimeType: 'video/webm', buffer: Buffer.from(fixture.bytes) };
+  await page.locator('#v02-character-idle-file').setInputFiles(webmFile);
+  await page.locator('#v02-save-character-idle').click();
+  await expect(page.locator('video[data-v02-character-media="idle"]')).toBeVisible();
+  await page.locator('#v02-character-skill-file').setInputFiles(webmFile);
+  await page.locator('#v02-save-character-skill').click();
+  const idleVideo = page.locator('video[data-v02-character-media="idle"]');
+  await expect(idleVideo).toBeVisible();
+  expect(await idleVideo.evaluate((video: HTMLVideoElement) => ({
+    muted: video.muted,
+    playsInline: video.playsInline,
+    loop: video.loop,
+    mimeType: (window as any).StepQuestV02App.getCharacter().mediaMetadata.idle.mimeType,
+  }))).toEqual({ muted: true, playsInline: true, loop: true, mimeType: 'video/webm' });
+
+  await createGoal(page, 'WebM skill restart');
+  await page.locator('#v02-start-step').click();
+  await cancelFx(page);
+  await page.evaluate(() => {
+    const originalPlay = HTMLMediaElement.prototype.play;
+    (window as any).__slice6VideoStarts = [];
+    HTMLMediaElement.prototype.play = function patchedPlay() {
+      if ((this as HTMLElement).dataset.v02CharacterMedia === 'skill') {
+        (window as any).__slice6VideoStarts.push(this.currentTime);
+      }
+      return originalPlay.call(this);
+    };
+  });
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  const skillVideo = page.locator('video[data-v02-character-media="skill"]');
+  await expect(skillVideo).toBeVisible();
+  expect(await skillVideo.evaluate((video: HTMLVideoElement) => ({
+    muted: video.muted,
+    playsInline: video.playsInline,
+    loop: video.loop,
+  }))).toEqual({ muted: true, playsInline: true, loop: false });
+  await expect.poll(() => page.evaluate(() => (window as any).__slice6VideoStarts)).toEqual([0]);
+  await page.locator('[data-v02-combat-skip]').click();
+}
+
+test('moving character accepts exact twelve MiB metadata and rejects clip overflow before storage', async ({ page }) => {
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  const result = await page.evaluate(async () => {
+    const Character = (window as any).StepQuestV02Character;
+    const Media = (window as any).StepQuestV02Media;
+    const Core = (window as any).StepQuestV02App;
+    const Storage = (window as any).StepQuestV02Storage;
+    const now = new Date().toISOString();
+    let character = Character.normalizeMetadata({ imageBlobKey: Character.MEDIA_KEYS.portrait }, now);
+    character = Character.withMediaSlot(character, 'portrait', {
+      key: Character.MEDIA_KEYS.portrait,
+      mimeType: 'image/png', byteLength: 1, width: 1, height: 1,
+    });
+    const exact = {
+      mimeType: 'image/webp',
+      byteLength: Media.MAX_CLIP_BYTES,
+      width: 8,
+      height: 8,
+      durationMs: 2_000,
+    };
+    character = Character.withMediaSlot(character, 'idle', {
+      key: Character.MEDIA_KEYS.idle,
+      ...exact,
+    });
+    character = Character.withMediaSlot(character, 'skill', {
+      key: Character.MEDIA_KEYS.skill,
+      ...exact,
+    });
+
+    const repository = await Storage.openRepository();
+    const originalOpen = Storage.openRepository;
+    Storage.openRepository = async () => repository;
+    await Core.init({ App: (window as any).StepQuestApp, forceRefresh: true });
+    Storage.openRepository = originalOpen;
+    let storageCalls = 0;
+    let objectUrlCalls = 0;
+    let arrayBufferCalls = 0;
+    repository.saveCharacterMediaSlot = async () => { storageCalls += 1; };
+    const originalCreateObjectURL = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (...args) => {
+      objectUrlCalls += 1;
+      return originalCreateObjectURL(...args);
+    };
+    const oversized = new File(
+      [new Uint8Array(Media.MAX_CLIP_BYTES + 1)],
+      'oversized.webp',
+      { type: 'image/webp' },
+    );
+    Object.defineProperty(oversized, 'arrayBuffer', {
+      value: async () => {
+        arrayBufferCalls += 1;
+        return new ArrayBuffer(0);
+      },
+    });
+    let error = null;
+    try {
+      await Core.importCharacterMedia('idle', oversized);
+    } catch (caught) {
+      error = caught.message;
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL;
+    }
+    return {
+      total: character.mediaMetadata.idle.byteLength + character.mediaMetadata.skill.byteLength,
+      limit: Media.MAX_TOTAL_BYTES,
+      error,
+      storageCalls,
+      objectUrlCalls,
+      arrayBufferCalls,
+    };
+  });
+  expect(result).toEqual({
+    total: 12 * 1024 * 1024,
+    limit: 12 * 1024 * 1024,
+    error: 'CHARACTER_MEDIA_TOO_LARGE',
+    storageCalls: 0,
+    objectUrlCalls: 0,
+    arrayBufferCalls: 0,
+  });
+});
 
 test('expedition timer defaults invalid preferences to five minutes and keeps the teaser unknown', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
@@ -913,8 +1674,7 @@ test('partial progress restores a Resume Anchor after reload', async ({ page }) 
   await expect(page.locator('#v02-next-action')).toHaveValue('둘째 문장 첫 단어 쓰기');
   await expect(page.locator('#v02-last-action')).toHaveValue('첫 문장을 썼음');
   await page.locator('#v02-save-outcome').click();
-  await expect(page.locator('#v02-resume-anchor')).toContainText('둘째 문장 첫 단어 쓰기');
-  await page.reload();
+  await reloadAfterCombatHandoff(page);
   await expect(page.locator('#v02-resume-anchor')).toContainText('둘째 문장 첫 단어 쓰기');
   await page.locator('#v02-resume-step').click();
   await expect(page.locator('#v02-start-step')).toBeVisible();
@@ -929,6 +1689,7 @@ test('completed advances exactly one step', async ({ page }) => {
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="completed"]').click();
+  await reloadAfterCombatHandoff(page);
   await expect(page.locator('[data-v02-current-step]')).not.toHaveText(before);
 });
 
@@ -1141,11 +1902,11 @@ test('skill FX runs only after departure and completed state renders', async ({ 
   await expect(page.locator('[data-v02-fx-preview]:not(:disabled)')).toHaveCount(0);
   await page.locator('#v02-character-settings > summary').click();
   await page.locator('[data-v02-outcome="completed"]').click();
-  await expect(page.locator('[data-v02-current-step]')).toBeVisible();
+  await expect(page.locator('[data-v02-combat]')).toBeVisible();
   await expect(page.locator('[data-v02-fx-mode="completed"]')).toBeVisible();
   await expect(page.locator('[data-v02-fx-mode="milestone"]')).toHaveCount(0);
-  await cancelFx(page);
-  await expect(page.locator('#v02-start-step')).toBeFocused();
+  await page.locator('[data-v02-combat-skip]').click();
+  await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
 });
 
 test('skill FX uses one milestone cut-in on final completion', async ({ page }) => {
@@ -1171,6 +1932,7 @@ test('skill FX uses one milestone cut-in on final completion', async ({ page }) 
   await cancelFx(page);
   await page.locator('#v02-open-report').click();
   await page.locator('[data-v02-outcome="completed"]').click();
+  await expect(page.locator('[data-v02-combat]')).toBeVisible();
   const milestone = page.locator('[data-v02-fx-mode="milestone"]');
   await expect(milestone).toBeVisible();
   await expect(milestone.locator('[data-v02-fx-step="cutin"]')).toBeVisible();
@@ -1190,6 +1952,7 @@ for (const outcome of ['partial', 'interrupted', 'not_started']) {
       await page.locator('#v02-save-outcome').click();
     }
     await expect(page.locator('[data-v02-fx-overlay]')).toHaveCount(0);
+    await expect(page.locator('[data-v02-combat-complete]')).toHaveCount(1);
   });
 }
 
@@ -1217,8 +1980,7 @@ test('interrupted requires and restores a Resume Anchor', async ({ page }) => {
   await expect(page.locator('#v02-next-action')).toBeFocused();
   await page.locator('#v02-next-action').fill('마지막 문장 아래 이름 쓰기');
   await page.locator('#v02-save-outcome').click();
-  await expect(page.locator('#v02-resume-anchor')).toContainText('마지막 문장 아래 이름 쓰기');
-  await page.reload();
+  await reloadAfterCombatHandoff(page);
   await expect(page.locator('#v02-resume-anchor')).toContainText('마지막 문장 아래 이름 쓰기');
 });
 
@@ -1230,6 +1992,7 @@ test('manual shrink twice preserves reward lineage and wallet balance', async ({
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
+  await reloadAfterCombatHandoff(page);
   await page.locator('[data-v02-reason="too_big"]').click();
   await page.locator('#v02-smaller-action').fill('바닥 한 칸 보기');
   await page.locator('#v02-manual-shrink').click();
@@ -1243,6 +2006,7 @@ test('manual shrink twice preserves reward lineage and wallet balance', async ({
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
+  await reloadAfterCombatHandoff(page);
   await page.locator('[data-v02-reason="too_big"]').click();
   await page.locator('#v02-smaller-action').fill('바닥 먼지 한 점 보기');
   await page.locator('#v02-manual-shrink').click();
@@ -1260,6 +2024,7 @@ test('not started can defer and undefer with no wallet change', async ({ page })
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
+  await reloadAfterCombatHandoff(page);
   await expect(page.locator('[data-v02-reason="not_now"]')).toBeVisible();
   await page.reload();
   await expect(page.locator('[data-v02-reason="not_now"]')).toBeVisible();
@@ -1283,6 +2048,7 @@ test('mis-tap retry returns to start repeatedly without wallet changes', async (
     if (attempt === 0) await page.reload();
     await openOutcomeChooser(page);
     await page.locator('[data-v02-outcome="not_started"]').click();
+    await reloadAfterCombatHandoff(page);
     await page.locator('#v02-retry-step').click();
     await expect(page.locator('#v02-start-step')).toBeVisible();
     await expect(page.locator('#v02-wallet')).toHaveText(wallet);
@@ -1326,6 +2092,7 @@ test('missing material parks the step with context and restores it', async ({ pa
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
+  await reloadAfterCombatHandoff(page);
   await page.locator('[data-v02-reason="no_material"]').click();
   await page.locator('#v02-block-note').fill('USB cable');
   await page.locator('#v02-block-material').click();
@@ -1344,6 +2111,7 @@ test('waiting for a person persists the response context', async ({ page }) => {
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
+  await reloadAfterCombatHandoff(page);
   await page.locator('[data-v02-reason="waiting_person"]').click();
   await page.locator('#v02-block-note').fill('designer approval');
   await page.locator('#v02-block-person').click();
@@ -1358,6 +2126,7 @@ test('tired route can defer and return in one tap', async ({ page }) => {
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
+  await reloadAfterCombatHandoff(page);
   await page.locator('[data-v02-reason="tired"]').click();
   await expect(page.locator('#v02-tired-smaller')).toBeVisible();
   await page.locator('#v02-tired-defer').click();
@@ -1373,6 +2142,7 @@ test('anxious route offers a preview-sized replacement', async ({ page }) => {
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
+  await reloadAfterCombatHandoff(page);
   await page.locator('[data-v02-reason="anxious"]').click();
   await expect(page.locator('#v02-anxious-helper')).toBeVisible();
   await page.locator('#v02-smaller-action').fill('Open the file preview');
@@ -1387,6 +2157,7 @@ test('legacy direct-retry history reopens its active return report', async ({ pa
   await page.reload();
   await openOutcomeChooser(page);
   await page.locator('[data-v02-outcome="not_started"]').click();
+  await reloadAfterCombatHandoff(page);
   await expect(page.locator('[data-v02-reason="too_big"]')).toBeVisible();
 
   await page.evaluate(async () => {
@@ -1478,6 +2249,7 @@ test('completed expedition can upgrade and persist the base camp', async ({ page
   await createAndStart(page, 'Build the camp');
   await page.locator('#v02-open-report').click();
   await page.locator('[data-v02-outcome="completed"]').click();
+  await reloadAfterCombatHandoff(page);
   await expect(page.locator('#v02-upgrade-camp')).toBeVisible();
   await expect(page.locator('#v02-wallet')).toContainText('골드 2');
 
@@ -1552,6 +2324,7 @@ test('exports valid JSON and rotates five recovery snapshots', async ({ page }) 
     await page.locator('#v02-start-step').click();
     await page.locator('#v02-open-report').click();
     await page.locator('[data-v02-outcome="completed"]').click();
+    await reloadAfterCombatHandoff(page);
   }
   const exported = await page.evaluate(() => (window as any).StepQuestV02App.exportJson());
   expect(JSON.parse(exported).schemaVersion).toBe(3);

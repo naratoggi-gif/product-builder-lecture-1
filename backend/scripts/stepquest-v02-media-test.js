@@ -341,6 +341,178 @@ async function run() {
   assert.deepEqual(observations.attributes, [['playsinline', '']]);
   assert.deepEqual(observations.revoked, ['blob:valid-webm']);
 
+  const retryObservations = { created: 0, urls: 0, revoked: [], videos: [] };
+  const retriedWebM = await Media.inspectMovingMedia(
+    new Blob([webmBytes], { type: 'video/webm' }),
+    {
+      createVideo() {
+        retryObservations.created += 1;
+        const videoObservations = { attributes: [] };
+        const video = makeVideoFactory(
+          retryObservations.created === 1
+            ? { error: new Error('transient decoder failure') }
+            : { duration: 1.5, width: 32, height: 32 },
+          videoObservations,
+        )();
+        retryObservations.videos.push(video);
+        return video;
+      },
+      urlApi: {
+        createObjectURL() {
+          retryObservations.urls += 1;
+          return `blob:retry-webm-${retryObservations.urls}`;
+        },
+        revokeObjectURL: (url) => retryObservations.revoked.push(url),
+      },
+    },
+  );
+  assert.deepEqual(retriedWebM, {
+    mimeType: 'video/webm',
+    byteLength: webmBytes.length,
+    width: 32,
+    height: 32,
+    durationMs: 1500,
+  });
+  assert.equal(retryObservations.created, 2);
+  assert.equal(retryObservations.urls, 2);
+  assert.deepEqual(retryObservations.revoked, ['blob:retry-webm-1', 'blob:retry-webm-2']);
+  for (const retryVideo of retryObservations.videos) {
+    assert.equal(retryVideo.onloadedmetadata, null);
+    assert.equal(retryVideo.ontimeupdate, null);
+    assert.equal(retryVideo.onerror, null);
+  }
+
+  const silentObservations = { currentTimes: [], revoked: [] };
+  const silentVideo = {
+    muted: false,
+    playsInline: false,
+    preload: '',
+    setAttribute() {},
+    set src(_value) {},
+    duration: Number.POSITIVE_INFINITY,
+    videoWidth: 16,
+    videoHeight: 16,
+    set currentTime(value) {
+      silentObservations.currentTimes.push(value);
+    },
+  };
+  let silentError = null;
+  const silentResult = await Promise.race([
+    Media.inspectMovingMedia(
+      new Blob([webmBytes], { type: 'video/webm' }),
+      {
+        createVideo: () => silentVideo,
+        urlApi: {
+          createObjectURL: () => 'blob:silent-webm',
+          revokeObjectURL: (url) => silentObservations.revoked.push(url),
+        },
+        decodeTimeoutMs: 5,
+      },
+    ).then(
+      () => 'resolved',
+      (error) => {
+        silentError = error;
+        return 'rejected';
+      },
+    ),
+    new Promise((resolve) => setTimeout(() => resolve('pending'), 25)),
+  ]);
+  assert.equal(silentResult, 'rejected');
+  assertCode(silentError, 'CHARACTER_MEDIA_DECODE_FAILED');
+  assert.deepEqual(silentObservations.currentTimes, [0, 0]);
+  assert.equal(silentVideo.onloadedmetadata, null);
+  assert.equal(silentVideo.ontimeupdate, null);
+  assert.equal(silentVideo.onerror, null);
+  assert.deepEqual(silentObservations.revoked, ['blob:silent-webm', 'blob:silent-webm']);
+
+  const seekObservations = { attributes: [], currentTimes: [], revoked: [] };
+  let seekDuration = Number.POSITIVE_INFINITY;
+  const seekVideo = {
+    muted: false,
+    playsInline: false,
+    preload: '',
+    setAttribute(name, value) {
+      seekObservations.attributes.push([name, value]);
+    },
+    set src(_value) {
+      queueMicrotask(() => this.onloadedmetadata());
+    },
+    get duration() { return seekDuration; },
+    get videoWidth() { return 16; },
+    get videoHeight() { return 16; },
+    set currentTime(value) {
+      seekObservations.currentTimes.push(value);
+      if (value > 1_000_000) {
+        seekDuration = 1.75;
+        queueMicrotask(() => this.ontimeupdate());
+      }
+    },
+  };
+  const seekInspected = await Media.inspectMovingMedia(
+    new Blob([webmBytes], { type: 'video/webm' }),
+    {
+      createVideo: () => seekVideo,
+      urlApi: {
+        createObjectURL: () => 'blob:seek-webm',
+        revokeObjectURL: (url) => seekObservations.revoked.push(url),
+      },
+      decodeTimeoutMs: 25,
+    },
+  );
+  assert.deepEqual(seekInspected, {
+    mimeType: 'video/webm',
+    byteLength: webmBytes.length,
+    width: 16,
+    height: 16,
+    durationMs: 1750,
+  });
+  assert.equal(seekObservations.currentTimes[0] > 1_000_000, true);
+  assert.equal(seekObservations.currentTimes.at(-1), 0);
+  assert.equal(seekVideo.onloadedmetadata, null);
+  assert.equal(seekVideo.ontimeupdate, null);
+  assert.equal(seekVideo.onerror, null);
+  assert.deepEqual(seekObservations.revoked, ['blob:seek-webm']);
+
+  const seekTimeoutObservations = { currentTimes: [], revoked: [] };
+  const seekTimeoutVideo = {
+    muted: false,
+    playsInline: false,
+    preload: '',
+    setAttribute() {},
+    set src(_value) {
+      queueMicrotask(() => this.onloadedmetadata());
+    },
+    duration: Number.POSITIVE_INFINITY,
+    videoWidth: 16,
+    videoHeight: 16,
+    set currentTime(value) {
+      seekTimeoutObservations.currentTimes.push(value);
+    },
+  };
+  await assertRejectsCode(
+    () => Media.inspectMovingMedia(
+      new Blob([webmBytes], { type: 'video/webm' }),
+      {
+        createVideo: () => seekTimeoutVideo,
+        urlApi: {
+          createObjectURL: () => 'blob:seek-timeout-webm',
+          revokeObjectURL: (url) => seekTimeoutObservations.revoked.push(url),
+        },
+        decodeTimeoutMs: 5,
+      },
+    ),
+    'CHARACTER_MEDIA_DECODE_FAILED',
+  );
+  assert.equal(seekTimeoutObservations.currentTimes[0] > 1_000_000, true);
+  assert.equal(seekTimeoutObservations.currentTimes.at(-1), 0);
+  assert.equal(seekTimeoutVideo.onloadedmetadata, null);
+  assert.equal(seekTimeoutVideo.ontimeupdate, null);
+  assert.equal(seekTimeoutVideo.onerror, null);
+  assert.deepEqual(seekTimeoutObservations.revoked, [
+    'blob:seek-timeout-webm',
+    'blob:seek-timeout-webm',
+  ]);
+
   const exactLimitObservations = { attributes: [], revoked: [] };
   const exactLimit = await Media.inspectMovingMedia(
     new Blob([webmBytes], { type: 'video/webm' }),
@@ -377,12 +549,19 @@ async function run() {
   );
   assert.deepEqual(overLimitObservations.revoked, ['blob:over-limit-webm']);
 
-  const failedObservations = { attributes: [], revoked: [] };
+  const failedObservations = { attributes: [], revoked: [], videos: [] };
   await assertRejectsCode(
     () => Media.inspectMovingMedia(
       new Blob([webmBytes], { type: 'video/webm' }),
       {
-        createVideo: makeVideoFactory({ error: new Error('decode failed') }, failedObservations),
+        createVideo() {
+          const video = makeVideoFactory(
+            { error: new Error('decode failed') },
+            failedObservations,
+          )();
+          failedObservations.videos.push(video);
+          return video;
+        },
         urlApi: {
           createObjectURL: () => 'blob:failed-webm',
           revokeObjectURL: (url) => failedObservations.revoked.push(url),
@@ -391,7 +570,37 @@ async function run() {
     ),
     'CHARACTER_MEDIA_DECODE_FAILED',
   );
-  assert.deepEqual(failedObservations.revoked, ['blob:failed-webm']);
+  assert.equal(failedObservations.videos.length, 2);
+  for (const failedVideo of failedObservations.videos) {
+    assert.equal(failedVideo.onloadedmetadata, null);
+    assert.equal(failedVideo.ontimeupdate, null);
+    assert.equal(failedVideo.onerror, null);
+  }
+  assert.deepEqual(failedObservations.revoked, ['blob:failed-webm', 'blob:failed-webm']);
+
+  let unavailableVideoCalls = 0;
+  let unavailableUrlCalls = 0;
+  await assertRejectsCode(
+    () => Media.inspectMovingMedia(
+      new Blob([webmBytes], { type: 'video/webm' }),
+      {
+        createVideo() {
+          unavailableVideoCalls += 1;
+          return null;
+        },
+        urlApi: {
+          createObjectURL() {
+            unavailableUrlCalls += 1;
+            return 'blob:unavailable-webm';
+          },
+          revokeObjectURL() {},
+        },
+      },
+    ),
+    'CHARACTER_MEDIA_DECODE_UNAVAILABLE',
+  );
+  assert.equal(unavailableVideoCalls, 1);
+  assert.equal(unavailableUrlCalls, 0);
 
   const getterObservations = { revoked: [] };
   const getterVideo = {
@@ -423,7 +632,7 @@ async function run() {
   );
   assert.equal(getterVideo.onloadedmetadata, null);
   assert.equal(getterVideo.onerror, null);
-  assert.deepEqual(getterObservations.revoked, ['blob:getter-webm']);
+  assert.deepEqual(getterObservations.revoked, ['blob:getter-webm', 'blob:getter-webm']);
 
   for (const failurePoint of ['setup', 'load']) {
     const throwObservations = { revoked: [] };
@@ -453,7 +662,10 @@ async function run() {
     );
     assert.equal(throwingVideo.onloadedmetadata, null);
     assert.equal(throwingVideo.onerror, null);
-    assert.deepEqual(throwObservations.revoked, [`blob:${failurePoint}-webm`]);
+    assert.deepEqual(throwObservations.revoked, [
+      `blob:${failurePoint}-webm`,
+      `blob:${failurePoint}-webm`,
+    ]);
   }
 
   console.log(JSON.stringify({ ok: true, checked: 'stepquest-v02-media' }, null, 2));

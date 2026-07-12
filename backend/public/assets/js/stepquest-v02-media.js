@@ -269,7 +269,7 @@
     return null;
   }
 
-  async function decodeWebM(blob, options) {
+  async function decodeWebMAttempt(blob, options) {
     const documentValue = options.documentValue || root?.document;
     const urlApi = options.urlApi || root?.URL;
     const createVideo = options.createVideo || (
@@ -301,13 +301,48 @@
     try {
       return await new Promise((resolve, reject) => {
         let settled = false;
+        let loadStarted = false;
+        let rewound = false;
+        let decodeTimer = null;
+        const configuredDecodeTimeout = Number(options.decodeTimeoutMs);
+        const decodeTimeoutMs = Number.isFinite(configuredDecodeTimeout) && configuredDecodeTimeout > 0
+          ? Math.min(configuredDecodeTimeout, 5000)
+          : 5000;
+        const scheduleTimeout = typeof root?.setTimeout === 'function'
+          ? root.setTimeout.bind(root)
+          : null;
+        const cancelTimeout = typeof root?.clearTimeout === 'function'
+          ? root.clearTimeout.bind(root)
+          : null;
+        const rewind = () => {
+          if (!loadStarted || rewound) return;
+          rewound = true;
+          try { video.currentTime = 0; } catch (_error) { /* best-effort rewind */ }
+        };
+        const cleanup = () => {
+          if (decodeTimer !== null && cancelTimeout) cancelTimeout(decodeTimer);
+          decodeTimer = null;
+          try { video.onloadedmetadata = null; } catch (_error) { /* no-op */ }
+          try { video.ontimeupdate = null; } catch (_error) { /* no-op */ }
+          try { video.onerror = null; } catch (_error) { /* no-op */ }
+          rewind();
+        };
         const settle = (metadata, failed = false) => {
           if (settled) return;
           settled = true;
-          try { video.onloadedmetadata = null; } catch (_error) { /* no-op */ }
-          try { video.onerror = null; } catch (_error) { /* no-op */ }
+          cleanup();
           if (failed) reject(contractError(ERROR_CODES.DECODE_FAILED));
           else resolve(metadata);
+        };
+        const settleFiniteMetadata = () => {
+          const duration = video.duration;
+          if (!Number.isFinite(duration) || duration <= 0) return false;
+          settle({
+            width: video.videoWidth,
+            height: video.videoHeight,
+            durationMs: Math.ceil(duration * 1000),
+          });
+          return true;
         };
         try {
           video.muted = true;
@@ -316,16 +351,27 @@
           video.setAttribute?.('playsinline', '');
           video.onloadedmetadata = () => {
             try {
-              settle({
-                width: video.videoWidth,
-                height: video.videoHeight,
-                durationMs: Math.ceil(video.duration * 1000),
-              });
+              if (settleFiniteMetadata()) return;
+              video.onloadedmetadata = null;
+              video.ontimeupdate = () => {
+                try {
+                  settleFiniteMetadata();
+                } catch (_error) {
+                  settle(null, true);
+                }
+              };
+              video.currentTime = 10_000_000_000;
             } catch (_error) {
               settle(null, true);
             }
           };
           video.onerror = () => settle(null, true);
+          if (!scheduleTimeout) {
+            settle(null, true);
+            return;
+          }
+          loadStarted = true;
+          decodeTimer = scheduleTimeout(() => settle(null, true), decodeTimeoutMs);
           video.src = objectUrl;
         } catch (_error) {
           settle(null, true);
@@ -338,6 +384,19 @@
         // Revocation was attempted; preserve the inspection result or decode error.
       }
     }
+  }
+
+  async function decodeWebM(blob, options) {
+    let lastError;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await decodeWebMAttempt(blob, options);
+      } catch (error) {
+        lastError = error;
+        if (error?.code !== ERROR_CODES.DECODE_FAILED || attempt === 1) throw error;
+      }
+    }
+    throw lastError;
   }
 
   async function inspectMovingMedia(blob, options = {}) {

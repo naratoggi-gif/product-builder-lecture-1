@@ -4,9 +4,10 @@
   if (root) root.StepQuestV02FX = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, (root) => {
   const PRESETS = Object.freeze(['impact', 'dash', 'slash', 'cast']);
-  const MODES = Object.freeze(['departure', 'completed', 'milestone', 'preview']);
+  const MODES = Object.freeze(['departure', 'progress', 'completed', 'milestone', 'preview']);
   const DURATIONS = Object.freeze({
     departure: 520,
+    progress: 720,
     completed: 1050,
     milestone: 1200,
     preview: 1050,
@@ -35,7 +36,7 @@
         mode,
         duration: 120,
         reducedMotion: true,
-        steps: ['cutin', 'flash:0.3'],
+        steps: mode === 'progress' ? ['flash:0.3'] : ['cutin', 'flash:0.3'],
       };
     }
     const fullSteps = [...PRESET_STEPS[preset]];
@@ -308,7 +309,8 @@
       session.character.removeAttribute('data-v02-fx-step');
       session.character.removeAttribute('data-v02-fx-delay');
     }
-    session.document.removeEventListener('keydown', session.keyHandler, true);
+    if (session.keyHandler) session.document.removeEventListener('keydown', session.keyHandler, true);
+    if (session.abortHandler) session.signal?.removeEventListener('abort', session.abortHandler);
     session.overlay.remove();
     if (activeSession === session) activeSession = null;
     const focusTarget = session.focusReturnTarget;
@@ -328,15 +330,19 @@
     const character = options.character;
     const plan = buildPlan(options.preset, options.mode, Boolean(options.reducedMotion));
     cancel();
+    if (options.signal?.aborted) {
+      return Promise.resolve({ skipped: true, mode: plan.mode, preset: plan.preset });
+    }
     if (!documentValue?.createElement || !stage?.append || !character) {
       return Promise.resolve({ skipped: true, mode: plan.mode, preset: plan.preset });
     }
 
     const priorFocus = documentValue.activeElement;
     const logicalControl = stage.closest?.('section')?.querySelector('button');
-    const focusReturnTarget = options.restoreFocus || (
+    const interactive = options.interactive !== false;
+    const focusReturnTarget = interactive && (options.restoreFocus || (
       priorFocus && priorFocus !== documentValue.body ? priorFocus : logicalControl
-    );
+    ));
     const overlay = documentValue.createElement('div');
     overlay.className = 'v02-fx-overlay';
     overlay.tabIndex = -1;
@@ -346,11 +352,14 @@
     overlay.setAttribute('data-v02-fx-duration', String(plan.duration));
     overlay.style.setProperty('--v02-fx-color', options.color || '#65d9ff');
 
-    const skip = documentValue.createElement('button');
-    skip.type = 'button';
-    skip.setAttribute('data-v02-fx-skip', '');
-    skip.textContent = '연출 건너뛰기';
-    overlay.append(skip);
+    let skip = null;
+    if (interactive) {
+      skip = documentValue.createElement('button');
+      skip.type = 'button';
+      skip.setAttribute('data-v02-fx-skip', '');
+      skip.textContent = '연출 건너뛰기';
+      overlay.append(skip);
+    }
 
     const session = {
       document: documentValue,
@@ -366,6 +375,8 @@
       timer: null,
       resolve: null,
       keyHandler: null,
+      abortHandler: null,
+      signal: options.signal || null,
       focusReturnTarget,
     };
     activeSession = session;
@@ -374,21 +385,29 @@
       event.preventDefault();
       event.stopPropagation();
     };
-    overlay.addEventListener('pointerdown', stopPointer, true);
-    overlay.addEventListener('pointerup', stopPointer, true);
-    overlay.addEventListener('click', (event) => {
-      stopPointer(event);
-      finish(session, true);
-    }, true);
-    session.keyHandler = (event) => {
-      if (!['Escape', 'Enter', ' ', 'Spacebar'].includes(event.key)) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      finish(session, true);
-    };
-    documentValue.addEventListener('keydown', session.keyHandler, true);
+    if (interactive) {
+      overlay.addEventListener('pointerdown', stopPointer, true);
+      overlay.addEventListener('pointerup', stopPointer, true);
+      overlay.addEventListener('click', (event) => {
+        stopPointer(event);
+        finish(session, true);
+      }, true);
+      session.keyHandler = (event) => {
+        if (!['Escape', 'Enter', ' ', 'Spacebar'].includes(event.key)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        finish(session, true);
+      };
+      documentValue.addEventListener('keydown', session.keyHandler, true);
+    }
+    if (session.signal) {
+      session.abortHandler = () => finish(session, true);
+      session.signal.addEventListener('abort', session.abortHandler, { once: true });
+    }
     stage.append(overlay);
-    try { skip.focus({ preventScroll: true }); } catch (_error) { skip.focus?.(); }
+    if (skip) {
+      try { skip.focus({ preventScroll: true }); } catch (_error) { skip.focus?.(); }
+    }
 
     const effects = composePreset(session, options);
     Promise.allSettled(effects).catch(() => undefined);
