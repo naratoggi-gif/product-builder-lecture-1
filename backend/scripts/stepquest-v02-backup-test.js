@@ -122,6 +122,20 @@ async function run() {
     'character:local-primary:idle',
     'character:local-primary:skill',
   ]);
+  const corruptReference = Backup.buildFullExport({
+    ...records,
+    characters: records.characters.map((character) => ({
+      ...character,
+      media: {
+        ...character.media,
+        idleKey: 'character:local-primary:orphan',
+      },
+    })),
+  }, encodedAssets, now);
+  assert.deepEqual(corruptReference.assets.map((asset) => asset.id), [
+    'character:local-primary:portrait',
+    'character:local-primary:skill',
+  ]);
 
   assert.deepEqual(await Backup.requestPersistentStorage(undefined), {
     supported: false,

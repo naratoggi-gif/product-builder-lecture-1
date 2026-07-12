@@ -69,6 +69,75 @@
     return null;
   }
 
+  function selectedCharacterAssetKeys(character = {}) {
+    const media = character.media && typeof character.media === 'object'
+      ? character.media
+      : {};
+    const selected = new Set();
+    const portraitKey = media.portraitKey || character.imageBlobKey;
+    if (
+      portraitKey === CHARACTER_MEDIA_KEYS.portrait
+      || portraitKey === LEGACY_CHARACTER_IMAGE_KEY
+    ) {
+      selected.add(portraitKey);
+    }
+    if (media.idleKey === CHARACTER_MEDIA_KEYS.idle) selected.add(media.idleKey);
+    if (media.skillKey === CHARACTER_MEDIA_KEYS.skill) selected.add(media.skillKey);
+    return selected;
+  }
+
+  function movingMediaApi() {
+    const Media = root.StepQuestV02Media;
+    if (!Media?.validateMovingMetadata) throw new Error('CHARACTER_MEDIA_API_UNAVAILABLE');
+    return Media;
+  }
+
+  function validateDeclaredMovingMedia(metadata) {
+    const media = metadata.media && typeof metadata.media === 'object'
+      ? metadata.media
+      : {};
+    const mediaMetadata = metadata.mediaMetadata && typeof metadata.mediaMetadata === 'object'
+      ? metadata.mediaMetadata
+      : {};
+    const mediaFields = new Set(['portraitKey', 'idleKey', 'skillKey']);
+    const metadataFields = new Set(['portrait', 'idle', 'skill']);
+    if (
+      Object.keys(media).some((field) => !mediaFields.has(field))
+      || Object.keys(mediaMetadata).some((field) => !metadataFields.has(field))
+    ) {
+      throw new Error('CHARACTER_MEDIA_NON_TARGET_MISMATCH');
+    }
+
+    const declared = ['idle', 'skill'].filter((slot) => (
+      media[`${slot}Key`] !== undefined || mediaMetadata[slot] !== undefined
+    ));
+    if (!declared.length) return;
+
+    const Media = movingMediaApi();
+    let totalBytes = 0;
+    declared.forEach((slot) => {
+      const normalized = Media.validateMovingMetadata(mediaMetadata[slot] || {});
+      if (media[`${slot}Key`] !== CHARACTER_MEDIA_KEYS[slot]) {
+        throw new Error('CHARACTER_MEDIA_KEY_INVALID');
+      }
+      mediaMetadata[slot] = normalized;
+      totalBytes += normalized.byteLength;
+    });
+    if (totalBytes > Media.MAX_TOTAL_BYTES) {
+      throw new Error('CHARACTER_MEDIA_TOTAL_TOO_LARGE');
+    }
+  }
+
+  function sameSlotMetadata(left, right) {
+    if (!left || !right) return !left && !right;
+    const leftFields = Object.keys(left).sort();
+    const rightFields = Object.keys(right).sort();
+    return leftFields.length === rightFields.length
+      && leftFields.every((field, index) => (
+        field === rightFields[index] && left[field] === right[field]
+      ));
+  }
+
   function requestResult(request) {
     return new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
@@ -492,9 +561,43 @@
       };
     }
 
-    async function persistCharacterAsset(inputMetadata, slot, key, blob, operation) {
+    async function assertCurrentMediaState(previous, metadata, slot, assetStore) {
+      const previousMedia = characterMediaKeys(previous || {});
+      const candidateMedia = characterMediaKeys(metadata);
+      if (slot !== 'portrait' && !previous) {
+        throw new Error('CHARACTER_PORTRAIT_REQUIRED');
+      }
+      ['portrait', 'idle', 'skill'].forEach((name) => {
+        if (name === slot) return;
+        if (
+          previousMedia[`${name}Key`] !== candidateMedia[`${name}Key`]
+          || !sameSlotMetadata(
+            previous?.mediaMetadata?.[name],
+            metadata.mediaMetadata?.[name],
+          )
+        ) {
+          throw new Error('CHARACTER_MEDIA_NON_TARGET_MISMATCH');
+        }
+      });
+      if (slot === 'portrait') return;
+
+      const portraitKey = previousMedia.portraitKey;
+      const hasPortraitMetadata = portraitKey === LEGACY_CHARACTER_IMAGE_KEY
+        ? previous?.imageBlobKey === LEGACY_CHARACTER_IMAGE_KEY
+        : (
+          portraitKey === CHARACTER_MEDIA_KEYS.portrait
+          && previous?.media?.portraitKey === CHARACTER_MEDIA_KEYS.portrait
+          && Boolean(previous?.mediaMetadata?.portrait)
+        );
+      if (!hasPortraitMetadata) throw new Error('CHARACTER_PORTRAIT_REQUIRED');
+      const portraitAsset = await requestResult(assetStore.get(portraitKey));
+      if (!portraitAsset || (!portraitAsset.blob && !portraitAsset.bytes)) {
+        throw new Error('CHARACTER_PORTRAIT_REQUIRED');
+      }
+    }
+
+    async function persistCharacterAsset(metadata, slot, key, blob, operation) {
       const state = await getSnapshot();
-      const metadata = clone(inputMetadata);
       const commit = async (assetValue) => {
         const transaction = database.transaction(['characters', 'assets', 'backups'], 'readwrite');
         const done = transactionDone(transaction);
@@ -507,6 +610,9 @@
             requestResult(characterStore.get('local-primary')),
             requestResult(backupStore.getAll()),
           ]);
+          if (operation === 'saveCharacterMediaSlot') {
+            await assertCurrentMediaState(previous, metadata, slot, assetStore);
+          }
           writes.push(requestResult(assetStore.put({
             id: key,
             ...assetValue,
@@ -559,13 +665,16 @@
       return clone(metadata);
     }
 
-    async function saveCharacter(metadata, blob) {
-      if (!metadata?.id || !metadata?.imageBlobKey) throw new Error('CHARACTER_METADATA_INVALID');
-      if (metadata.id !== 'local-primary') throw new Error('CHARACTER_ID_INVALID');
-      if (metadata.imageBlobKey !== LEGACY_CHARACTER_IMAGE_KEY) {
+    async function saveCharacter(inputMetadata, blob) {
+      if (!inputMetadata?.id || !inputMetadata?.imageBlobKey) {
+        throw new Error('CHARACTER_METADATA_INVALID');
+      }
+      if (inputMetadata.id !== 'local-primary') throw new Error('CHARACTER_ID_INVALID');
+      if (inputMetadata.imageBlobKey !== LEGACY_CHARACTER_IMAGE_KEY) {
         throw new Error('CHARACTER_IMAGE_BLOB_KEY_INVALID');
       }
       if (!blob || typeof blob.arrayBuffer !== 'function') throw new Error('CHARACTER_IMAGE_BLOB_INVALID');
+      const metadata = clone(inputMetadata);
       return persistCharacterAsset(
         metadata,
         'portrait',
@@ -575,8 +684,8 @@
       );
     }
 
-    async function saveCharacterMediaSlot(metadata, slot, blob) {
-      if (metadata?.id !== 'local-primary') throw new Error('CHARACTER_ID_INVALID');
+    async function saveCharacterMediaSlot(inputMetadata, slot, blob) {
+      if (inputMetadata?.id !== 'local-primary') throw new Error('CHARACTER_ID_INVALID');
       if (!Object.prototype.hasOwnProperty.call(CHARACTER_MEDIA_KEYS, slot)) {
         throw new Error('CHARACTER_MEDIA_SLOT_INVALID');
       }
@@ -584,14 +693,16 @@
         throw new Error('CHARACTER_MEDIA_BLOB_INVALID');
       }
 
+      const metadata = clone(inputMetadata);
       const key = CHARACTER_MEDIA_KEYS[slot];
       const media = characterMediaKeys(metadata);
       if (
-        media[`${slot}Key`] !== key
+        metadata.media?.[`${slot}Key`] !== key
         || (slot === 'portrait' && metadata.imageBlobKey !== key)
       ) {
         throw new Error('CHARACTER_MEDIA_KEY_INVALID');
       }
+      validateDeclaredMovingMedia(metadata);
       if (
         slot !== 'portrait'
         && media.portraitKey !== CHARACTER_MEDIA_KEYS.portrait
@@ -633,7 +744,7 @@
       const normalizedCharacters = characters.map(normalizeCharacter);
       const selected = new Set();
       normalizedCharacters.forEach((character) => {
-        Object.values(characterMediaKeys(character)).forEach((key) => selected.add(key));
+        selectedCharacterAssetKeys(character).forEach((key) => selected.add(key));
       });
       return {
         characters: normalizedCharacters,
