@@ -1077,11 +1077,15 @@ test('Slice 6 facade persists semantic dialogue and applies the exact 48-hour se
     const first = await Core.beginForegroundSession('2026-07-12');
     const repeated = await Core.beginForegroundSession('2026-07-12');
 
-    await repository.setMeta('lastForegroundLocalDate', '2026-07-11');
-    await repository.setMeta('lastForegroundAt', '2026-07-10T12:00:00.001Z');
+    await repository.setMeta('foregroundSession', {
+      lastForegroundAt: '2026-07-10T12:00:00.001Z',
+      lastForegroundLocalDate: '2026-07-11',
+    });
     const belowThreshold = await Core.beginForegroundSession('2026-07-12');
-    await repository.setMeta('lastForegroundLocalDate', '2026-07-11');
-    await repository.setMeta('lastForegroundAt', '2026-07-10T12:00:00.000Z');
+    await repository.setMeta('foregroundSession', {
+      lastForegroundAt: '2026-07-10T12:00:00.000Z',
+      lastForegroundLocalDate: '2026-07-11',
+    });
     const exactThreshold = await Core.beginForegroundSession('2026-07-12');
 
     const line = await Core.chooseDialogue({
@@ -1098,7 +1102,7 @@ test('Slice 6 facade persists semantic dialogue and applies the exact 48-hour se
       exactThreshold,
       line,
       noDomainEvent: eventsBefore === JSON.stringify(Core.getSnapshot().events),
-      lastForegroundAt: await repository.getMeta('lastForegroundAt'),
+      foregroundSession: await repository.getMeta('foregroundSession'),
     };
   });
 
@@ -1108,7 +1112,10 @@ test('Slice 6 facade persists semantic dialogue and applies the exact 48-hour se
     belowThreshold: { firstLocalDate: true, longAbsence: false },
     exactThreshold: { firstLocalDate: true, longAbsence: true },
     noDomainEvent: true,
-    lastForegroundAt: '2026-07-12T12:00:00.000Z',
+    foregroundSession: {
+      lastForegroundAt: '2026-07-12T12:00:00.000Z',
+      lastForegroundLocalDate: '2026-07-12',
+    },
   });
 
   await page.reload();
@@ -1302,4 +1309,554 @@ test('Slice 6 facade rejects character media when IndexedDB is unavailable', asy
   expect(result.mode).toBe('localStorage');
   expect(result.error).toBe('CHARACTER_IMAGE_STORAGE_UNAVAILABLE');
   expect(result.character.usingDefault).toBe(true);
+});
+
+test('Slice 6 facade keeps fresh-start side effects idempotent across preference failure and replay', async ({ page }) => {
+  await resetV02(page);
+  const result = await page.evaluate(async () => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const Storage = (window as any).StepQuestV02Storage;
+    const repository = await Storage.openRepository();
+    const createdAt = '2026-07-12T00:00:00.000Z';
+    await repository.importGoal({
+      weekly: {
+        id: 'slice6-replay-goal',
+        title: 'Replay-safe start',
+        category: 'writing',
+        createdAt,
+      },
+      micro: [{
+        id: 'slice6-replay-step',
+        title: 'Start once',
+        category: 'writing',
+        phase: 'start',
+        createdAt,
+      }],
+    }, {
+      idempotencyKey: 'slice6:replay:goal',
+      now: createdAt,
+      idFactory: (prefix) => `${prefix}-slice6-replay`,
+    });
+    await repository.setMeta('lastExpeditionMinutes', 5);
+    await repository.setMeta('commitsSinceExternalBackup', 0);
+
+    const originalExecute = repository.execute;
+    const originalSetMeta = repository.setMeta;
+    let startExecuteCalls = 0;
+    let preferenceAttempts = 0;
+    repository.execute = async (operation, command) => {
+      if (operation === 'startStep') startExecuteCalls += 1;
+      return originalExecute(operation, command);
+    };
+    repository.setMeta = async (key, value) => {
+      if (key === 'lastExpeditionMinutes') {
+        preferenceAttempts += 1;
+        throw new Error('PREFERENCE_WRITE_FAILED');
+      }
+      return originalSetMeta(key, value);
+    };
+    const originalOpenRepository = Storage.openRepository;
+    Storage.openRepository = async () => repository;
+    await Core.init({ App, forceRefresh: true });
+    Storage.openRepository = originalOpenRepository;
+
+    const capture = async (callback) => {
+      try {
+        return { value: await callback(), error: null };
+      } catch (error) {
+        return { value: null, error: error.message };
+      }
+    };
+    const invalidType = await capture(() => (
+      Core.startCurrentStep('slice6:replay:start', '10')
+    ));
+    const callsAfterInvalidType = startExecuteCalls;
+    const fresh = await capture(() => (
+      Core.startCurrentStep('slice6:replay:start', 10)
+    ));
+    const validReplay = await capture(() => (
+      Core.startCurrentStep('slice6:replay:start', 25)
+    ));
+    const callsAfterValidReplay = startExecuteCalls;
+    const invalidReplay = await capture(() => (
+      Core.startCurrentStep('slice6:replay:start', 15)
+    ));
+
+    return {
+      invalidType,
+      callsAfterInvalidType,
+      fresh,
+      validReplay,
+      invalidReplay,
+      callsAfterValidReplay,
+      finalExecuteCalls: startExecuteCalls,
+      preferenceAttempts,
+      storedMinutes: await repository.getMeta('lastExpeditionMinutes'),
+      backupCount: await repository.getMeta('commitsSinceExternalBackup'),
+      startEvents: Core.getSnapshot().events
+        .filter((event) => event.type === 'step_started').length,
+    };
+  });
+
+  expect(result.invalidType.error).toBe('EXPEDITION_DURATION_INVALID');
+  expect(result.callsAfterInvalidType).toBe(0);
+  expect(result.fresh.error).toBeNull();
+  expect(result.fresh.value).toMatchObject({ stepId: 'slice6-replay-step' });
+  expect(result.validReplay.error).toBeNull();
+  expect(result.validReplay.value).toEqual(result.fresh.value);
+  expect(result.invalidReplay.error).toBe('EXPEDITION_DURATION_INVALID');
+  expect(result.callsAfterValidReplay).toBe(2);
+  expect(result.finalExecuteCalls).toBe(2);
+  expect(result.preferenceAttempts).toBe(1);
+  expect(result.storedMinutes).toBe(5);
+  expect(result.backupCount).toBe(1);
+  expect(result.startEvents).toBe(1);
+});
+
+test('Slice 6 facade retries one-record foreground state after an atomic write failure', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-07-12T12:00:00.000Z'));
+  await resetV02(page);
+  const result = await page.evaluate(async () => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const Storage = (window as any).StepQuestV02Storage;
+    const repository = await Storage.openRepository();
+    await repository.setMeta('lastForegroundLocalDate', '2026-07-11');
+    await repository.setMeta('lastForegroundAt', '2026-07-10T12:00:00.000Z');
+    const eventsBefore = JSON.stringify((await repository.getSnapshot()).events);
+
+    const originalSetMeta = repository.setMeta;
+    let foregroundWriteAttempts = 0;
+    repository.setMeta = async (key, value) => {
+      if (key === 'foregroundSession') {
+        foregroundWriteAttempts += 1;
+        if (foregroundWriteAttempts === 1) throw new Error('SESSION_WRITE_FAILED');
+      }
+      return originalSetMeta(key, value);
+    };
+    const originalOpenRepository = Storage.openRepository;
+    Storage.openRepository = async () => repository;
+    await Core.init({ App, forceRefresh: true });
+    Storage.openRepository = originalOpenRepository;
+
+    const capture = async () => {
+      try {
+        return { value: await Core.beginForegroundSession('2026-07-12'), error: null };
+      } catch (error) {
+        return { value: null, error: error.message };
+      }
+    };
+    const failed = await capture();
+    const afterFailure = {
+      combined: await repository.getMeta('foregroundSession') ?? null,
+      localDate: await repository.getMeta('lastForegroundLocalDate'),
+      timestamp: await repository.getMeta('lastForegroundAt'),
+    };
+    const retry = await capture();
+    const repeated = await capture();
+    return {
+      failed,
+      afterFailure,
+      retry,
+      repeated,
+      foregroundWriteAttempts,
+      stored: await repository.getMeta('foregroundSession'),
+      noDomainEvent: eventsBefore === JSON.stringify((await repository.getSnapshot()).events),
+    };
+  });
+
+  expect(result.failed).toEqual({ value: null, error: 'SESSION_WRITE_FAILED' });
+  expect(result.afterFailure).toEqual({
+    combined: null,
+    localDate: '2026-07-11',
+    timestamp: '2026-07-10T12:00:00.000Z',
+  });
+  expect(result.retry).toEqual({
+    value: { firstLocalDate: true, longAbsence: true },
+    error: null,
+  });
+  expect(result.repeated).toEqual({
+    value: { firstLocalDate: false, longAbsence: false },
+    error: null,
+  });
+  expect(result.foregroundWriteAttempts).toBe(3);
+  expect(result.stored).toEqual({
+    lastForegroundAt: '2026-07-12T12:00:00.000Z',
+    lastForegroundLocalDate: '2026-07-12',
+  });
+  expect(result.noDomainEvent).toBe(true);
+});
+
+test('Slice 6 facade serializes fallback foreground calls inside one document', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-07-12T12:00:00.000Z'));
+  await resetV02(page);
+  const result = await page.evaluate(async () => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const Storage = (window as any).StepQuestV02Storage;
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: undefined,
+    });
+    const repository = await Storage.openRepository();
+    const originalSetMeta = repository.setMeta;
+    repository.setMeta = async (key, value) => {
+      if (['foregroundSession', 'lastForegroundAt', 'lastForegroundLocalDate'].includes(key)) {
+        await new Promise((resolve) => setTimeout(resolve, 75));
+      }
+      return originalSetMeta(key, value);
+    };
+    const originalOpenRepository = Storage.openRepository;
+    Storage.openRepository = async () => repository;
+    await Core.init({ App, forceRefresh: true });
+    Storage.openRepository = originalOpenRepository;
+
+    const eventsBefore = JSON.stringify(Core.getSnapshot().events);
+    const sessions = await Promise.all([
+      Core.beginForegroundSession('2026-07-12'),
+      Core.beginForegroundSession('2026-07-12'),
+    ]);
+    return {
+      locksDisabled: !navigator.locks,
+      sessions,
+      stored: await repository.getMeta('foregroundSession'),
+      noDomainEvent: eventsBefore === JSON.stringify(Core.getSnapshot().events),
+    };
+  });
+
+  expect(result.locksDisabled).toBe(true);
+  expect(result.sessions.filter((session) => session.firstLocalDate)).toHaveLength(1);
+  expect(result.sessions.filter((session) => !session.firstLocalDate)).toHaveLength(1);
+  expect(result.stored).toEqual({
+    lastForegroundAt: '2026-07-12T12:00:00.000Z',
+    lastForegroundLocalDate: '2026-07-12',
+  });
+  expect(result.noDomainEvent).toBe(true);
+});
+
+test('Slice 6 facade serializes first-local-date across two tabs', async ({ page, context }) => {
+  await page.clock.setFixedTime(new Date('2026-07-12T12:00:00.000Z'));
+  await resetV02(page);
+  const secondPage = await context.newPage();
+  await secondPage.goto('/goals.html');
+  await secondPage.clock.setFixedTime(new Date('2026-07-12T12:00:00.000Z'));
+
+  const preparePage = async (target) => target.evaluate(async () => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const Storage = (window as any).StepQuestV02Storage;
+    const repository = await Storage.openRepository();
+    const originalSetMeta = repository.setMeta;
+    repository.setMeta = async (key, value) => {
+      if (['foregroundSession', 'lastForegroundAt', 'lastForegroundLocalDate'].includes(key)) {
+        await new Promise((resolve) => setTimeout(resolve, 75));
+      }
+      return originalSetMeta(key, value);
+    };
+    const originalOpenRepository = Storage.openRepository;
+    Storage.openRepository = async () => repository;
+    await Core.init({ App, forceRefresh: true });
+    Storage.openRepository = originalOpenRepository;
+    (window as any).__slice6ForegroundRepository = repository;
+    return {
+      supportsLocks: Boolean(navigator.locks?.request),
+      events: JSON.stringify(Core.getSnapshot().events),
+    };
+  });
+  const [firstPrepared, secondPrepared] = await Promise.all([
+    preparePage(page),
+    preparePage(secondPage),
+  ]);
+  const [first, second] = await Promise.all([
+    page.evaluate(() => (
+      (window as any).StepQuestV02App.beginForegroundSession('2026-07-12')
+    )),
+    secondPage.evaluate(() => (
+      (window as any).StepQuestV02App.beginForegroundSession('2026-07-12')
+    )),
+  ]);
+  const persisted = await page.evaluate(async () => {
+    const Core = (window as any).StepQuestV02App;
+    const repository = (window as any).__slice6ForegroundRepository;
+    return {
+      stored: await repository.getMeta('foregroundSession'),
+      events: JSON.stringify(Core.getSnapshot().events),
+    };
+  });
+  await secondPage.close();
+
+  expect(firstPrepared.supportsLocks).toBe(true);
+  expect(secondPrepared.supportsLocks).toBe(true);
+  expect([first, second].filter((session) => session.firstLocalDate)).toHaveLength(1);
+  expect([first, second].filter((session) => !session.firstLocalDate)).toHaveLength(1);
+  expect(persisted.stored).toEqual({
+    lastForegroundAt: '2026-07-12T12:00:00.000Z',
+    lastForegroundLocalDate: '2026-07-12',
+  });
+  expect(persisted.events).toBe(firstPrepared.events);
+});
+
+test('Slice 6 facade swaps media URLs only after a complete refresh projection', async ({ page }) => {
+  const portraitBytes = Array.from(Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  ));
+  const movingBytes = makeAnimatedWebPBytes([400, 600]);
+  await resetV02(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
+
+  const result = await page.evaluate(async ({ portraitBytes: png, movingBytes: webp }) => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const Storage = (window as any).StepQuestV02Storage;
+    await Core.init({ App, forceRefresh: true });
+    await Core.importCharacterMedia(
+      'portrait',
+      new File([Uint8Array.from(png)], 'portrait.png', { type: 'image/png' }),
+    );
+    await Core.importCharacterMedia(
+      'idle',
+      new File([Uint8Array.from(webp)], 'idle.webp', { type: 'image/webp' }),
+    );
+    await Core.importCharacterMedia(
+      'skill',
+      new File([Uint8Array.from(webp)], 'skill.webp', { type: 'image/webp' }),
+    );
+
+    const repository = await Storage.openRepository();
+    const originalOpenRepository = Storage.openRepository;
+    Storage.openRepository = async () => repository;
+    await Core.init({ App, forceRefresh: true });
+    Storage.openRepository = originalOpenRepository;
+    const view = () => {
+      const value = Core.getCharacter();
+      return {
+        urls: [value.portraitUrl, value.idleUrl, value.skillUrl],
+        mediaMetadata: JSON.stringify(value.mediaMetadata),
+      };
+    };
+    const capture = async (callback) => {
+      try {
+        await callback();
+        return null;
+      } catch (error) {
+        return error.message;
+      }
+    };
+    const urlApi: any = URL;
+    const nativeCreate = urlApi.createObjectURL.bind(urlApi);
+    const nativeRevoke = urlApi.revokeObjectURL.bind(urlApi);
+
+    const beforeReadFailure = view();
+    const readRevoked: string[] = [];
+    const originalGetCharacterMedia = repository.getCharacterMedia;
+    repository.getCharacterMedia = async () => { throw new Error('MEDIA_READ_FAILED'); };
+    urlApi.revokeObjectURL = (value) => {
+      readRevoked.push(value);
+      nativeRevoke(value);
+    };
+    const readError = await capture(() => Core.refreshSnapshot());
+    const afterReadFailure = view();
+    repository.getCharacterMedia = originalGetCharacterMedia;
+    urlApi.revokeObjectURL = nativeRevoke;
+
+    await Core.init({ App, forceRefresh: true });
+    const beforeCreateFailure = view();
+    const createMade: string[] = [];
+    const createRevoked: string[] = [];
+    let createCalls = 0;
+    urlApi.createObjectURL = (blob) => {
+      createCalls += 1;
+      if (createCalls === 2) throw new Error('URL_CREATE_FAILED');
+      const value = nativeCreate(blob);
+      createMade.push(value);
+      return value;
+    };
+    urlApi.revokeObjectURL = (value) => {
+      createRevoked.push(value);
+      nativeRevoke(value);
+    };
+    const createError = await capture(() => Core.refreshSnapshot());
+    const afterCreateFailure = view();
+    urlApi.createObjectURL = nativeCreate;
+    urlApi.revokeObjectURL = nativeRevoke;
+
+    await Core.init({ App, forceRefresh: true });
+    const beforeRevokeFailure = view();
+    const revokeAttempts: string[] = [];
+    urlApi.revokeObjectURL = (value) => {
+      revokeAttempts.push(value);
+      nativeRevoke(value);
+      if (value === beforeRevokeFailure.urls[0]) throw new Error('URL_REVOKE_FAILED');
+    };
+    const revokeError = await capture(() => Core.refreshSnapshot());
+    const afterRevokeFailure = view();
+    urlApi.revokeObjectURL = nativeRevoke;
+
+    return {
+      beforeReadFailure,
+      readError,
+      afterReadFailure,
+      readKeptOldUrls: beforeReadFailure.urls.every((value) => !readRevoked.includes(value)),
+      beforeCreateFailure,
+      createError,
+      afterCreateFailure,
+      createKeptOldUrls: beforeCreateFailure.urls
+        .every((value) => !createRevoked.includes(value)),
+      partialCreateReleased: createMade.length > 0
+        && createMade.every((value) => createRevoked.includes(value)),
+      beforeRevokeFailure,
+      revokeError,
+      afterRevokeFailure,
+      allOldRevokesAttempted: beforeRevokeFailure.urls
+        .every((value) => revokeAttempts.includes(value)),
+    };
+  }, { portraitBytes, movingBytes });
+
+  expect(result.readError).toBe('MEDIA_READ_FAILED');
+  expect(result.afterReadFailure).toEqual(result.beforeReadFailure);
+  expect(result.readKeptOldUrls).toBe(true);
+  expect(result.createError).toBe('URL_CREATE_FAILED');
+  expect(result.afterCreateFailure).toEqual(result.beforeCreateFailure);
+  expect(result.createKeptOldUrls).toBe(true);
+  expect(result.partialCreateReleased).toBe(true);
+  expect(result.revokeError).toBeNull();
+  expect(result.afterRevokeFailure.mediaMetadata).toBe(
+    result.beforeRevokeFailure.mediaMetadata,
+  );
+  expect(result.afterRevokeFailure.urls).not.toEqual(result.beforeRevokeFailure.urls);
+  expect(result.allOldRevokesAttempted).toBe(true);
+});
+
+test('Slice 6 facade treats persisted media as committed when URL refresh fails', async ({ page }) => {
+  const portraitBytes = Array.from(Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  ));
+  const movingBytes = makeAnimatedWebPBytes([400, 600]);
+  const replacementBytes = makeAnimatedWebPBytes([250, 350]);
+  await resetV02(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
+
+  const result = await page.evaluate(async ({
+    portraitBytes: png,
+    movingBytes: webp,
+    replacementBytes: replacement,
+  }) => {
+    const App = (window as any).StepQuestApp;
+    const Core = (window as any).StepQuestV02App;
+    const Storage = (window as any).StepQuestV02Storage;
+    await Core.init({ App, forceRefresh: true });
+    await Core.importCharacterMedia(
+      'portrait',
+      new File([Uint8Array.from(png)], 'portrait.png', { type: 'image/png' }),
+    );
+    await Core.importCharacterMedia(
+      'idle',
+      new File([Uint8Array.from(webp)], 'idle.webp', { type: 'image/webp' }),
+    );
+    await Core.importCharacterMedia(
+      'skill',
+      new File([Uint8Array.from(webp)], 'skill.webp', { type: 'image/webp' }),
+    );
+
+    const repository = await Storage.openRepository();
+    const originalOpenRepository = Storage.openRepository;
+    Storage.openRepository = async () => repository;
+    await Core.init({ App, forceRefresh: true });
+    Storage.openRepository = originalOpenRepository;
+    await repository.setMeta('commitsSinceExternalBackup', 0);
+    const before = Core.getCharacter();
+    const beforeUrls = [before.portraitUrl, before.idleUrl, before.skillUrl];
+    const originalSave = repository.saveCharacterMediaSlot;
+    repository.saveCharacterMediaSlot = async () => {
+      throw new Error('MEDIA_PERSISTENCE_FAILED');
+    };
+    let persistenceError = null;
+    try {
+      await Core.importCharacterMedia(
+        'skill',
+        new File([Uint8Array.from(replacement)], 'skill-failed.webp', { type: 'image/webp' }),
+      );
+    } catch (error) {
+      persistenceError = error.message;
+    }
+    repository.saveCharacterMediaSlot = originalSave;
+    const afterPersistenceFailure = Core.getCharacter();
+    const persistedAfterFailure = await repository.getCharacterMedia();
+    const backupAfterPersistenceFailure = await repository.getMeta('commitsSinceExternalBackup');
+
+    const urlApi: any = URL;
+    const nativeCreate = urlApi.createObjectURL.bind(urlApi);
+    const nativeRevoke = urlApi.revokeObjectURL.bind(urlApi);
+    const revoked: string[] = [];
+    urlApi.createObjectURL = () => { throw new Error('PRESENTATION_REFRESH_FAILED'); };
+    urlApi.revokeObjectURL = (value) => {
+      revoked.push(value);
+      nativeRevoke(value);
+    };
+    let committedError = null;
+    let committedResult = null;
+    try {
+      committedResult = await Core.importCharacterMedia(
+        'skill',
+        new File([Uint8Array.from(replacement)], 'skill-committed.webp', { type: 'image/webp' }),
+      );
+    } catch (error) {
+      committedError = error.message;
+    }
+    const afterCommittedRefreshFailure = Core.getCharacter();
+    const revokedBeforeRecovery = [...revoked];
+    const persistedAfterCommit = await repository.getCharacterMedia();
+    const backupAfterCommit = await repository.getMeta('commitsSinceExternalBackup');
+    urlApi.createObjectURL = nativeCreate;
+    urlApi.revokeObjectURL = nativeRevoke;
+    await Core.refreshSnapshot();
+    const afterRecovery = Core.getCharacter();
+
+    return {
+      persistenceError,
+      persistenceKeptUrls: [
+        afterPersistenceFailure.portraitUrl,
+        afterPersistenceFailure.idleUrl,
+        afterPersistenceFailure.skillUrl,
+      ].every((value, index) => value === beforeUrls[index]),
+      persistenceKeptData: persistedAfterFailure.character.mediaMetadata.skill.durationMs === 1000,
+      backupAfterPersistenceFailure,
+      committedError,
+      committedResultDuration: committedResult?.mediaMetadata?.skill?.durationMs ?? null,
+      committedOldProjectionDuration:
+        afterCommittedRefreshFailure.mediaMetadata.skill.durationMs,
+      committedKeptOldUrls: [
+        afterCommittedRefreshFailure.portraitUrl,
+        afterCommittedRefreshFailure.idleUrl,
+        afterCommittedRefreshFailure.skillUrl,
+      ].every((value, index) => value === beforeUrls[index]),
+      committedKeptOldOwnership: beforeUrls
+        .every((value) => !revokedBeforeRecovery.includes(value)),
+      persistedDuration: persistedAfterCommit.character.mediaMetadata.skill.durationMs,
+      backupAfterCommit,
+      recoveredDuration: afterRecovery.mediaMetadata.skill.durationMs,
+      recoveredUrlsChanged: [
+        afterRecovery.portraitUrl,
+        afterRecovery.idleUrl,
+        afterRecovery.skillUrl,
+      ].every((value, index) => value !== beforeUrls[index]),
+    };
+  }, { portraitBytes, movingBytes, replacementBytes });
+
+  expect(result.persistenceError).toBe('MEDIA_PERSISTENCE_FAILED');
+  expect(result.persistenceKeptUrls).toBe(true);
+  expect(result.persistenceKeptData).toBe(true);
+  expect(result.backupAfterPersistenceFailure).toBe(0);
+  expect(result.committedError).toBeNull();
+  expect(result.committedResultDuration).toBe(600);
+  expect(result.committedOldProjectionDuration).toBe(1000);
+  expect(result.committedKeptOldUrls).toBe(true);
+  expect(result.committedKeptOldOwnership).toBe(true);
+  expect(result.persistedDuration).toBe(600);
+  expect(result.backupAfterCommit).toBe(1);
+  expect(result.recoveredDuration).toBe(600);
+  expect(result.recoveredUrlsChanged).toBe(true);
 });

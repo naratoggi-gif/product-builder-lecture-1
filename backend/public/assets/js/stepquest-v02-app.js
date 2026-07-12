@@ -6,6 +6,7 @@
   let character = null;
   let legacyWriteBlockPending = false;
   let legacyWriteBlockRecorded = false;
+  let foregroundSessionMutex = Promise.resolve();
   const status = {
     mode: 'unknown',
     persisted: false,
@@ -60,51 +61,61 @@
     return Media;
   }
 
-  function releaseCharacterMediaUrls(urls = characterMediaUrls) {
-    if (root.URL?.revokeObjectURL) {
-      ['portrait', 'idle', 'skill'].forEach((slot) => {
-        if (urls[slot]) root.URL.revokeObjectURL(urls[slot]);
-      });
+  function withForegroundSessionLock(callback) {
+    if (root.navigator?.locks?.request) {
+      return root.navigator.locks.request('stepquest-v02:foreground-session', callback);
     }
-    if (urls === characterMediaUrls) {
-      characterMediaUrls = { portrait: null, idle: null, skill: null };
-    }
+    const pending = foregroundSessionMutex.then(callback, callback);
+    foregroundSessionMutex = pending.then(() => undefined, () => undefined);
+    return pending;
+  }
+
+  function releaseCharacterMediaUrls(urls) {
+    ['portrait', 'idle', 'skill'].forEach((slot) => {
+      if (!urls?.[slot] || !root.URL?.revokeObjectURL) return;
+      try {
+        root.URL.revokeObjectURL(urls[slot]);
+      } catch (_error) {
+        // Revoke every owned URL even when one browser cleanup call fails.
+      }
+    });
   }
 
   async function refreshCharacter() {
-    releaseCharacterMediaUrls();
     const media = await repository.getCharacterMedia();
+    const nextUrls = { portrait: null, idle: null, skill: null };
+    let nextCharacter;
+    let imageMissing = false;
     if (!media.character) {
-      character = builtInCharacter();
-      status.characterImageMissing = false;
-      return character;
-    }
-    if (!media.portrait || !root.URL?.createObjectURL) {
-      character = { ...builtInCharacter(), missingImage: true };
-      status.characterImageMissing = true;
-      return character;
+      nextCharacter = builtInCharacter();
+    } else if (!media.portrait || !root.URL?.createObjectURL) {
+      nextCharacter = { ...builtInCharacter(), missingImage: true };
+      imageMissing = true;
+    } else {
+      try {
+        ['portrait', 'idle', 'skill'].forEach((slot) => {
+          if (media[slot]) nextUrls[slot] = root.URL.createObjectURL(media[slot]);
+        });
+      } catch (error) {
+        releaseCharacterMediaUrls(nextUrls);
+        throw error;
+      }
+      nextCharacter = {
+        ...media.character,
+        imageUrl: nextUrls.portrait,
+        portraitUrl: nextUrls.portrait,
+        idleUrl: nextUrls.idle,
+        skillUrl: nextUrls.skill,
+        usingDefault: false,
+        missingImage: false,
+      };
     }
 
-    const nextUrls = { portrait: null, idle: null, skill: null };
-    try {
-      ['portrait', 'idle', 'skill'].forEach((slot) => {
-        if (media[slot]) nextUrls[slot] = root.URL.createObjectURL(media[slot]);
-      });
-    } catch (error) {
-      releaseCharacterMediaUrls(nextUrls);
-      throw error;
-    }
+    const previousUrls = characterMediaUrls;
     characterMediaUrls = nextUrls;
-    character = {
-      ...media.character,
-      imageUrl: nextUrls.portrait,
-      portraitUrl: nextUrls.portrait,
-      idleUrl: nextUrls.idle,
-      skillUrl: nextUrls.skill,
-      usingDefault: false,
-      missingImage: false,
-    };
-    status.characterImageMissing = false;
+    character = nextCharacter;
+    status.characterImageMissing = imageMissing;
+    releaseCharacterMediaUrls(previousUrls);
     return character;
   }
 
@@ -259,7 +270,16 @@
 
   async function startCurrentStep(idempotencyKey, plannedMinutes = 5) {
     requireRepository();
-    const step = snapshot.steps.find((item) => item.status === 'active');
+    if (![5, 10, 25].includes(plannedMinutes)) {
+      const error = new Error('EXPEDITION_DURATION_INVALID');
+      error.code = 'EXPEDITION_DURATION_INVALID';
+      throw error;
+    }
+    const replayed = snapshot.events.find((item) => (
+      item.type === 'step_started' && item.idempotencyKey === idempotencyKey
+    ));
+    const step = snapshot.steps.find((item) => item.status === 'active')
+      || snapshot.steps.find((item) => item.id === replayed?.stepId);
     if (!step) throw new Error('ACTIVE_STEP_NOT_FOUND');
     const transition = await repository.execute('startStep', {
       stepId: step.id,
@@ -269,7 +289,12 @@
       idFactory: makeId,
     });
     snapshot = transition.state;
-    await repository.setMeta('lastExpeditionMinutes', plannedMinutes);
+    if (transition.duplicate) return transition.result;
+    try {
+      await repository.setMeta('lastExpeditionMinutes', plannedMinutes);
+    } catch (_error) {
+      // Preference persistence is best-effort after the domain commit.
+    }
     await afterSignificantCommit();
     return transition.result;
   }
@@ -347,21 +372,28 @@
 
   async function beginForegroundSession(localDate) {
     requireRepository();
-    const observedAt = now();
-    const [previousLocalDate, previousForegroundAt] = await Promise.all([
-      repository.getMeta('lastForegroundLocalDate'),
-      repository.getMeta('lastForegroundAt'),
-    ]);
-    const elapsed = Date.parse(observedAt) - Date.parse(previousForegroundAt);
-    const result = {
-      firstLocalDate: previousLocalDate !== localDate,
-      longAbsence: Number.isFinite(elapsed) && elapsed >= 48 * 60 * 60 * 1000,
-    };
-    await Promise.all([
-      repository.setMeta('lastForegroundLocalDate', localDate),
-      repository.setMeta('lastForegroundAt', observedAt),
-    ]);
-    return result;
+    return withForegroundSessionLock(async () => {
+      const combined = await repository.getMeta('foregroundSession');
+      let previousLocalDate = combined?.lastForegroundLocalDate;
+      let previousForegroundAt = combined?.lastForegroundAt;
+      if (!combined || typeof combined !== 'object') {
+        [previousLocalDate, previousForegroundAt] = await Promise.all([
+          repository.getMeta('lastForegroundLocalDate'),
+          repository.getMeta('lastForegroundAt'),
+        ]);
+      }
+      const observedAt = now();
+      const elapsed = Date.parse(observedAt) - Date.parse(previousForegroundAt);
+      const result = {
+        firstLocalDate: previousLocalDate !== localDate,
+        longAbsence: Number.isFinite(elapsed) && elapsed >= 48 * 60 * 60 * 1000,
+      };
+      await repository.setMeta('foregroundSession', {
+        lastForegroundAt: observedAt,
+        lastForegroundLocalDate: localDate,
+      });
+      return result;
+    });
   }
 
   async function chooseDialogue(input = {}) {
@@ -522,10 +554,15 @@
       key: Character.MEDIA_KEYS[slot],
       ...inspected,
     });
-    await repository.saveCharacterMediaSlot(metadata, slot, blob);
-    await refreshCharacter();
+    const committed = await repository.saveCharacterMediaSlot(metadata, slot, blob);
+    let refreshed = null;
+    try {
+      refreshed = await refreshCharacter();
+    } catch (_error) {
+      // Persistence is authoritative; a later refresh can recover presentation URLs.
+    }
     await afterSignificantCommit();
-    return { ...character };
+    return { ...(refreshed || committed) };
   }
 
   async function exportJson() {
