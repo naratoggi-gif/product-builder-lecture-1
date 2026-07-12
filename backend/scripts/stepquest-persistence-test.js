@@ -55,6 +55,10 @@ const koEnd = goalsHtml.indexOf('\n    };', koStart);
 const koSource = goalsHtml.slice(koStart + 'const ko = '.length, koEnd + 6);
 const koStrings = Function(`return (${koSource});`)();
 
+function occurrenceCount(source, value) {
+  return source.split(value).length - 1;
+}
+
 [
   'stepquest_goals',
   'stepquest_chains',
@@ -381,22 +385,54 @@ assert.ok(goalsHtml.includes('returnCompleted'), 'completion feedback must ackno
 assert.ok(goalsHtml.includes('recent-trace'), 'stats panel must render recent attempts');
 assert.ok(goalsHtml.includes('v=0.1.1-alpha'), 'shell asset cache version must be bumped');
 assert.ok(serviceWorker.includes("const CACHE_VERSION = 'stepquest-v0.1.1-alpha'"), 'service worker cache version must follow the app version');
-assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-4'"), 'service worker cache build must change when v0.2 shell assets change');
-const v02CssUrl = '/assets/css/app.css?v=0.1.1-alpha&build=v02-core-4';
-assert.ok(goalsHtml.includes(`href="${v02CssUrl}"`), 'goals shell must cache-bust changed v0.2 CSS');
-assert.ok(serviceWorker.includes(`'${v02CssUrl}'`), 'service worker must precache the same v0.2 CSS URL');
-const v02Modules = ['domain', 'storage', 'backup', 'character', 'fx', 'app', 'ui'];
+assert.ok(serviceWorker.includes("const CACHE_BUILD = 'v02-core-5'"), 'service worker cache build must change when v0.2 shell assets change');
+const v02CssUrl = '/assets/css/app.css?v=0.1.1-alpha&build=v02-core-5';
+assert.equal(occurrenceCount(goalsHtml, `href="${v02CssUrl}"`), 1, 'goals shell must load the exact v0.2 CSS URL once');
+assert.equal(occurrenceCount(serviceWorker, `'${v02CssUrl}'`), 1, 'service worker must precache the exact v0.2 CSS URL once');
+const v02Modules = ['domain', 'storage', 'backup', 'character', 'media', 'fun', 'fx', 'app', 'ui'];
 v02Modules.forEach((name) => {
-  const assetUrl = `/assets/js/stepquest-v02-${name}.js?v=0.1.1-alpha&build=v02-core-4`;
-  assert.ok(goalsHtml.includes(`src="${assetUrl}"`), `goals shell cache key is stale for ${name}`);
-  assert.ok(serviceWorker.includes(`'${assetUrl}'`), `service worker precache key is stale for ${name}`);
+  const assetUrl = `/assets/js/stepquest-v02-${name}.js?v=0.1.1-alpha&build=v02-core-5`;
+  assert.equal(occurrenceCount(goalsHtml, `src="${assetUrl}"`), 1, `goals shell must load ${name} exactly once`);
+  assert.equal(occurrenceCount(serviceWorker, `'${assetUrl}'`), 1, `service worker must precache ${name} exactly once`);
 });
 const shellModuleOffsets = v02Modules.map((name) => goalsHtml.indexOf(`/stepquest-v02-${name}.js`));
+assert.ok(shellModuleOffsets.every((offset) => offset >= 0), 'every v0.2 shell module must exist before ordering is checked');
 assert.deepEqual(
   [...shellModuleOffsets].sort((left, right) => left - right),
   shellModuleOffsets,
   'v0.2 shell modules must load in dependency order',
 );
+const workerModuleOffsets = v02Modules.map((name) => serviceWorker.indexOf(`/stepquest-v02-${name}.js`));
+assert.ok(workerModuleOffsets.every((offset) => offset >= 0), 'every v0.2 worker module must exist before ordering is checked');
+assert.deepEqual(
+  [...workerModuleOffsets].sort((left, right) => left - right),
+  workerModuleOffsets,
+  'service worker modules must follow the shell dependency order',
+);
+const legacyAppOffset = goalsHtml.indexOf('src="/assets/js/app.js?v=0.1.1-alpha"');
+assert.ok(
+  legacyAppOffset > shellModuleOffsets[v02Modules.indexOf('fx')]
+    && legacyAppOffset < shellModuleOffsets[v02Modules.indexOf('app')],
+  'legacy app must load after v0.2 FX and before the v0.2 facade',
+);
+assert.equal(
+  occurrenceCount(goalsHtml, 'src="/assets/js/app.js?v=0.1.1-alpha"'),
+  1,
+  'legacy app must load exactly once',
+);
+const workerLegacyAppOffset = serviceWorker.indexOf("'/assets/js/app.js?v=0.1.1-alpha'");
+assert.ok(
+  workerLegacyAppOffset > workerModuleOffsets[v02Modules.indexOf('fx')]
+    && workerLegacyAppOffset < workerModuleOffsets[v02Modules.indexOf('app')],
+  'service worker must precache legacy app after v0.2 FX and before the v0.2 facade',
+);
+assert.equal(
+  occurrenceCount(serviceWorker, "'/assets/js/app.js?v=0.1.1-alpha'"),
+  1,
+  'service worker must precache legacy app exactly once',
+);
+assert.ok(!goalsHtml.includes('v02-core-4'), 'goals shell must not retain the previous v0.2 cache key');
+assert.ok(!serviceWorker.includes('v02-core-4'), 'service worker must not retain the previous v0.2 cache key');
 assert.ok(!goalsHtml.includes('v02-core-3'), 'goals shell must not retain the previous v0.2 cache key');
 assert.ok(!serviceWorker.includes('v02-core-3'), 'service worker must not retain the previous v0.2 cache key');
 assert.ok(!goalsHtml.includes('v02-core-2'), 'goals shell must not retain the previous v0.2 cache key');
@@ -406,6 +442,18 @@ assert.ok(serviceWorker.includes('self.clients.claim()'), 'service worker must c
 assert.ok(serviceWorker.includes('caches.delete(key)'), 'service worker must delete old cache versions');
 assert.ok(serviceWorker.includes('notificationclick'), 'service worker must handle reminder notification clicks');
 assert.ok(serviceWorker.includes('/goals.html?reminder=1#today'), 'notification click must return to the action screen');
+assert.ok(mainTs.includes('mediaSrc: ["\'self\'", \'blob:\']'), 'CSP must allow only local and Blob moving media');
+[
+  'slice6-spark-loop.webp',
+  'slice6-spark-loop.webm',
+  'zenitsu',
+  'thunderclap',
+  'sample-character',
+  'e2e/fixtures',
+].forEach((privateAsset) => {
+  assert.ok(!goalsHtml.toLowerCase().includes(privateAsset), `goals shell must exclude ${privateAsset}`);
+  assert.ok(!serviceWorker.toLowerCase().includes(privateAsset), `service worker must exclude ${privateAsset}`);
+});
 assert.ok(manifest.includes('큰 목표를 지금 할 수 있는 작은 행동'), 'manifest description must be localized and readable');
 assert.ok(manifest.includes('오늘의 작은 행동'), 'manifest shortcut must be localized and readable');
 assert.ok(appCss.includes('.action-timer'), 'execution timer styles are missing');
@@ -423,6 +471,19 @@ assert.ok(appCss.includes('.facility-example'), 'village facility example styles
 assert.ok(appCss.includes('.next-entrance'), 'next entrance feedback styles are missing');
 assert.ok(appCss.includes('.undo-map'), 'undo feedback styles are missing');
 assert.ok(appCss.includes('.trace-item'), 'recent attempt timeline styles are missing');
+[
+  '.v02-navigation',
+  '[data-v02-countdown]',
+  '[data-v02-encounter]',
+  '[data-v02-character-media]',
+  '[data-v02-monster-hp]',
+  '#v02-expedition-ready',
+  '#v02-battle-report',
+  '.v02-codex-grid',
+  '#v02-dialogue',
+  '#v02-next-desire',
+  '.reduce-motion [data-v02-animated]',
+].forEach((selector) => assert.ok(appCss.includes(selector), `Slice 6 CSS is missing ${selector}`));
 assert.ok(goalsHtml.includes('player-character'), 'village scene must include the equipped player character');
 assert.ok(!appCss.includes('.player-one_punch_hero'), 'super test hero styles must stay out of the production CSS bundle');
 assert.ok(devtoolsController.includes('.player-one_punch_hero'), 'dev-only super script must provide the QA hero sprite styles');
@@ -460,15 +521,20 @@ const v02Assets = [
   'stepquest-v02-domain.js',
   'stepquest-v02-storage.js',
   'stepquest-v02-backup.js',
+  'stepquest-v02-character.js',
+  'stepquest-v02-media.js',
+  'stepquest-v02-fun.js',
+  'stepquest-v02-fx.js',
   'stepquest-v02-app.js',
   'stepquest-v02-ui.js',
 ];
 let priorAssetIndex = -1;
 v02Assets.forEach((asset) => {
-  const assetUrl = `/assets/js/${asset}?v=0.1.1-alpha`;
+  const assetUrl = `/assets/js/${asset}?v=0.1.1-alpha&build=v02-core-5`;
   const assetIndex = goalsHtml.indexOf(assetUrl);
   assert.ok(assetIndex > priorAssetIndex, `goals shell must load ${asset} in dependency order`);
-  assert.ok(serviceWorker.includes(assetUrl), `service worker must cache ${asset}`);
+  assert.equal(occurrenceCount(goalsHtml, `src="${assetUrl}"`), 1, `goals shell must load ${asset} once`);
+  assert.equal(occurrenceCount(serviceWorker, `'${assetUrl}'`), 1, `service worker must cache ${asset} once`);
   priorAssetIndex = assetIndex;
 });
 assert.ok(

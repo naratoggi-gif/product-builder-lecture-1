@@ -295,7 +295,7 @@
     if (!timer || timer.phase !== 'running') {
       clearTimer();
       if (timer?.phase === 'ready' && !reporting && !document.getElementById('v02-expedition-ready')) {
-        render();
+        render('#v02-open-report');
       }
       return;
     }
@@ -963,7 +963,16 @@
     syncDialogue(dialogueInput);
     syncTimer(timer);
     if (!reporting && timer?.phase === 'ready') announceReady(vm.expedition.id);
-    if (focusSelector) Promise.resolve().then(() => document.querySelector(focusSelector)?.focus());
+    if (focusSelector) {
+      Promise.resolve().then(() => {
+        const target = document.querySelector(focusSelector);
+        if (!target) return;
+        if (/^H[1-6]$/.test(target.tagName) && !target.hasAttribute('tabindex')) {
+          target.setAttribute('tabindex', '-1');
+        }
+        target.focus();
+      });
+    }
   }
 
   function playCharacterFx(mode, preset, restoreFocus, options = {}) {
@@ -1071,7 +1080,7 @@
     pendingBattleReport = combatState.pending;
     combatState = null;
     combatPlayback = null;
-    render();
+    render('#v02-battle-report h2');
     if (combatLifecycleRefreshPending) {
       combatLifecycleRefreshPending = false;
       enqueueLifecycle(refreshFromLifecycle);
@@ -1559,23 +1568,23 @@
         const acknowledged = await Core.acknowledgeBattleReport(reportKey);
         if (!acknowledged) {
           await hydratePendingBattleReport();
-          render();
+          render('#v02-battle-report h2');
           return;
         }
         await Core.refreshSnapshot();
         const latest = await Core.getPendingBattleReport();
         if (latest) {
           pendingBattleReport = latest;
-          render();
+          render('#v02-battle-report h2');
           return;
         }
         if (pendingBattleReport && pendingBattleReport.key !== reportKey) {
-          render();
+          render('#v02-battle-report h2');
           return;
         }
         pendingBattleReport = null;
         root.history.replaceState(null, '', '#today');
-        render();
+        render('#page-root h2, #page-root button');
       } catch (error) {
         button.disabled = false;
         App.toast(error.message, true);
@@ -1650,6 +1659,10 @@
     if (lifecycleBound) return;
     lifecycleBound = true;
     document.addEventListener('visibilitychange', queueLifecycleRefresh);
+    document.addEventListener('change', (event) => {
+      if (event.target?.id !== 'reduced-motion-toggle') return;
+      Promise.resolve().then(() => render('#reduced-motion-toggle'));
+    });
     root.addEventListener('pageshow', queueLifecycleRefresh);
     root.addEventListener('focus', queueLifecycleRefresh);
     if (!hashRouteBound) {

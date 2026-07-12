@@ -1,10 +1,11 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const funScriptPath = path.resolve('public/assets/js/stepquest-v02-fun.js');
 const mediaScriptPath = path.resolve('public/assets/js/stepquest-v02-media.js');
 const sparkLoopBytes = readFileSync(path.resolve('e2e/fixtures/slice6-spark-loop.webp'));
+const sparkWebmBytes = readFileSync(path.resolve('e2e/fixtures/slice6-spark-loop.webm'));
 const tinyPortrait = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
@@ -49,115 +50,6 @@ function makeAnimatedWebPBytes(durations: number[], width = 8, height = 8) {
   header.write('RIFF', 0, 4, 'ascii');
   header.writeUInt32LE(body.length, 4);
   return Array.from(Buffer.concat([header, body]));
-}
-
-async function makeWebmFixture(page: Page) {
-  return page.evaluate(async () => {
-    if (
-      typeof MediaRecorder !== 'function'
-      || !MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
-    ) return null;
-    const canvas = document.createElement('canvas');
-    canvas.width = 32;
-    canvas.height = 32;
-    const context = canvas.getContext('2d')!;
-    context.fillStyle = '#f5b400';
-    context.fillRect(0, 0, 32, 32);
-    const stream = canvas.captureStream(0);
-    const videoTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
-    const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
-    const chunks: BlobPart[] = [];
-    try {
-      recorder.ondataavailable = (event) => chunks.push(event.data);
-      recorder.start();
-      videoTrack.requestFrame();
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      context.fillStyle = '#ffe38a';
-      context.fillRect(0, 0, 32, 32);
-      videoTrack.requestFrame();
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      let stopTimeout = 0;
-      const stopped = Promise.race([
-        new Promise((resolve) => { recorder.onstop = resolve; }),
-        new Promise<never>((_resolve, reject) => {
-          stopTimeout = window.setTimeout(
-            () => reject(new Error('MediaRecorder stop event timed out')),
-            2_000,
-          );
-        }),
-      ]);
-      recorder.stop();
-      try {
-        await stopped;
-      } finally {
-        window.clearTimeout(stopTimeout);
-      }
-      const bytes = new Uint8Array(await new Blob(chunks, { type: recorder.mimeType }).arrayBuffer());
-      if (bytes.byteLength === 0) throw new Error('MediaRecorder produced an empty WebM fixture');
-      return Array.from(bytes);
-    } finally {
-      if (recorder.state !== 'inactive') recorder.stop();
-      stream.getTracks().forEach((track) => track.stop());
-      recorder.ondataavailable = null;
-      recorder.onstop = null;
-    }
-  });
-}
-
-async function makeIsolatedWebmFixture(browser: Browser) {
-  const evidence: Array<Record<string, unknown>> = [];
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    let attemptBrowser: Browser | null = null;
-    let fixturePage: Page | null = null;
-    let attemptTimer: ReturnType<typeof setTimeout> | null = null;
-    try {
-      attemptBrowser = await browser.browserType().launch({ headless: true });
-      const attemptContext = await attemptBrowser.newContext();
-      fixturePage = await attemptContext.newPage();
-      await fixturePage.addScriptTag({ path: mediaScriptPath });
-      const bytes = await Promise.race([
-        makeWebmFixture(fixturePage),
-        new Promise<never>((_resolve, reject) => {
-          attemptTimer = setTimeout(
-            () => reject(new Error('MediaRecorder fixture attempt timed out')),
-            10_000,
-          );
-        }),
-      ]);
-      if (!bytes) {
-        evidence.push({ attempt, status: 'unsupported' });
-        return { bytes: null, evidence };
-      }
-      const metadata = await fixturePage.evaluate(async (input) => (
-        (window as any).StepQuestV02Media.inspectMovingMedia(
-          new Blob([new Uint8Array(input)], { type: 'video/webm' }),
-          { decodeTimeoutMs: 5_000 },
-        )
-      ), bytes);
-      evidence.push({ attempt, status: 'accepted', metadata });
-      return { bytes, evidence };
-    } catch (error) {
-      evidence.push({
-        attempt,
-        status: 'rejected',
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      if (attemptTimer) clearTimeout(attemptTimer);
-      await fixturePage?.close().catch(() => {});
-      await attemptBrowser?.close().catch(() => {});
-    }
-  }
-  return { bytes: null, evidence };
-}
-
-async function allowBlobMediaForWebmFixture(page: Page) {
-  await page.route('**/goals.html', async (route) => {
-    const response = await route.fetch();
-    const headers = response.headers();
-    headers['content-security-policy'] = `${headers['content-security-policy'] || "default-src 'self'"}; media-src 'self' blob:`;
-    await route.fulfill({ response, headers });
-  });
 }
 
 async function installTimerProbe(page) {
@@ -590,6 +482,46 @@ async function latestReportedEncounterHp(page) {
     return (window as any).StepQuestV02Fun.deriveEncounterHp(step, state.rewards);
   });
 }
+
+async function expectMinimumTarget(locator, minimum = 44) {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  expect(box, 'interactive target must have a rendered box').not.toBeNull();
+  if (!box) throw new Error('INTERACTIVE_TARGET_BOX_MISSING');
+  expect(box.height).toBeGreaterThanOrEqual(minimum);
+  expect(box.width).toBeGreaterThanOrEqual(minimum);
+}
+
+async function expectNoHorizontalOverflow(page) {
+  expect(await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    document: document.documentElement.scrollWidth,
+  }))).toEqual(expect.objectContaining({
+    document: expect.any(Number),
+    viewport: expect.any(Number),
+  }));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+test('Slice 6 shell loads production Fun and Media modules with Blob media CSP', async ({ page }) => {
+  const response = await page.request.get('/goals.html');
+  expect(response.ok()).toBe(true);
+  expect(response.headers()['content-security-policy']).toContain("media-src 'self' blob:");
+
+  await page.goto('/goals.html');
+  await page.waitForFunction(() => Boolean(
+    (window as any).StepQuestV02Fun
+    && (window as any).StepQuestV02Media
+    && (window as any).StepQuestV02App
+    && (window as any).StepQuestV02UI,
+  ));
+  await expect(page.locator('#v02-wallet')).toBeVisible();
+  expect(await page.evaluate(() => ({
+    fun: Boolean((window as any).StepQuestV02Fun?.buildBattleReport),
+    media: Boolean((window as any).StepQuestV02Media?.inspectMovingMedia),
+    wallet: Boolean(document.querySelector('#v02-wallet')),
+  }))).toEqual({ fun: true, media: true, wallet: true });
+});
 
 test('battle report persists across reload and Continue acknowledges its exact key', async ({ page }) => {
   await resetV02(page);
@@ -1104,7 +1036,7 @@ test('next desire uses one Domain camp cost projection on Today and report but n
   await page.evaluate(() => { window.location.hash = '#codex'; });
   await expect(page.locator('#v02-battle-report')).toBeVisible();
   await expect(desire).toHaveCount(1);
-  await page.locator('#v02-continue-report').click();
+  await continuePendingBattleReport(page);
   await page.locator('#v02-nav-codex').click();
   await expect(page.locator('#v02-codex')).toBeVisible();
   await expect(desire).toHaveCount(0);
@@ -1499,6 +1431,67 @@ test('moving character reduced motion never mounts animated img or video', async
   expect(await page.evaluate(() => (window as any).__slice6ReducedMotionProbe.animatedMedia)).toBe(0);
 });
 
+test('moving character manual reduced motion rerenders to portrait with immediate HP text', async ({ page }) => {
+  await page.addInitScript({ path: mediaScriptPath });
+  await resetV02(page);
+  await importMovingCharacter(page);
+  await expect(page.locator('[data-v02-character-media="idle"][data-v02-animated]')).toBeVisible();
+
+  await page.locator('#reduced-motion-toggle').check();
+  await expect(page.locator('body')).toHaveClass(/reduce-motion/);
+  await expect(page.locator('[data-v02-animated]')).toHaveCount(0);
+  await expect(page.locator('#v02-character-image')).toBeVisible();
+  await expect(page.locator('#reduced-motion-toggle')).toBeFocused();
+
+  await createGoal(page, 'manual reduced motion combat');
+  await page.locator('#v02-start-step').click();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  await page.locator('#v02-open-report').click();
+  await page.evaluate(() => {
+    const probe = {
+      animatedMedia: 0,
+      monsterAnimations: 0,
+      damageAnimations: 0,
+      hpZero: false,
+      damageText: '',
+    };
+    (window as any).__slice6ManualMotionProbe = probe;
+    const originalAnimate = Element.prototype.animate;
+    Element.prototype.animate = function patchedAnimate(...args) {
+      if ((this as Element).matches?.('[data-v02-monster-state]')) probe.monsterAnimations += 1;
+      if ((this as Element).matches?.('[data-v02-damage]')) probe.damageAnimations += 1;
+      return originalAnimate.apply(this, args);
+    };
+    const observe = () => {
+      probe.animatedMedia = Math.max(
+        probe.animatedMedia,
+        document.querySelectorAll('[data-v02-animated]').length,
+      );
+      if (document.querySelector('[data-v02-monster-hp][aria-valuenow="0"]')) probe.hpZero = true;
+      const text = document.querySelector('[data-v02-damage]')?.textContent?.trim();
+      if (text) probe.damageText = text;
+    };
+    const observer = new MutationObserver(observe);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    observe();
+  });
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await expect(page.locator('#v02-battle-report')).toBeVisible();
+  expect(await page.evaluate(() => ({ ...(window as any).__slice6ManualMotionProbe }))).toEqual({
+    animatedMedia: 0,
+    monsterAnimations: 0,
+    damageAnimations: 0,
+    hpZero: true,
+    damageText: '2 데미지',
+  });
+  expect(await latestReportedEncounterHp(page)).toBe(0);
+});
+
 test('combat sequence derives first repeated and completed damage from the same start-phase lineage', async ({ page }) => {
   await page.addInitScript({ path: mediaScriptPath });
   await resetV02(page);
@@ -1668,19 +1661,27 @@ test('combat sequence never attacks for interrupted or not-started outcomes', as
   });
 });
 
-async function runMovingCharacterWebmTest({ page, browser }, testInfo) {
+async function runMovingCharacterWebmTest({ page }, testInfo) {
   test.skip(testInfo.project.name !== 'desktop-chrome', 'WebM import is proved separately in desktop Chrome');
   testInfo.setTimeout(60_000);
-  await allowBlobMediaForWebmFixture(page);
-  await page.addInitScript({ path: mediaScriptPath });
   await resetV02(page);
-  const fixture = await makeIsolatedWebmFixture(browser);
-  await testInfo.attach('webm-fixture-attempts', {
-    body: Buffer.from(JSON.stringify(fixture.evidence, null, 2)),
+  const fixtureMetadata = await page.evaluate(async (input) => (
+    (window as any).StepQuestV02Media.inspectMovingMedia(
+      new Blob([new Uint8Array(input)], { type: 'video/webm' }),
+      { decodeTimeoutMs: 5_000 },
+    )
+  ), Array.from(sparkWebmBytes));
+  expect(fixtureMetadata).toMatchObject({
+    mimeType: 'video/webm',
+    width: 32,
+    height: 32,
+  });
+  expect(fixtureMetadata.durationMs).toBeGreaterThan(0);
+  expect(fixtureMetadata.durationMs).toBeLessThanOrEqual(1_000);
+  await testInfo.attach('webm-fixture-metadata', {
+    body: Buffer.from(JSON.stringify(fixtureMetadata, null, 2)),
     contentType: 'application/json',
   });
-  expect(fixture.bytes, `desktop Chrome must produce an inspected VP8 WebM: ${JSON.stringify(fixture.evidence)}`).not.toBeNull();
-  if (!fixture.bytes) throw new Error(`VP8 WebM fixture attempts failed: ${JSON.stringify(fixture.evidence)}`);
   await page.locator('#v02-character-settings > summary').click();
   await page.locator('#v02-character-file').setInputFiles({
     name: 'webm-portrait.png', mimeType: 'image/png', buffer: tinyPortrait,
@@ -1688,7 +1689,7 @@ async function runMovingCharacterWebmTest({ page, browser }, testInfo) {
   await page.locator('#v02-save-character').click();
   await expect(page.locator('#v02-character-image')).toHaveAttribute('src', /^blob:/);
   await expect(page.locator('#v02-character-idle-file')).toBeEnabled();
-  const webmFile = { name: 'spark.webm', mimeType: 'video/webm', buffer: Buffer.from(fixture.bytes) };
+  const webmFile = { name: 'spark.webm', mimeType: 'video/webm', buffer: sparkWebmBytes };
   await page.locator('#v02-character-idle-file').setInputFiles(webmFile);
   await page.locator('#v02-save-character-idle').click();
   await expect(page.locator('video[data-v02-character-media="idle"]')).toBeVisible();
@@ -1902,7 +1903,7 @@ test('expedition timer reaches harvest without writing events rewards wallet or 
   await page.clock.fastForward(5 * 60 * 1000);
 
   await expect(page.locator('#v02-expedition-ready')).toBeVisible();
-  await expect(page.locator('#v02-open-report')).not.toBeFocused();
+  await expect(page.locator('#v02-open-report')).toBeFocused();
   await expect(page.locator('#v02-expedition-ready')).not.toContainText(/골드|보상/);
   await expect(page.locator('#v02-open-report')).toHaveText('전리품 확인');
   expect(await expeditionObservation(page)).toEqual(before);
@@ -2167,9 +2168,18 @@ test('harvest state refreshes on wake and replaces a stale expedition after anot
       anchor: { nextPhysicalAction: '다른 탭에서 저장한 다음 행동' },
     });
   });
+  const committedReportKey = await secondPage.evaluate(async () => (
+    (await (window as any).StepQuestV02App.getPendingBattleReport())?.key
+  ));
+  expect(committedReportKey).toBeTruthy();
 
   await dispatchLifecycleAndWait(page, 'window', 'focus');
 
+  await expect(page.locator('#v02-battle-report')).toHaveAttribute(
+    'data-v02-report-key',
+    committedReportKey,
+  );
+  await continuePendingBattleReport(page);
   await expect(page.locator('#v02-resume-anchor')).toContainText('다른 탭에서 저장한 다음 행동');
   await expect(page.locator('#v02-return-report')).toHaveCount(0);
   await secondPage.close();
@@ -2194,12 +2204,19 @@ test('harvest state initial mount refreshes a commit made during async initializ
       anchor: { nextPhysicalAction: '최신 저장 상태에서 이어가기' },
     });
   });
-  const committedAnchor = await secondPage.evaluate(() => (
-    (window as any).StepQuestV02App.getSnapshot().resumeAnchors
-      .find((anchor) => !anchor.consumedAt).nextPhysicalAction
-  ));
+  const committed = await secondPage.evaluate(async () => ({
+    anchor: (window as any).StepQuestV02App.getSnapshot().resumeAnchors
+      .find((anchor) => !anchor.consumedAt).nextPhysicalAction,
+    reportKey: (await (window as any).StepQuestV02App.getPendingBattleReport())?.key,
+  }));
+  expect(committed.reportKey).toBeTruthy();
   await page.evaluate(() => (window as any).__releaseSlice6Mount());
 
+  await expect(page.locator('#v02-battle-report')).toHaveAttribute(
+    'data-v02-report-key',
+    committed.reportKey,
+  );
+  await continuePendingBattleReport(page);
   await expect(page.locator('#v02-resume-anchor')).toContainText('최신 저장 상태에서 이어가기');
   await expect(page.locator('#v02-expedition-active')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (
@@ -2208,7 +2225,7 @@ test('harvest state initial mount refreshes a commit made during async initializ
   const refreshProbe = await page.evaluate(() => ({ ...(window as any).__slice6MountRefreshProbe }));
   expect(refreshProbe.preRenderSnapshots).toEqual([{
     activeExpeditions: 0,
-    nextAnchor: committedAnchor,
+    nextAnchor: committed.anchor,
   }]);
   await expect.poll(() => page.evaluate(() => {
     const probe = (window as any).__slice6MountRefreshProbe;
@@ -3079,18 +3096,45 @@ test('storage persistence denial keeps the app usable and shows backup controls'
   await expect(page.locator('#v02-start-step')).toBeVisible();
 });
 
-test('mobile actions keep accessible target sizes', async ({ page }) => {
+test('Slice 6 accessibility keeps mobile targets focus live status and layout intact', async ({ page }) => {
   await resetV02(page);
   await createGoal(page, '모바일 시작 확인');
-  const viewport = page.viewportSize();
-  if (viewport && viewport.width <= 720) {
-    const startBox = await page.locator('#v02-start-step').boundingBox();
-    const walletBoxes = await page.locator('#v02-wallet span').evaluateAll((items) => (
-      items.map((item) => item.getBoundingClientRect().toJSON())
-    ));
-    expect(startBox.height).toBeGreaterThanOrEqual(44);
-    expect(Math.abs(walletBoxes[0].x - walletBoxes[1].x)).toBeLessThan(2);
-  }
+  await expectNoHorizontalOverflow(page);
+  await expectMinimumTarget(page.locator('#v02-nav-today'));
+  await expectMinimumTarget(page.locator('#v02-nav-codex'));
+  await expectMinimumTarget(page.locator('#v02-character-settings > summary'));
+  await expectMinimumTarget(page.locator('[name="v02-expedition-minutes"][value="5"]').locator('..'));
+  await page.locator('#v02-character-settings > summary').click();
+  await expectMinimumTarget(page.locator('#v02-character-file'));
+  await expectNoHorizontalOverflow(page);
+
+  await page.locator('#v02-start-step').click();
+  await expect(page.locator('#v02-expedition-active')).toBeVisible();
+  await cancelFx(page);
+  await expect(page.locator('[data-v02-countdown]')).not.toHaveAttribute('aria-live', 'assertive');
+  await expect(page.locator('[data-v02-countdown]')).not.toHaveAttribute('role', 'alert');
+  await expect(page.locator('#v02-live[aria-live="polite"]')).toHaveCount(1);
+  await expectNoHorizontalOverflow(page);
+
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="completed"]').click();
+  const progress = page.getByRole('progressbar', { name: /체력/ });
+  await expect(progress).toHaveAttribute('aria-valuemin', '0');
+  await expect(progress).toHaveAttribute('aria-valuemax', '2');
+  await expect(progress).toHaveAttribute('aria-valuenow', '2');
+  await expectMinimumTarget(page.locator('#v02-combat-skip'));
+  await page.locator('#v02-combat-skip').click();
+
+  const reportHeading = page.locator('#v02-battle-report h2');
+  await expect(reportHeading).toBeFocused();
+  await expectMinimumTarget(page.locator('#v02-continue-report'));
+  await expectNoHorizontalOverflow(page);
+  await page.locator('#v02-continue-report').click();
+  await expect(page.locator('#page-root h2').first()).toBeFocused();
+
+  await page.locator('#v02-nav-codex').click();
+  await expect(page.locator('#v02-codex-heading')).toBeFocused();
+  await expectNoHorizontalOverflow(page);
 });
 
 test('Slice 6 facade commits only valid duration preferences and refreshes cross-tab state', async ({
