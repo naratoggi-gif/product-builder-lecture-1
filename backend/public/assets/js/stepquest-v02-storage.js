@@ -20,6 +20,7 @@
   const PRESENTATION_STORES = ['characters', 'assets'];
   const ALL_STORES = [...STATE_STORES, 'meta', 'backups', 'characters'];
   const SIGNIFICANT_OPERATIONS = new Set([
+    'startStep',
     'reportOutcome',
     'routeObstacle',
     'importGoal',

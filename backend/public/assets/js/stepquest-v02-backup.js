@@ -4,6 +4,7 @@
   if (root) root.StepQuestV02Backup = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, () => {
   function buildExport(records, now = new Date().toISOString()) {
+    // Keep domain records whole so additive timing, category, and report fields survive export.
     return {
       schemaVersion: 3,
       exportedAt: now,

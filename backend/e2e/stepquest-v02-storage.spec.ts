@@ -1,6 +1,37 @@
 import { expect, test } from '@playwright/test';
 
 const NOW = '2026-07-11T00:00:00.000Z';
+const TIMED_NOW = '2026-07-12T00:00:00.000Z';
+const TIMED_EXPIRY = '2026-07-12T00:25:00.000Z';
+const TIMING_COMPAT_FIXTURES = [
+  {
+    id: 'expedition-v2-invalid',
+    stepId: 'step-v2',
+    status: 'active',
+    startedAt: NOW,
+    plannedMinutes: '25',
+    expiresAt: 'not-a-time',
+    goldCap: 2,
+    goldGranted: 0,
+  },
+  {
+    id: 'expedition-v2-legacy',
+    stepId: 'step-v2',
+    status: 'active',
+    startedAt: NOW,
+    goldCap: 2,
+    goldGranted: 0,
+  },
+  {
+    id: 'expedition-v2-mixed',
+    stepId: 'step-v2',
+    status: 'active',
+    startedAt: NOW,
+    plannedMinutes: 10,
+    goldCap: 2,
+    goldGranted: 0,
+  },
+];
 
 async function clearBrowserState(page) {
   await page.goto('/goals.html');
@@ -11,9 +42,9 @@ async function clearBrowserState(page) {
   });
 }
 
-test('upgrades v2 character stores without changing existing records', async ({ page }) => {
+test('upgrades v2 character stores without rewriting legacy timing pairs', async ({ page }) => {
   await clearBrowserState(page);
-  await page.evaluate(async ({ now }) => {
+  await page.evaluate(async ({ fixtures, now }) => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.deleteDatabase('stepquest');
       request.onsuccess = () => resolve();
@@ -36,7 +67,10 @@ test('upgrades v2 character stores without changing existing records', async ({ 
       };
       request.onsuccess = () => {
         const database = request.result;
-        const transaction = database.transaction(['goals', 'steps', 'wallet', 'backups'], 'readwrite');
+        const transaction = database.transaction(
+          ['goals', 'steps', 'expeditions', 'wallet', 'backups'],
+          'readwrite',
+        );
         transaction.objectStore('goals').put({
           id: 'goal-v2', title: 'v2 목표', status: 'active', createdAt: now, updatedAt: now,
         });
@@ -52,6 +86,9 @@ test('upgrades v2 character stores without changing existing records', async ({ 
           createdAt: now,
           updatedAt: now,
         });
+        fixtures.forEach((expedition) => {
+          transaction.objectStore('expeditions').put(expedition);
+        });
         transaction.objectStore('wallet').put({ id: 'main', stepCoin: 9, gold: 2 });
         transaction.objectStore('backups').put({ id: 'backup-v2', createdAt: now, snapshot: {} });
         transaction.oncomplete = () => { database.close(); resolve(); };
@@ -59,7 +96,7 @@ test('upgrades v2 character stores without changing existing records', async ({ 
       };
       request.onerror = () => reject(request.error);
     });
-  }, { now: NOW });
+  }, { fixtures: TIMING_COMPAT_FIXTURES, now: NOW });
 
   await page.reload();
   const result = await page.evaluate(async () => {
@@ -68,24 +105,31 @@ test('upgrades v2 character stores without changing existing records', async ({ 
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
-    const transaction = database.transaction(['goals', 'steps', 'wallet', 'backups'], 'readonly');
+    const transaction = database.transaction(
+      ['meta', 'goals', 'steps', 'expeditions', 'wallet', 'backups'],
+      'readonly',
+    );
     const requestValue = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
-    const [goal, step, wallet, backups] = await Promise.all([
+    const [goal, step, expeditions, wallet, backups, migrationComplete] = await Promise.all([
       requestValue(transaction.objectStore('goals').get('goal-v2')),
       requestValue(transaction.objectStore('steps').get('step-v2')),
+      requestValue(transaction.objectStore('expeditions').getAll()),
       requestValue(transaction.objectStore('wallet').get('main')),
       requestValue(transaction.objectStore('backups').getAll()),
+      requestValue(transaction.objectStore('meta').get('migrationComplete')),
     ]);
     const value = {
       version: database.version,
       stores: [...database.objectStoreNames],
       goal,
       step,
+      expeditions,
       wallet,
       backups,
+      migrationComplete,
     };
     database.close();
     return value;
@@ -95,8 +139,43 @@ test('upgrades v2 character stores without changing existing records', async ({ 
   expect(result.stores).toEqual(expect.arrayContaining(['characters', 'assets']));
   expect(result.goal).toMatchObject({ id: 'goal-v2', title: 'v2 목표' });
   expect(result.step).toMatchObject({ id: 'step-v2', goalId: 'goal-v2' });
+  expect(result.expeditions).toEqual(TIMING_COMPAT_FIXTURES);
   expect(result.wallet).toEqual({ id: 'main', stepCoin: 9, gold: 2 });
   expect(result.backups).toEqual([expect.objectContaining({ id: 'backup-v2' })]);
+  expect(result.migrationComplete).toBeUndefined();
+});
+
+test('keeps fallback legacy timing pairs byte-for-byte without migration metadata', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value() { throw new Error('INDEXED_DB_DISABLED_FOR_TEST'); },
+    });
+  });
+  await clearBrowserState(page);
+  const result = await page.evaluate(async (fixtures) => {
+    const Domain = (window as any).StepQuestV02Domain;
+    const state = Domain.createInitialState();
+    state.expeditions = fixtures;
+    const originalBytes = JSON.stringify(state);
+    localStorage.setItem('stepquest_v02_fallback_state', originalBytes);
+    localStorage.setItem('stepquest_v02_repository_mode', 'localStorage');
+
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const snapshot = await repository.getSnapshot();
+    return {
+      mode: repository.mode,
+      expeditions: snapshot.expeditions,
+      originalBytes,
+      storedBytes: localStorage.getItem('stepquest_v02_fallback_state'),
+      migrationComplete: (await repository.getMeta('migrationComplete')) ?? null,
+    };
+  }, TIMING_COMPAT_FIXTURES);
+
+  expect(result.mode).toBe('localStorage');
+  expect(result.expeditions).toEqual(TIMING_COMPAT_FIXTURES);
+  expect(result.storedBytes).toBe(result.originalBytes);
+  expect(result.migrationComplete).toBeNull();
 });
 
 test('persists local character blobs outside ordinary exports', async ({ page }) => {
@@ -230,6 +309,7 @@ test('keeps the same active expedition across reload', async ({ page }) => {
     });
     const started = await repository.execute('startStep', {
       stepId: '21',
+      plannedMinutes: 25,
       idempotencyKey: 'step:21:start',
       now,
       idFactory: () => 'expedition-20',
@@ -244,6 +324,118 @@ test('keeps the same active expedition across reload', async ({ page }) => {
     return snapshot.expeditions.find((item) => item.status === 'active')?.id;
   });
   expect(restoredId).toBe(expeditionId);
+});
+
+test('persists additive fields and backs up a committed IndexedDB start exactly once', async ({ page }) => {
+  await clearBrowserState(page);
+  const result = await page.evaluate(async ({ expiry, now }) => {
+    const Backup = (window as any).StepQuestV02Backup;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.importGoal({
+      weekly: {
+        id: 'timed-goal',
+        title: 'Timed goal',
+        category: 'writing',
+        createdAt: now,
+      },
+      micro: [{ id: 'timed-step', title: 'Timed step', phase: 'start', createdAt: now }],
+    }, {
+      idempotencyKey: 'timed-goal:import',
+      now,
+      idFactory: (prefix) => `${prefix}-timed-import`,
+    });
+    const beforeStart = await repository.exportRecords();
+    const started = await repository.execute('startStep', {
+      stepId: 'timed-step',
+      plannedMinutes: 25,
+      idempotencyKey: 'timed-step:start',
+      now,
+      idFactory: () => 'expedition-timed',
+    });
+    const startedRecords = await repository.exportRecords();
+    const standard = Backup.buildExport(startedRecords, now);
+    const startMirrorBytes = localStorage.getItem('stepquest_v02_fallback_state');
+    const startMirror = JSON.parse(startMirrorBytes);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const afterElapsed = await repository.exportRecords();
+    const elapsedMirrorBytes = localStorage.getItem('stepquest_v02_fallback_state');
+
+    await repository.execute('reportOutcome', {
+      expeditionId: started.result.expeditionId,
+      outcome: 'completed',
+      idempotencyKey: 'timed-step:report',
+      now: expiry,
+      idFactory: () => 'unused-anchor',
+    });
+    const reportedRecords = await repository.exportRecords();
+    const reportedMirror = JSON.parse(localStorage.getItem('stepquest_v02_fallback_state'));
+    const reportedStandard = Backup.buildExport(reportedRecords, expiry);
+    const reportEvent = reportedRecords.events.find(
+      (event) => event.idempotencyKey === 'timed-step:report',
+    );
+    const reportBackup = reportedRecords.backups.find(
+      (backup) => backup.operation === 'reportOutcome',
+    );
+
+    return {
+      mode: repository.mode,
+      beforeBackupCount: beforeStart.backups.length,
+      startedRecords,
+      startMirror,
+      standard,
+      afterElapsed,
+      startMirrorBytes,
+      elapsedMirrorBytes,
+      reportProjections: {
+        indexedDB: reportEvent.result,
+        localStorage: reportedMirror.events.find(
+          (event) => event.idempotencyKey === 'timed-step:report',
+        ).result,
+        rollingBackup: reportBackup.snapshot.events.find(
+          (event) => event.idempotencyKey === 'timed-step:report',
+        ).result,
+        standardExport: reportedStandard.events.find(
+          (event) => event.idempotencyKey === 'timed-step:report',
+        ).result,
+      },
+    };
+  }, { expiry: TIMED_EXPIRY, now: TIMED_NOW });
+
+  expect(result.mode).toBe('indexedDB');
+  expect(result.startedRecords.backups).toHaveLength(result.beforeBackupCount + 1);
+  const startBackups = result.startedRecords.backups.filter(
+    (backup) => backup.operation === 'startStep',
+  );
+  expect(startBackups).toHaveLength(1);
+  const expectedTiming = {
+    id: 'expedition-timed',
+    plannedMinutes: 25,
+    expiresAt: TIMED_EXPIRY,
+  };
+  expect(result.startedRecords.expeditions[0]).toMatchObject(expectedTiming);
+  expect(result.startMirror.expeditions[0]).toMatchObject(expectedTiming);
+  expect(startBackups[0].snapshot.expeditions[0]).toMatchObject(expectedTiming);
+  expect(result.standard.expeditions[0]).toMatchObject(expectedTiming);
+  expect(result.standard.assets).toBeUndefined();
+  expect(result.startedRecords.goals[0].category).toBe('writing');
+  expect(result.startedRecords.steps[0].category).toBe('writing');
+  expect(result.startMirror.steps[0].category).toBe('writing');
+  expect(startBackups[0].snapshot.steps[0].category).toBe('writing');
+  expect(result.standard.steps[0].category).toBe('writing');
+  expect(result.afterElapsed).toEqual(result.startedRecords);
+  expect(result.elapsedMirrorBytes).toBe(result.startMirrorBytes);
+
+  const expectedProjection = {
+    rewardLineage: 'timed-step',
+    category: 'writing',
+    reportVersion: 1,
+    goalMilestone: true,
+    goldGranted: 2,
+  };
+  Object.values(result.reportProjections).forEach((projection) => {
+    expect(projection).toMatchObject(expectedProjection);
+  });
 });
 
 test('falls back to localStorage when IndexedDB cannot open', async ({ page }) => {
@@ -294,6 +486,120 @@ test('falls back to localStorage when IndexedDB cannot open', async ({ page }) =
   });
   expect(afterReload.mode).toBe('localStorage');
   expect(afterReload.snapshot.goals[0].title).toBe('대체 저장 테스트');
+});
+
+test('persists additive fields and backs up a committed fallback start exactly once', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value() { throw new Error('INDEXED_DB_DISABLED_FOR_TEST'); },
+    });
+  });
+  await clearBrowserState(page);
+  const result = await page.evaluate(async ({ expiry, now }) => {
+    const Backup = (window as any).StepQuestV02Backup;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    await repository.importGoal({
+      weekly: {
+        id: 'fallback-timed-goal',
+        title: 'Fallback timed goal',
+        category: 'writing',
+        createdAt: now,
+      },
+      micro: [{
+        id: 'fallback-timed-step',
+        title: 'Fallback timed step',
+        phase: 'start',
+        createdAt: now,
+      }],
+    }, {
+      idempotencyKey: 'fallback-timed-goal:import',
+      now,
+      idFactory: (prefix) => `${prefix}-fallback-timed-import`,
+    });
+    const beforeStart = await repository.exportRecords();
+    const started = await repository.execute('startStep', {
+      stepId: 'fallback-timed-step',
+      plannedMinutes: 25,
+      idempotencyKey: 'fallback-timed-step:start',
+      now,
+      idFactory: () => 'expedition-fallback-timed',
+    });
+    const startedRecords = await repository.exportRecords();
+    const standard = Backup.buildExport(startedRecords, now);
+    const startStateBytes = localStorage.getItem('stepquest_v02_fallback_state');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const afterElapsed = await repository.exportRecords();
+    const elapsedStateBytes = localStorage.getItem('stepquest_v02_fallback_state');
+
+    await repository.execute('reportOutcome', {
+      expeditionId: started.result.expeditionId,
+      outcome: 'completed',
+      idempotencyKey: 'fallback-timed-step:report',
+      now: expiry,
+      idFactory: () => 'unused-anchor',
+    });
+    const reportedRecords = await repository.exportRecords();
+    const reportedStandard = Backup.buildExport(reportedRecords, expiry);
+    const reportEvent = reportedRecords.events.find(
+      (event) => event.idempotencyKey === 'fallback-timed-step:report',
+    );
+    const reportBackup = reportedRecords.backups.find(
+      (backup) => backup.operation === 'reportOutcome',
+    );
+
+    return {
+      mode: repository.mode,
+      beforeBackupCount: beforeStart.backups.length,
+      startedRecords,
+      standard,
+      afterElapsed,
+      startStateBytes,
+      elapsedStateBytes,
+      reportProjections: {
+        localStorage: reportEvent.result,
+        rollingBackup: reportBackup.snapshot.events.find(
+          (event) => event.idempotencyKey === 'fallback-timed-step:report',
+        ).result,
+        standardExport: reportedStandard.events.find(
+          (event) => event.idempotencyKey === 'fallback-timed-step:report',
+        ).result,
+      },
+    };
+  }, { expiry: TIMED_EXPIRY, now: TIMED_NOW });
+
+  expect(result.mode).toBe('localStorage');
+  expect(result.startedRecords.backups).toHaveLength(result.beforeBackupCount + 1);
+  const startBackups = result.startedRecords.backups.filter(
+    (backup) => backup.operation === 'startStep',
+  );
+  expect(startBackups).toHaveLength(1);
+  const expectedTiming = {
+    id: 'expedition-fallback-timed',
+    plannedMinutes: 25,
+    expiresAt: TIMED_EXPIRY,
+  };
+  expect(result.startedRecords.expeditions[0]).toMatchObject(expectedTiming);
+  expect(startBackups[0].snapshot.expeditions[0]).toMatchObject(expectedTiming);
+  expect(result.standard.expeditions[0]).toMatchObject(expectedTiming);
+  expect(result.standard.assets).toBeUndefined();
+  expect(result.startedRecords.goals[0].category).toBe('writing');
+  expect(result.startedRecords.steps[0].category).toBe('writing');
+  expect(startBackups[0].snapshot.steps[0].category).toBe('writing');
+  expect(result.standard.steps[0].category).toBe('writing');
+  expect(result.afterElapsed).toEqual(result.startedRecords);
+  expect(result.elapsedStateBytes).toBe(result.startStateBytes);
+
+  const expectedProjection = {
+    rewardLineage: 'fallback-timed-step',
+    category: 'writing',
+    reportVersion: 1,
+    goalMilestone: true,
+    goldGranted: 2,
+  };
+  Object.values(result.reportProjections).forEach((projection) => {
+    expect(projection).toMatchObject(expectedProjection);
+  });
 });
 
 test('localStorage fallback shows a calm built-in character notice', async ({ page }) => {

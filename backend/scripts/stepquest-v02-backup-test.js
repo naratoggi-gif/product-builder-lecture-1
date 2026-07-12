@@ -5,11 +5,29 @@ const Backup = require('../public/assets/js/stepquest-v02-backup');
 async function run() {
   const now = '2026-07-11T02:00:00.000Z';
   const records = {
-    goals: [{ id: 'goal-1' }],
-    steps: [{ id: 'step-1' }],
-    expeditions: [{ id: 'expedition-1' }],
+    goals: [{ id: 'goal-1', category: 'writing' }],
+    steps: [{ id: 'step-1', category: 'writing' }],
+    expeditions: [
+      {
+        id: 'expedition-1',
+        plannedMinutes: 25,
+        expiresAt: '2026-07-12T00:25:00.000Z',
+      },
+      { id: 'expedition-legacy' },
+      { id: 'expedition-mixed', plannedMinutes: 10 },
+      { id: 'expedition-invalid', plannedMinutes: '25', expiresAt: 'not-a-time' },
+    ],
     resumeAnchors: [{ id: 'anchor-1' }],
-    events: [{ idempotencyKey: 'event-1' }],
+    events: [{
+      idempotencyKey: 'event-1',
+      result: {
+        rewardLineage: 'step-1',
+        category: 'writing',
+        reportVersion: 1,
+        goalMilestone: true,
+        goldGranted: 2,
+      },
+    }],
     rewards: [{ idempotencyKey: 'reward-1' }],
     wallet: { stepCoin: 12, gold: 2 },
     camp: { level: 2 },
@@ -41,6 +59,10 @@ async function run() {
     characters: records.characters,
   });
   assert.equal('assets' in exported, false);
+  assert.equal(exported.expeditions[0].plannedMinutes, 25);
+  assert.equal(exported.expeditions[0].expiresAt, '2026-07-12T00:25:00.000Z');
+  assert.deepEqual(exported.expeditions.slice(1), records.expeditions.slice(1));
+  assert.deepEqual(exported.events[0].result, records.events[0].result);
   assert.equal(JSON.stringify(exported).includes('must-not-leak'), false);
   assert.equal(JSON.stringify(exported).includes('base64'), false);
   assert.deepEqual(JSON.parse(Backup.serializeExport(exported)), exported);
