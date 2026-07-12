@@ -704,6 +704,260 @@ test('captures a synchronous media clone before persistence awaits', async ({ pa
   expect(result.backup).toEqual(expected);
 });
 
+test('keeps imageBlobKey aligned across fixed and legacy portrait media', async ({ page }) => {
+  await clearBrowserState(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
+  const result = await page.evaluate(async ({ now }) => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const Character = (window as any).StepQuestV02Character;
+    const capture = async (operation) => {
+      try {
+        await operation();
+        return null;
+      } catch (error) {
+        return error.message;
+      }
+    };
+    const clearPresentation = () => new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest');
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(['characters', 'assets', 'backups'], 'readwrite');
+        transaction.objectStore('characters').clear();
+        transaction.objectStore('assets').clear();
+        transaction.objectStore('backups').clear();
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    const fixedPortraitBlob = new Blob(['fixed-portrait'], { type: 'image/png' });
+    const fixedPortrait = {
+      id: Character.CHARACTER_ID,
+      name: 'alias-character',
+      imageBlobKey: Character.MEDIA_KEYS.portrait,
+      media: { portraitKey: Character.MEDIA_KEYS.portrait },
+      mediaMetadata: {
+        portrait: {
+          mimeType: fixedPortraitBlob.type,
+          byteLength: fixedPortraitBlob.size,
+          width: 512,
+          height: 512,
+        },
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+    const resetFixedPortrait = async () => {
+      await clearPresentation();
+      return repository.saveCharacterMediaSlot(fixedPortrait, 'portrait', fixedPortraitBlob);
+    };
+
+    let current = await resetFixedPortrait();
+    const idleBlob = new Blob(['fixed-idle'], { type: 'image/webp' });
+    const changedAlias = Character.withMediaSlot(current, 'idle', {
+      key: Character.MEDIA_KEYS.idle,
+      mimeType: idleBlob.type,
+      byteLength: idleBlob.size,
+      width: 512,
+      height: 512,
+      durationMs: 500,
+    });
+    changedAlias.imageBlobKey = Character.IMAGE_BLOB_KEY;
+    const changedAliasError = await capture(() => repository.saveCharacterMediaSlot(
+      changedAlias,
+      'idle',
+      idleBlob,
+    ));
+
+    current = await resetFixedPortrait();
+    const skillBlob = new Blob(['fixed-skill'], { type: 'video/webm' });
+    const removedAlias = Character.withMediaSlot(current, 'skill', {
+      key: Character.MEDIA_KEYS.skill,
+      mimeType: skillBlob.type,
+      byteLength: skillBlob.size,
+      width: 512,
+      height: 512,
+      durationMs: 500,
+    });
+    delete removedAlias.imageBlobKey;
+    const removedAliasError = await capture(() => repository.saveCharacterMediaSlot(
+      removedAlias,
+      'skill',
+      skillBlob,
+    ));
+
+    await clearPresentation();
+    const legacyPortraitBlob = new Blob(['legacy-portrait'], { type: 'image/png' });
+    await repository.saveCharacter({
+      id: Character.CHARACTER_ID,
+      name: 'legacy-character',
+      imageBlobKey: Character.IMAGE_BLOB_KEY,
+      skillPreset: 'impact',
+      skillName: 'legacy-skill',
+      accentColor: '#65d9ff',
+      createdAt: now,
+      updatedAt: now,
+    }, legacyPortraitBlob);
+    const legacyCharacter = await repository.getCharacter();
+    const legacyIdleBlob = new Blob(['legacy-idle'], { type: 'image/webp' });
+    let legacySaved = Character.withMediaSlot(legacyCharacter, 'idle', {
+      key: Character.MEDIA_KEYS.idle,
+      mimeType: legacyIdleBlob.type,
+      byteLength: legacyIdleBlob.size,
+      width: 512,
+      height: 512,
+      durationMs: 500,
+    });
+    legacySaved = await repository.saveCharacterMediaSlot(legacySaved, 'idle', legacyIdleBlob);
+    const legacyMedia = await repository.getCharacterMedia();
+
+    const replacementBlob = new Blob(['fixed-replacement'], { type: 'image/png' });
+    let fixedSaved = Character.withMediaSlot(legacySaved, 'portrait', {
+      key: Character.MEDIA_KEYS.portrait,
+      mimeType: replacementBlob.type,
+      byteLength: replacementBlob.size,
+      width: 512,
+      height: 512,
+    });
+    fixedSaved = await repository.saveCharacterMediaSlot(fixedSaved, 'portrait', replacementBlob);
+    const fixedMedia = await repository.getCharacterMedia();
+    const removedLegacyBlob = await repository.getCharacterBlob(Character.IMAGE_BLOB_KEY);
+
+    return {
+      changedAliasError,
+      removedAliasError,
+      legacyImageBlobKey: legacySaved.imageBlobKey,
+      legacyPortraitKey: legacySaved.media.portraitKey,
+      legacyIdleText: await legacyMedia.idle?.text(),
+      fixedImageBlobKey: fixedSaved.imageBlobKey,
+      fixedPortraitKey: fixedSaved.media.portraitKey,
+      fixedPortraitText: await fixedMedia.portrait?.text(),
+      fixedIdleText: await fixedMedia.idle?.text(),
+      removedLegacyBlob,
+    };
+  }, { now: NOW });
+
+  expect(result).toEqual({
+    changedAliasError: 'CHARACTER_MEDIA_KEY_INVALID',
+    removedAliasError: 'CHARACTER_MEDIA_KEY_INVALID',
+    legacyImageBlobKey: 'character:local-primary:image',
+    legacyPortraitKey: 'character:local-primary:image',
+    legacyIdleText: 'legacy-idle',
+    fixedImageBlobKey: 'character:local-primary:portrait',
+    fixedPortraitKey: 'character:local-primary:portrait',
+    fixedPortraitText: 'fixed-replacement',
+    fixedIdleText: 'legacy-idle',
+    removedLegacyBlob: null,
+  });
+});
+
+test('rejects non-schema character media fields before metadata-only backups', async ({ page }) => {
+  await clearBrowserState(page);
+  await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
+  const result = await page.evaluate(async ({ now }) => {
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const Character = (window as any).StepQuestV02Character;
+    const capture = async (candidate, blob) => {
+      try {
+        await repository.saveCharacterMediaSlot(candidate, 'portrait', blob);
+        return null;
+      } catch (error) {
+        return error.message;
+      }
+    };
+    const portraitBlob = new Blob(['schema-portrait'], { type: 'image/png' });
+    const current = await repository.saveCharacterMediaSlot({
+      id: Character.CHARACTER_ID,
+      name: 'schema-character',
+      imageBlobKey: Character.MEDIA_KEYS.portrait,
+      skillPreset: 'impact',
+      skillName: 'schema-skill',
+      accentColor: '#65d9ff',
+      media: { portraitKey: Character.MEDIA_KEYS.portrait },
+      mediaMetadata: {
+        portrait: {
+          mimeType: portraitBlob.type,
+          byteLength: portraitBlob.size,
+          width: 512,
+          height: 512,
+        },
+      },
+      createdAt: now,
+      updatedAt: now,
+    }, 'portrait', portraitBlob);
+    const replacementBlob = new Blob(['schema-replace'], { type: 'image/png' });
+    const candidate = Character.withMediaSlot(current, 'portrait', {
+      key: Character.MEDIA_KEYS.portrait,
+      mimeType: replacementBlob.type,
+      byteLength: replacementBlob.size,
+      width: 512,
+      height: 512,
+    });
+    const withPortraitField = (field, value) => ({
+      ...candidate,
+      mediaMetadata: {
+        ...candidate.mediaMetadata,
+        portrait: {
+          ...candidate.mediaMetadata.portrait,
+          [field]: value,
+        },
+      },
+    });
+
+    const rootBase64Error = await capture({
+      ...candidate,
+      base64: 'must-not-persist',
+    }, replacementBlob);
+    const rootBytesError = await capture({
+      ...candidate,
+      bytes: [1, 2, 3],
+    }, replacementBlob);
+    const rootArbitraryError = await capture({
+      ...candidate,
+      arbitrary: 'must-not-persist',
+    }, replacementBlob);
+    const portraitExtraError = await capture(
+      withPortraitField('extra', 'must-not-persist'),
+      replacementBlob,
+    );
+    const portraitBlobError = await capture(
+      withPortraitField('blob', new Blob(['must-not-persist'])),
+      replacementBlob,
+    );
+    const portraitBase64Error = await capture(
+      withPortraitField('base64', 'must-not-persist'),
+      replacementBlob,
+    );
+
+    const ordinary = await repository.exportRecords();
+    const ordinaryJson = JSON.stringify(ordinary);
+    const rollingJson = JSON.stringify(ordinary.backups);
+    const byteMarkers = ['"base64"', '"blob"', '"bytes"', 'must-not-persist'];
+    return {
+      rootBase64Error,
+      rootBytesError,
+      rootArbitraryError,
+      portraitExtraError,
+      portraitBlobError,
+      portraitBase64Error,
+      ordinaryByteFree: byteMarkers.every((marker) => !ordinaryJson.includes(marker)),
+      rollingByteFree: byteMarkers.every((marker) => !rollingJson.includes(marker)),
+    };
+  }, { now: NOW });
+
+  expect(result).toEqual({
+    rootBase64Error: 'CHARACTER_METADATA_INVALID',
+    rootBytesError: 'CHARACTER_METADATA_INVALID',
+    rootArbitraryError: 'CHARACTER_METADATA_INVALID',
+    portraitExtraError: 'CHARACTER_MEDIA_METADATA_INVALID',
+    portraitBlobError: 'CHARACTER_MEDIA_METADATA_INVALID',
+    portraitBase64Error: 'CHARACTER_MEDIA_METADATA_INVALID',
+    ordinaryByteFree: true,
+    rollingByteFree: true,
+  });
+});
+
 test('retries media Blob storage as ArrayBuffer without weakening rollback', async ({ page }) => {
   await clearBrowserState(page);
   await page.addScriptTag({ url: '/assets/js/stepquest-v02-media.js' });
@@ -777,11 +1031,16 @@ test('retries media Blob storage as ArrayBuffer without weakening rollback', asy
       height: 256,
       durationMs: 400,
     });
+    let arrayBufferAssetScheduled = false;
     prototype.put = function put(value, ...args) {
       if (this.name === 'assets' && value?.storageEncoding === 'blob') {
         throw new DOMException('Blob/File storage unsupported', 'UnknownError');
       }
       if (this.name === 'assets' && value?.storageEncoding === 'arrayBuffer') {
+        arrayBufferAssetScheduled = true;
+        return originalPut.call(this, value, ...args);
+      }
+      if (this.name === 'characters' && arrayBufferAssetScheduled) {
         throw new Error('FORCED_ARRAY_BUFFER_RETRY_FAILURE');
       }
       return originalPut.call(this, value, ...args);
@@ -799,6 +1058,7 @@ test('retries media Blob storage as ArrayBuffer without weakening rollback', asy
       rawFallback,
       fallbackText: await afterFallback.idle?.text(),
       retryError,
+      arrayBufferAssetScheduled,
       metadataPreserved: JSON.stringify(afterRetryFailure.character) === JSON.stringify(current),
       blobTextPreserved: await afterRetryFailure.idle?.text(),
     };
@@ -811,6 +1071,7 @@ test('retries media Blob storage as ArrayBuffer without weakening rollback', asy
     },
     fallbackText: 'idle-array-buffer',
     retryError: 'FORCED_ARRAY_BUFFER_RETRY_FAILURE',
+    arrayBufferAssetScheduled: true,
     metadataPreserved: true,
     blobTextPreserved: 'idle-array-buffer',
   });

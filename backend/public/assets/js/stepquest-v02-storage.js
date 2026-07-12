@@ -24,6 +24,28 @@
     idle: 'character:local-primary:idle',
     skill: 'character:local-primary:skill',
   });
+  const CHARACTER_MEDIA_ROOT_FIELDS = new Set([
+    'id',
+    'name',
+    'imageBlobKey',
+    'skillPreset',
+    'skillName',
+    'accentColor',
+    'createdAt',
+    'updatedAt',
+    'media',
+    'mediaMetadata',
+  ]);
+  const CHARACTER_MEDIA_FIELDS = new Set(['portraitKey', 'idleKey', 'skillKey']);
+  const CHARACTER_MEDIA_METADATA_FIELDS = new Set(['portrait', 'idle', 'skill']);
+  const PORTRAIT_METADATA_FIELDS = new Set(['mimeType', 'byteLength', 'width', 'height']);
+  const MOVING_METADATA_FIELDS = new Set([
+    'mimeType',
+    'byteLength',
+    'width',
+    'height',
+    'durationMs',
+  ]);
   const ALL_STORES = [...STATE_STORES, 'meta', 'backups', 'characters'];
   const SIGNIFICANT_OPERATIONS = new Set([
     'startStep',
@@ -92,21 +114,35 @@
     return Media;
   }
 
-  function validateDeclaredMovingMedia(metadata) {
+  function validateDeclaredMovingMedia(metadata, targetSlot) {
     const media = metadata.media && typeof metadata.media === 'object'
       ? metadata.media
       : {};
     const mediaMetadata = metadata.mediaMetadata && typeof metadata.mediaMetadata === 'object'
       ? metadata.mediaMetadata
       : {};
-    const mediaFields = new Set(['portraitKey', 'idleKey', 'skillKey']);
-    const metadataFields = new Set(['portrait', 'idle', 'skill']);
-    if (
-      Object.keys(media).some((field) => !mediaFields.has(field))
-      || Object.keys(mediaMetadata).some((field) => !metadataFields.has(field))
-    ) {
-      throw new Error('CHARACTER_MEDIA_NON_TARGET_MISMATCH');
+    if (Object.keys(metadata).some((field) => !CHARACTER_MEDIA_ROOT_FIELDS.has(field))) {
+      throw new Error('CHARACTER_METADATA_INVALID');
     }
+    if (
+      Object.keys(media).some((field) => !CHARACTER_MEDIA_FIELDS.has(field))
+      || Object.keys(mediaMetadata).some((field) => !CHARACTER_MEDIA_METADATA_FIELDS.has(field))
+    ) {
+      throw new Error('CHARACTER_MEDIA_METADATA_INVALID');
+    }
+    Object.entries(mediaMetadata).forEach(([slot, slotMetadata]) => {
+      const allowed = slot === 'portrait' ? PORTRAIT_METADATA_FIELDS : MOVING_METADATA_FIELDS;
+      if (
+        !slotMetadata
+        || typeof slotMetadata !== 'object'
+        || Array.isArray(slotMetadata)
+        || Object.keys(slotMetadata).some((field) => !allowed.has(field))
+      ) {
+        throw new Error(slot === targetSlot
+          ? 'CHARACTER_MEDIA_METADATA_INVALID'
+          : 'CHARACTER_MEDIA_NON_TARGET_MISMATCH');
+      }
+    });
 
     const declared = ['idle', 'skill'].filter((slot) => (
       media[`${slot}Key`] !== undefined || mediaMetadata[slot] !== undefined
@@ -571,6 +607,7 @@
         if (name === slot) return;
         if (
           previousMedia[`${name}Key`] !== candidateMedia[`${name}Key`]
+          || (name === 'portrait' && previous?.imageBlobKey !== metadata.imageBlobKey)
           || !sameSlotMetadata(
             previous?.mediaMetadata?.[name],
             metadata.mediaMetadata?.[name],
@@ -696,13 +733,18 @@
       const metadata = clone(inputMetadata);
       const key = CHARACTER_MEDIA_KEYS[slot];
       const media = characterMediaKeys(metadata);
+      const portraitKey = metadata.media?.portraitKey;
       if (
         metadata.media?.[`${slot}Key`] !== key
-        || (slot === 'portrait' && metadata.imageBlobKey !== key)
+        || metadata.imageBlobKey !== portraitKey
+        || (
+          portraitKey !== CHARACTER_MEDIA_KEYS.portrait
+          && portraitKey !== LEGACY_CHARACTER_IMAGE_KEY
+        )
       ) {
         throw new Error('CHARACTER_MEDIA_KEY_INVALID');
       }
-      validateDeclaredMovingMedia(metadata);
+      validateDeclaredMovingMedia(metadata, slot);
       if (
         slot !== 'portrait'
         && media.portraitKey !== CHARACTER_MEDIA_KEYS.portrait
