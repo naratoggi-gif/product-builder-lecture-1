@@ -92,9 +92,10 @@ StepQuestPwaUpdate.mount({
 
 1. `load`에서 `/sw.js`를 `updateViaCache: 'none'`으로 등록한다.
 2. `pageshow`, window `focus`, hidden→visible에서 중복 호출 없이 `registration.update()`를 실행한다.
-3. `controllerchange`를 받으면 `stepquest:pwa-reloaded:v02-core-6` session guard를 확인한다.
-4. 같은 build에서 reload하지 않았다면 guard를 먼저 기록한 뒤 `location.reload()`를 정확히 1회 호출한다.
-5. 이미 guard가 있으면 reload loop를 만들지 않는다.
+3. mount 시 이미 controller가 있던 문서에서 `controllerchange`를 받으면 `stepquest:pwa-reloaded:v02-core-6` session guard를 확인한다.
+4. controller가 없던 최초 설치의 첫 claim은 reload하지 않고 이후 controller 교체부터 갱신 대상으로 본다.
+5. 같은 build에서 reload하지 않았다면 guard를 먼저 기록한 뒤 `location.reload()`를 정확히 1회 호출한다.
+6. 이미 guard가 있으면 reload loop를 만들지 않는다.
 
 현재 실행 중인 core-5 문서에는 이 listener가 없으므로 이번 전환에 한해 사용자가 앱 전환기에서 PWA를 완전히 종료하고 다시 여는 동작은 한 번 필요하다. core-6 이후 전환은 자동 처리한다.
 
@@ -116,7 +117,7 @@ StepQuestPwaUpdate.mount({
 
 ### 순수·정적
 
-- controllerchange에서 reload 1회, 동일 build 반복 0회
+- 기존 controller의 controllerchange에서 reload 1회, 동일 build 반복 0회, 최초 설치 claim reload 0회
 - pageshow/focus/visible update coalescing
 - registration/update/reload 실패가 앱 mount를 막지 않음
 - HTML/SW의 core-6 URL 완전 일치
