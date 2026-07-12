@@ -3,6 +3,10 @@ import { expect, test } from '@playwright/test';
 const NOW = '2026-07-11T00:00:00.000Z';
 const TIMED_NOW = '2026-07-12T00:00:00.000Z';
 const TIMED_EXPIRY = '2026-07-12T00:25:00.000Z';
+const LEGACY_PORTRAIT_BYTES = Array.from(Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+));
 const TIMING_COMPAT_FIXTURES = [
   {
     id: 'expedition-v2-invalid',
@@ -145,6 +149,247 @@ test('upgrades v2 character stores without rewriting legacy timing pairs', async
   expect(result.migrationComplete).toBeUndefined();
 });
 
+test('preserves a v3 untimed expedition and raw legacy portrait across repeated app reloads', async ({
+  page,
+  browserName,
+}) => {
+  await clearBrowserState(page);
+  const fixture = {
+    now: TIMED_NOW,
+    goal: {
+      id: 'goal-v3-untimed',
+      title: '이전 버전 목표',
+      status: 'active',
+      createdAt: TIMED_NOW,
+      updatedAt: TIMED_NOW,
+    },
+    step: {
+      id: 'step-v3-untimed',
+      goalId: 'goal-v3-untimed',
+      title: '이전 버전 행동',
+      nextPhysicalAction: '이전 버전 행동',
+      category: 'writing',
+      phase: 'start',
+      rewardLineage: 'step-v3-untimed',
+      status: 'started',
+      orderIndex: 0,
+      createdAt: TIMED_NOW,
+      updatedAt: TIMED_NOW,
+    },
+    expedition: {
+      id: 'expedition-v3-untimed',
+      stepId: 'step-v3-untimed',
+      status: 'active',
+      startedAt: TIMED_NOW,
+      goldCap: 2,
+      goldGranted: 0,
+    },
+    wallet: { id: 'main', stepCoin: 11, gold: 3 },
+    camp: { id: 'camp', level: 2 },
+    migrationComplete: {
+      idempotencyKey: 'legacy:v02:migration',
+      completedAt: '2026-07-11T00:00:00.000Z',
+    },
+    character: {
+      id: 'local-primary',
+      name: '그대로인 모험가',
+      imageBlobKey: 'character:local-primary:image',
+      skillPreset: 'dash',
+      skillName: '그대로인 기술',
+      accentColor: '#ffd166',
+      createdAt: TIMED_NOW,
+      updatedAt: TIMED_NOW,
+    },
+    portraitBytes: LEGACY_PORTRAIT_BYTES,
+  };
+
+  await page.evaluate(async (seed) => {
+    const portraitBlob = new Blob([new Uint8Array(seed.portraitBytes)], { type: 'image/png' });
+    const portraitArrayBuffer = await portraitBlob.arrayBuffer();
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 3);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const storeNames = Array.from(database.objectStoreNames);
+    const transaction = database.transaction(storeNames, 'readwrite');
+    let failedRequest = '';
+    const track = (request: IDBRequest, label: string) => {
+      request.addEventListener('error', () => {
+        failedRequest = `${label}:${request.error?.name || 'UNKNOWN'}:${request.error?.message || ''}`;
+      });
+      return request;
+    };
+    storeNames.forEach((storeName) => track(
+      transaction.objectStore(storeName).clear(),
+      `clear:${storeName}`,
+    ));
+    track(transaction.objectStore('goals').put(seed.goal), 'put:goal');
+    track(transaction.objectStore('steps').put(seed.step), 'put:step');
+    track(transaction.objectStore('expeditions').put(seed.expedition), 'put:expedition');
+    track(transaction.objectStore('wallet').put(seed.wallet), 'put:wallet');
+    track(transaction.objectStore('wallet').put(seed.camp), 'put:camp');
+    track(transaction.objectStore('meta').put({ key: 'stateRevision', value: 41 }), 'put:revision');
+    track(transaction.objectStore('meta').put({
+      key: 'migrationComplete',
+      value: seed.migrationComplete,
+    }), 'put:migration');
+    track(transaction.objectStore('backups').put({
+      id: 'backup-v3-untimed',
+      operation: 'legacy_fixture',
+      createdAt: seed.now,
+      snapshot: { marker: 'preserve' },
+    }), 'put:backup');
+    track(transaction.objectStore('characters').put(seed.character), 'put:character');
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      const fail = () => reject(new Error(
+        `DIRECT_SEED_FAILED:${failedRequest || 'NO_REQUEST_ERROR'}:${transaction.error?.name || 'NO_TRANSACTION_ERROR'}`,
+      ));
+      transaction.onerror = fail;
+      transaction.onabort = fail;
+    });
+    database.close();
+
+    const writeAsset = (assetValue: Record<string, unknown>) => new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('stepquest', 3);
+      request.onsuccess = () => {
+        const assetDatabase = request.result;
+        const assetTransaction = assetDatabase.transaction('assets', 'readwrite');
+        let requestError = '';
+        const put = assetTransaction.objectStore('assets').put({
+          id: seed.character.imageBlobKey,
+          ...assetValue,
+          mimeType: portraitBlob.type,
+          updatedAt: seed.now,
+        });
+        put.onerror = () => {
+          requestError = `${put.error?.name || 'UNKNOWN'}:${put.error?.message || ''}`;
+        };
+        assetTransaction.oncomplete = () => {
+          assetDatabase.close();
+          resolve();
+        };
+        const fail = () => {
+          assetDatabase.close();
+          reject(new Error(`DIRECT_ASSET_SEED_FAILED:${requestError || 'NO_REQUEST_ERROR'}`));
+        };
+        assetTransaction.onerror = fail;
+        assetTransaction.onabort = fail;
+      };
+      request.onerror = () => reject(request.error || new Error('DIRECT_ASSET_DATABASE_OPEN_FAILED'));
+    });
+    try {
+      await writeAsset({ blob: portraitBlob, storageEncoding: 'blob' });
+    } catch (error) {
+      if (!/UnknownError:.*Blob\/File/.test(String(error?.message || ''))) throw error;
+      await writeAsset({ bytes: portraitArrayBuffer, storageEncoding: 'arrayBuffer' });
+    }
+
+    [
+      'stepquest_v02_fallback_state',
+      'stepquest_v02_fallback_backups',
+      'stepquest_v02_head_revision',
+      'stepquest_v02_fallback_revision',
+    ].forEach((key) => localStorage.removeItem(key));
+    localStorage.setItem('stepquest_v02_repository_mode', 'indexedDB');
+    localStorage.setItem('stepquest_v02_active', '1');
+  }, fixture);
+
+  const inspect = async () => page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('stepquest');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction(
+      ['goals', 'steps', 'expeditions', 'wallet', 'meta', 'backups', 'characters', 'assets'],
+      'readonly',
+    );
+    const value = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const [goal, step, expedition, wallet, camp, migration, backups, rawCharacter, asset] = await Promise.all([
+      value(transaction.objectStore('goals').get('goal-v3-untimed')),
+      value(transaction.objectStore('steps').get('step-v3-untimed')),
+      value(transaction.objectStore('expeditions').get('expedition-v3-untimed')),
+      value(transaction.objectStore('wallet').get('main')),
+      value(transaction.objectStore('wallet').get('camp')),
+      value(transaction.objectStore('meta').get('migrationComplete')),
+      value(transaction.objectStore('backups').getAll()),
+      value(transaction.objectStore('characters').get('local-primary')),
+      value(transaction.objectStore('assets').get('character:local-primary:image')),
+    ]);
+    const effectiveAssetBlob = asset.blob || new Blob([asset.bytes], { type: asset.mimeType });
+    const effectiveAssetBytes = Array.from(new Uint8Array(await effectiveAssetBlob.arrayBuffer()));
+    const databaseVersion = database.version;
+    database.close();
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const normalizedCharacter = await repository.getCharacter();
+    const presentedCharacter = (window as any).StepQuestV02App.getCharacter();
+    return {
+      databaseVersion,
+      goal,
+      step,
+      expedition,
+      timingAbsent: !Object.prototype.hasOwnProperty.call(expedition, 'plannedMinutes')
+        && !Object.prototype.hasOwnProperty.call(expedition, 'expiresAt'),
+      wallet,
+      camp,
+      migration: migration?.value,
+      backupIds: backups.map((backup: any) => backup.id),
+      rawCharacter,
+      asset: {
+        id: asset.id,
+        mimeType: asset.mimeType,
+        storageEncoding: asset.storageEncoding,
+        rawHasBlob: Boolean(asset.blob),
+        rawHasBytes: Boolean(asset.bytes),
+        blobType: effectiveAssetBlob.type,
+        bytes: effectiveAssetBytes,
+      },
+      normalizedPortraitKey: normalizedCharacter.media?.portraitKey,
+      portraitUrlIsBlob: /^blob:/.test(presentedCharacter.portraitUrl || ''),
+      usingDefault: presentedCharacter.usingDefault,
+      missingImage: presentedCharacter.missingImage,
+    };
+  });
+
+  const expected = {
+    databaseVersion: 3,
+    goal: fixture.goal,
+    step: fixture.step,
+    expedition: fixture.expedition,
+    timingAbsent: true,
+    wallet: fixture.wallet,
+    camp: fixture.camp,
+    migration: fixture.migrationComplete,
+    backupIds: ['backup-v3-untimed'],
+    rawCharacter: fixture.character,
+    asset: {
+      id: fixture.character.imageBlobKey,
+      mimeType: 'image/png',
+      storageEncoding: browserName === 'webkit' ? 'arrayBuffer' : 'blob',
+      rawHasBlob: browserName !== 'webkit',
+      rawHasBytes: browserName === 'webkit',
+      blobType: 'image/png',
+      bytes: fixture.portraitBytes,
+    },
+    normalizedPortraitKey: fixture.character.imageBlobKey,
+    portraitUrlIsBlob: true,
+    usingDefault: false,
+    missingImage: false,
+  };
+
+  await page.reload();
+  await expect(page.locator('#v02-expedition-legacy-ready')).toBeVisible();
+  expect(await inspect()).toEqual(expected);
+  await page.reload();
+  await expect(page.locator('#v02-expedition-legacy-ready')).toBeVisible();
+  expect(await inspect()).toEqual(expected);
+});
+
 test('keeps fallback legacy timing pairs byte-for-byte without migration metadata', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(IDBFactory.prototype, 'open', {
@@ -242,6 +487,8 @@ test('persists atomic local character media slots outside ordinary exports', asy
     });
     saved = await repository.saveCharacterMediaSlot(saved, 'skill', skillBlob);
 
+    const orphanSeedBlob = new Blob(['orphan'], { type: 'image/png' });
+    const orphanBytes = await orphanSeedBlob.arrayBuffer();
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('stepquest');
       request.onsuccess = () => {
@@ -249,8 +496,9 @@ test('persists atomic local character media slots outside ordinary exports', asy
         const transaction = database.transaction('assets', 'readwrite');
         transaction.objectStore('assets').put({
           id: 'character:local-primary:orphan',
-          blob: new Blob(['orphan'], { type: 'image/png' }),
-          mimeType: 'image/png',
+          bytes: orphanBytes,
+          storageEncoding: 'arrayBuffer',
+          mimeType: orphanSeedBlob.type,
           updatedAt: now,
         });
         transaction.oncomplete = () => { database.close(); resolve(); };
@@ -1111,6 +1359,8 @@ test('exports only exact character media keys from corrupt metadata', async ({ p
     });
     current = await repository.saveCharacterMediaSlot(current, 'skill', skillBlob);
 
+    const orphanSeedBlob = new Blob(['orphan'], { type: 'image/png' });
+    const orphanBytes = await orphanSeedBlob.arrayBuffer();
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('stepquest');
       request.onsuccess = () => {
@@ -1125,8 +1375,9 @@ test('exports only exact character media keys from corrupt metadata', async ({ p
         });
         transaction.objectStore('assets').put({
           id: 'character:local-primary:orphan',
-          blob: new Blob(['orphan'], { type: 'image/png' }),
-          mimeType: 'image/png',
+          bytes: orphanBytes,
+          storageEncoding: 'arrayBuffer',
+          mimeType: orphanSeedBlob.type,
           updatedAt: now,
         });
         transaction.oncomplete = () => { database.close(); resolve(); };

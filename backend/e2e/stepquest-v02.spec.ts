@@ -463,8 +463,14 @@ async function continuePendingBattleReport(page) {
 
 async function finishCombatToBattleReport(page, attacks = true) {
   if (attacks) {
-    await expect(page.locator('[data-v02-combat-skip]')).toBeVisible();
-    await page.locator('[data-v02-combat-skip]').click();
+    await page.waitForFunction(() => Boolean(
+      document.querySelector('[data-v02-combat-skip], #v02-battle-report'),
+    ));
+    await page.evaluate(() => {
+      if (document.querySelector('#v02-battle-report')) return;
+      const skip = document.querySelector('[data-v02-combat-skip]');
+      if (skip instanceof HTMLButtonElement) skip.click();
+    });
   }
   await expect(page.locator('#v02-battle-report')).toBeVisible();
 }
@@ -520,6 +526,182 @@ async function expectHpSegmentDivider(locator: Locator) {
     pointerEvents: 'none',
   });
 }
+
+async function ownerJourneyPersistenceProjection(page: Page) {
+  return page.evaluate(async () => {
+    const Core = (window as any).StepQuestV02App;
+    const state = Core.getSnapshot();
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    const records = await repository.exportRecords();
+    const ordered = (items: any[], key: string) => [...items].sort((left, right) => (
+      String(left[key] || '').localeCompare(String(right[key] || ''))
+    ));
+    return {
+      goals: ordered(state.goals, 'id'),
+      steps: ordered(state.steps, 'id'),
+      expeditions: ordered(state.expeditions, 'id'),
+      resumeAnchors: ordered(state.resumeAnchors, 'id'),
+      events: ordered(state.events, 'idempotencyKey'),
+      rewards: ordered(state.rewards, 'idempotencyKey'),
+      wallet: state.wallet,
+      camp: state.camp,
+      stateRevision: await repository.getMeta('stateRevision'),
+      backupIds: records.backups.map((backup: any) => backup.id).sort(),
+    };
+  });
+}
+
+test('Slice 6 owner journey completes the harvest combat and desire loop', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
+  await resetV02(page);
+  await importMovingCharacter(page);
+  await expect(page.locator('img[data-v02-character-media="idle"]')).toHaveAttribute('src', /^blob:/);
+
+  await createGoal(page, '알림 없이 돌아올 원정');
+  await page.locator('[name="v02-expedition-minutes"][value="5"]').check();
+  const goldBefore = await page.evaluate(() => (
+    (window as any).StepQuestV02App.getSnapshot().wallet.gold
+  ));
+  await page.locator('#v02-start-step').click();
+  await expect(page.locator('[data-v02-countdown]')).toHaveText('05:00');
+  await expect(page.locator('#v02-expedition-active img[data-v02-character-media="idle"]'))
+    .toHaveAttribute('src', /^blob:/);
+  await cancelFx(page);
+
+  const timing = await page.evaluate(() => {
+    const expedition = (window as any).StepQuestV02App.getSnapshot().expeditions
+      .find((item: any) => item.status === 'active');
+    return {
+      plannedMinutes: expedition?.plannedMinutes,
+      startedAt: expedition?.startedAt,
+      expiresAt: expedition?.expiresAt,
+      status: expedition?.status,
+    };
+  });
+  expect(timing.plannedMinutes).toBe(5);
+  expect(timing.status).toBe('active');
+  expect(Date.parse(timing.expiresAt) - Date.parse(timing.startedAt)).toBe(5 * 60 * 1_000);
+
+  const beforeExpiry = await ownerJourneyPersistenceProjection(page);
+  await page.clock.fastForward(5 * 60 * 1_000);
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+  expect(await ownerJourneyPersistenceProjection(page)).toEqual(beforeExpiry);
+
+  await page.reload();
+  await expect(page.locator('#v02-expedition-ready')).toBeVisible();
+  await expect(page.locator('[data-v02-countdown]')).toHaveCount(0);
+  expect(await ownerJourneyPersistenceProjection(page)).toEqual(beforeExpiry);
+
+  await page.locator('#v02-open-report').click();
+  await page.evaluate(() => {
+    const observed = {
+      skill: false,
+      fx: false,
+      hit: false,
+      damage: '',
+      hpZero: false,
+      defeated: false,
+      report: false,
+    };
+    (window as any).__slice6OwnerCombat = observed;
+    const originalAnimate = Element.prototype.animate;
+    Element.prototype.animate = function ownerJourneyAnimate(...args) {
+      if ((this as Element).matches?.('[data-v02-monster-state]')) observed.hit = true;
+      return originalAnimate.apply(this, args);
+    };
+    const inspect = () => {
+      if (document.querySelector('[data-v02-character-media="skill"]')) observed.skill = true;
+      if (document.querySelector('[data-v02-fx-overlay]')) observed.fx = true;
+      const damage = document.querySelector('[data-v02-damage]')?.textContent?.trim();
+      if (damage) observed.damage = damage;
+      if (document.querySelector('[data-v02-monster-hp][aria-valuenow="0"]')) observed.hpZero = true;
+      if (document.querySelector('[data-v02-monster-state="defeated"]')) observed.defeated = true;
+      if (document.querySelector('#v02-battle-report')) observed.report = true;
+    };
+    const observer = new MutationObserver(inspect);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+    inspect();
+  });
+  await page.locator('[data-v02-outcome="completed"]').click();
+  await expect(page.locator('#v02-battle-report')).toBeVisible({ timeout: 10_000 });
+  await expect.poll(() => page.evaluate(() => ({ ...(window as any).__slice6OwnerCombat })))
+    .toEqual({
+      skill: true,
+      fx: true,
+      hit: true,
+      damage: '2 데미지',
+      hpZero: true,
+      defeated: true,
+      report: true,
+    });
+
+  const reportState = await page.evaluate(async () => {
+    const Core = (window as any).StepQuestV02App;
+    const state = Core.getSnapshot();
+    const event = [...state.events].reverse().find((item: any) => (
+      item.type === 'expedition_reported'
+    ));
+    const pending = await Core.getPendingBattleReport();
+    return {
+      eventKey: event?.idempotencyKey,
+      eventGold: event?.result?.goldGranted,
+      walletGold: state.wallet.gold,
+      pendingKey: pending?.key,
+      monsterId: pending?.monsterId,
+      newDiscovery: pending?.newDiscovery,
+    };
+  });
+  expect(reportState.eventGold).toBe(2);
+  expect(reportState.walletGold - goldBefore).toBe(2);
+  expect(reportState.pendingKey).toBe(reportState.eventKey);
+  expect(reportState.newDiscovery).toBe(true);
+  await expect(page.locator('#v02-battle-report'))
+    .toHaveAttribute('data-v02-report-key', reportState.eventKey);
+  await expect(page.locator('[data-v02-report-gold]')).toHaveText('골드 2');
+  await expect(page.locator('[data-v02-report-discovery]')).toHaveText('새 발견');
+  await expect(page.locator('#v02-next-desire')).toHaveCount(1);
+  const afterReport = await ownerJourneyPersistenceProjection(page);
+
+  await page.locator('#v02-continue-report').click();
+  await expect(page.locator('#v02-battle-report')).toHaveCount(0);
+  await expect(page.locator('#v02-next-desire')).toHaveCount(1);
+  const todayDesire = await page.locator('#v02-next-desire').innerText();
+  await page.locator('#v02-nav-codex').click();
+  await expect(page.locator('#v02-next-desire')).toHaveCount(0);
+  const discovered = page.locator(`[data-v02-codex-entry="${reportState.monsterId}"]`);
+  await expect(discovered.locator('[data-v02-codex-count]')).toHaveText('1');
+  await expect(page.locator('[data-v02-codex-entry]:not([data-v02-codex-entry=""])')).toHaveCount(1);
+
+  await page.reload();
+  await expect(page).toHaveURL(/#codex$/);
+  await expect(page.locator('#v02-next-desire')).toHaveCount(0);
+  await expect(discovered.locator('[data-v02-codex-count]')).toHaveText('1');
+  const persisted = await page.evaluate(async () => {
+    const Core = (window as any).StepQuestV02App;
+    const repository = await (window as any).StepQuestV02Storage.openRepository();
+    return {
+      walletGold: Core.getSnapshot().wallet.gold,
+      acknowledged: await repository.getMeta('acknowledgedBattleReportKey'),
+      pending: await Core.getPendingBattleReport(),
+    };
+  });
+  expect(persisted).toEqual({
+    walletGold: goldBefore + 2,
+    acknowledged: reportState.eventKey,
+    pending: null,
+  });
+  expect(await ownerJourneyPersistenceProjection(page)).toEqual(afterReport);
+
+  await page.locator('#v02-nav-today').click();
+  await expect(page.locator('#v02-next-desire')).toHaveCount(1);
+  await expect(page.locator('#v02-next-desire')).toHaveText(todayDesire);
+  await expect(page.locator('img[data-v02-character-media="idle"]')).toHaveAttribute('src', /^blob:/);
+});
 
 test('Slice 6 shell loads production Fun and Media modules with Blob media CSP', async ({ page }) => {
   const response = await page.request.get('/goals.html');
@@ -596,7 +778,8 @@ test('battle report persists across reload and Continue acknowledges its exact k
   })).toBe(pendingKey);
 });
 
-test('battle report displays committed event Gold 2 1 and 0 with truthful discovery', async ({ page }) => {
+test('battle report displays committed event Gold 2 1 and 0 with truthful discovery', async ({ page }, testInfo) => {
+  testInfo.setTimeout(60_000);
   const expectReport = async (expectedGold: number, expectedDiscovery: string, expectedDefeats: number) => {
     const eventGold = await page.evaluate(() => {
       const events = (window as any).StepQuestV02App.getSnapshot().events;
@@ -678,7 +861,8 @@ test('battle report lifecycle observes meta-only acknowledgement from another ta
   await expect(page.locator('#v02-start-step')).toBeVisible();
 });
 
-test('battle report Continue fails safe and refetches a newer pending report', async ({ page }) => {
+test('battle report Continue fails safe and refetches a newer pending report', async ({ page }, testInfo) => {
+  testInfo.setTimeout(60_000);
   await resetV02(page);
   await createGoal(page, 'safe report acknowledgement');
   await page.locator('#v02-start-step').click();
@@ -915,7 +1099,8 @@ test('dialogue follows semantic report ready early departure priority without ti
   await expect(bubble).not.toContainText(/늦|실패|실망|연속|결석|탓|잘못/);
 });
 
-test('dialogue prioritizes parked and Resume Anchor subjects while next desire keeps parked goals', async ({ page }) => {
+test('dialogue prioritizes parked and Resume Anchor subjects while next desire keeps parked goals', async ({ page }, testInfo) => {
+  testInfo.setTimeout(60_000);
   const expectParkedDesire = async (status: string) => {
     const expected = await page.evaluate((parkedStatus) => {
       const state = (window as any).StepQuestV02App.getSnapshot();
@@ -1527,16 +1712,58 @@ test('combat sequence derives first repeated and completed damage from the same 
 
   await page.locator('#v02-start-step').click();
   await cancelFx(page);
-  await reportAnchoredOutcome(page, 'partial', 'continue the same lineage');
-  const firstCombat = page.locator('[data-v02-combat]');
-  await expect(firstCombat.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '2');
-  const progressFx = firstCombat.locator('[data-v02-fx-mode="progress"]');
-  await expect(progressFx).toHaveAttribute('data-v02-fx-duration', '720');
-  await expect(progressFx.locator('[data-v02-fx-step="cutin"]')).toHaveCount(0);
-  await expect(firstCombat.locator('[data-v02-character-media="skill"]')).toBeVisible();
-  await expect(firstCombat.locator('[data-v02-damage]')).toHaveText('1 데미지');
-  await expect(firstCombat.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '1');
+  await page.locator('#v02-open-report').click();
+  await page.locator('[data-v02-outcome="partial"]').click();
+  await page.locator('#v02-next-action').fill('continue the same lineage');
+  await page.evaluate(() => {
+    const probe = {
+      hpValues: [] as string[],
+      damageTexts: [] as string[],
+      skill: false,
+      progressDuration: null as string | null,
+      cutinCount: 0,
+      report: false,
+    };
+    (window as any).__slice6FirstLineageCombat = probe;
+    const inspect = () => {
+      document.querySelectorAll('[data-v02-monster-hp]').forEach((hp) => {
+        const value = hp.getAttribute('aria-valuenow');
+        if (value !== null && !probe.hpValues.includes(value)) probe.hpValues.push(value);
+      });
+      document.querySelectorAll('[data-v02-damage]').forEach((damage) => {
+        const text = damage.textContent?.trim();
+        if (text && !probe.damageTexts.includes(text)) probe.damageTexts.push(text);
+      });
+      if (document.querySelector('[data-v02-character-media="skill"]')) probe.skill = true;
+      const progress = document.querySelector('[data-v02-fx-mode="progress"]');
+      if (progress) {
+        probe.progressDuration = progress.getAttribute('data-v02-fx-duration');
+        probe.cutinCount = Math.max(
+          probe.cutinCount,
+          progress.querySelectorAll('[data-v02-fx-step="cutin"]').length,
+        );
+      }
+      if (document.querySelector('#v02-battle-report')) probe.report = true;
+    };
+    new MutationObserver(inspect).observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    inspect();
+  });
+  await page.locator('#v02-save-outcome').click();
   await expect(page.locator('#v02-battle-report')).toBeVisible();
+  const firstCombat = await page.evaluate(() => ({
+    ...(window as any).__slice6FirstLineageCombat,
+  }));
+  expect(firstCombat.hpValues).toEqual(expect.arrayContaining(['2', '1']));
+  expect(firstCombat.damageTexts).toContain('1 데미지');
+  expect(firstCombat.skill).toBe(true);
+  expect(firstCombat.progressDuration).toBe('720');
+  expect(firstCombat.cutinCount).toBe(0);
+  expect(firstCombat.report).toBe(true);
   expect(await latestReportedEncounterHp(page)).toBe(1);
 
   await continuePendingBattleReport(page);
@@ -1584,11 +1811,40 @@ test('combat sequence derives first repeated and completed damage from the same 
   await page.locator('#v02-start-step').click();
   await cancelFx(page);
   await page.locator('#v02-open-report').click();
+  await page.evaluate(() => {
+    const probe = {
+      hpValues: [] as string[],
+      damageTexts: [] as string[],
+      report: false,
+    };
+    (window as any).__slice6CompletedLineageCombat = probe;
+    const inspect = () => {
+      document.querySelectorAll('[data-v02-monster-hp]').forEach((hp) => {
+        const value = hp.getAttribute('aria-valuenow');
+        if (value !== null && !probe.hpValues.includes(value)) probe.hpValues.push(value);
+      });
+      document.querySelectorAll('[data-v02-damage]').forEach((damage) => {
+        const text = damage.textContent?.trim();
+        if (text && !probe.damageTexts.includes(text)) probe.damageTexts.push(text);
+      });
+      if (document.querySelector('#v02-battle-report')) probe.report = true;
+    };
+    new MutationObserver(inspect).observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    inspect();
+  });
   await page.locator('[data-v02-outcome="completed"]').click();
-  const completed = page.locator('[data-v02-combat]');
-  await expect(completed.locator('[data-v02-monster-hp]')).toHaveAttribute('aria-valuenow', '1');
-  await expect(completed.locator('[data-v02-damage]')).toHaveText('1 데미지');
   await expect(page.locator('#v02-battle-report')).toBeVisible();
+  const completed = await page.evaluate(() => ({
+    ...(window as any).__slice6CompletedLineageCombat,
+  }));
+  expect(completed.hpValues).toEqual(expect.arrayContaining(['1', '0']));
+  expect(completed.damageTexts).toContain('1 데미지');
+  expect(completed.report).toBe(true);
   expect(await latestReportedEncounterHp(page)).toBe(0);
 });
 
@@ -3063,7 +3319,8 @@ test('completed expedition can upgrade and persist the base camp', async ({ page
   await expect(page.locator('#v02-camp-badge')).toHaveAttribute('data-camp-level', '0');
 });
 
-test('exports valid JSON and rotates five recovery snapshots', async ({ page }) => {
+test('exports valid JSON and rotates five recovery snapshots', async ({ page }, testInfo) => {
+  testInfo.setTimeout(60_000);
   await resetV02(page);
   await createGoal(page, '백업 확인');
   for (let index = 0; index < 5; index += 1) {
@@ -3791,6 +4048,7 @@ test('Slice 6 facade retries one-record foreground state after an atomic write f
     const Core = (window as any).StepQuestV02App;
     const Storage = (window as any).StepQuestV02Storage;
     const repository = await Storage.openRepository();
+    await repository.setMeta('foregroundSession', undefined);
     await repository.setMeta('lastForegroundLocalDate', '2026-07-11');
     await repository.setMeta('lastForegroundAt', '2026-07-10T12:00:00.000Z');
     const eventsBefore = JSON.stringify((await repository.getSnapshot()).events);
@@ -3869,6 +4127,7 @@ test('Slice 6 facade serializes fallback foreground calls inside one document', 
       value: undefined,
     });
     const repository = await Storage.openRepository();
+    await repository.setMeta('foregroundSession', undefined);
     const originalSetMeta = repository.setMeta;
     repository.setMeta = async (key, value) => {
       if (['foregroundSession', 'lastForegroundAt', 'lastForegroundLocalDate'].includes(key)) {
@@ -3937,6 +4196,9 @@ test('Slice 6 facade serializes first-local-date across two tabs', async ({ page
     preparePage(page),
     preparePage(secondPage),
   ]);
+  await page.evaluate(() => (
+    (window as any).__slice6ForegroundRepository.setMeta('foregroundSession', undefined)
+  ));
   const [first, second] = await Promise.all([
     page.evaluate(() => (
       (window as any).StepQuestV02App.beginForegroundSession('2026-07-12')

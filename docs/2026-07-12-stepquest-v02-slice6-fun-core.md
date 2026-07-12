@@ -1,6 +1,6 @@
 # StepQuest v0.2 Slice 6 — Fun Core 재설계
 
-> 상태: 설계 승인 · 구현 계획 완료
+> 상태: 구현 완료 · 사람 검증 대기
 > 목표: 알림이나 벌점 없이도 `출발 → 기다림 → 수확 → 타격 → 다음 욕망`이 이어져 앱을 다시 열 이유를 만든다.
 > 경제 불변: 타이머, 몬스터, 데미지, 대사, 도감, 미디어는 코인·골드·스텝 수·보상 캡을 바꾸지 않는다.
 
@@ -74,6 +74,8 @@
 | 25분 | 깊은 유적 입구 | 없음 |
 
 출발 전에는 `10분 · 오래된 숲길 · ???의 흔적`처럼 경로와 미발견 조우를 한 줄로 예고한다. 몬스터 이름은 발견 전 노출하지 않는다.
+
+표현 경계는 출발 전 예고와 출발 후 조우를 구분한다. 출발 전 teaser에서는 몬스터 이름을 숨기지만, 출발 뒤 원정 패널과 전투 리포트에서는 실제 조우 이름을 보여줄 수 있다. 도감 획득과 처치 count는 여전히 `completed` 보고에만 생긴다.
 
 ### 4.2 도메인 필드
 
@@ -409,3 +411,27 @@ Fun module은 지갑을 쓰거나 repository command를 실행하지 않는다. 
 - 실제 행동 이후에만 HP·처치·도감이 전진한다.
 - 개인 참고 미디어가 배포 산출물에 포함되지 않는다.
 - 소유자 사람 검증을 통과하기 전에는 Fun Core 상태를 `검증 중`으로 유지한다.
+
+## 18. 구현 감사와 자동 근거
+
+아래 표의 이름은 테스트 러너에 등록된 정확한 테스트명이다. 링크는 각 근거가 있는 파일을 가리킨다.
+
+| 설계 절 | 자동 근거 |
+|---|---|
+| §3 완성된 사용자 흐름 | [`Slice 6 owner journey completes the harvest combat and desire loop`](../backend/e2e/stepquest-v02.spec.ts), [`completed advances exactly one step`](../backend/e2e/stepquest-v02.spec.ts) |
+| §4 원정 타이머 | [`expedition timer defaults invalid preferences to five minutes and keeps the teaser unknown`](../backend/e2e/stepquest-v02.spec.ts), [`expedition timer reaches harvest without writing events rewards wallet or status`](../backend/e2e/stepquest-v02.spec.ts) |
+| §5 복귀·수확 상태 머신 | [`harvest state opens directly after an expired reload and never promises Gold`](../backend/e2e/stepquest-v02.spec.ts), [`harvest state labels early return and cancel follows the current derived phase`](../backend/e2e/stepquest-v02.spec.ts), [`battle report persists across reload and Continue acknowledges its exact key`](../backend/e2e/stepquest-v02.spec.ts) |
+| §6 몬스터와 데미지 | [`combat sequence derives first repeated and completed damage from the same start-phase lineage`](../backend/e2e/stepquest-v02.spec.ts), [`combat sequence gives entry partial a neutral zero-damage guard`](../backend/e2e/stepquest-v02.spec.ts), [`combat sequence never attacks for interrupted or not-started outcomes`](../backend/e2e/stepquest-v02.spec.ts) |
+| §7 보고 이벤트와 전투 리포트 | [`battle report displays committed event Gold 2 1 and 0 with truthful discovery`](../backend/e2e/stepquest-v02.spec.ts), [`battle report lifecycle observes meta-only acknowledgement from another tab`](../backend/e2e/stepquest-v02.spec.ts) |
+| §8 몬스터 도감 | [`Codex hash history keeps unknown monster identity secret and stays read only`](../backend/e2e/stepquest-v02.spec.ts), [`Codex counts one completed encounter once while pending report keeps route priority`](../backend/e2e/stepquest-v02.spec.ts) |
+| §9 움직이는 캐릭터 미디어 | [`moving character imports animated WebP idle and completed combat uses truthful HP delta`](../backend/e2e/stepquest-v02.spec.ts), [`moving character imports exact WebM and restarts muted inline skill video at zero`](../backend/e2e/stepquest-v02.spec.ts), [`persists atomic local character media slots outside ordinary exports`](../backend/e2e/stepquest-v02-storage.spec.ts) |
+| §10 스킬·피격 시퀀스 | [`Slice 6 owner journey completes the harvest combat and desire loop`](../backend/e2e/stepquest-v02.spec.ts), [`combat sequence report commit admits one atomic caller across save and outcome controls`](../backend/e2e/stepquest-v02.spec.ts), [`combat sequence skip aborts media FX and hit then hands off final state once`](../backend/e2e/stepquest-v02.spec.ts) |
+| §11 말풍선 | [`dialogue follows semantic report ready early departure priority without tick or hash reselection`](../backend/e2e/stepquest-v02.spec.ts), [`dialogue prioritizes parked and Resume Anchor subjects while next desire keeps parked goals`](../backend/e2e/stepquest-v02.spec.ts), [`Slice 6 facade persists semantic dialogue and applies the exact 48-hour session threshold`](../backend/e2e/stepquest-v02.spec.ts) |
+| §12 다음 욕망 한 줄 | [`next desire uses one Domain camp cost projection on Today and report but none on Codex`](../backend/e2e/stepquest-v02.spec.ts), [`next desire covers affordable shortfall milestone and terminal design fallbacks`](../backend/e2e/stepquest-v02.spec.ts), [`next desire keeps partial and interrupted lineage plus Resume Anchor at max camp`](../backend/e2e/stepquest-v02.spec.ts) |
+| §13 접근성·오류 처리 | [`Slice 6 accessibility keeps mobile targets focus live status and layout intact`](../backend/e2e/stepquest-v02.spec.ts), [`moving character reduced motion never mounts animated img or video`](../backend/e2e/stepquest-v02.spec.ts), [`Slice 6 facade treats persisted media as committed when URL refresh fails`](../backend/e2e/stepquest-v02.spec.ts) |
+| §14 저장·백업·PWA | [`preserves a v3 untimed expedition and raw legacy portrait across repeated app reloads`](../backend/e2e/stepquest-v02-storage.spec.ts), [`persists additive fields and backs up a committed IndexedDB start exactly once`](../backend/e2e/stepquest-v02-storage.spec.ts), [`Slice 6 shell loads production Fun and Media modules with Blob media CSP`](../backend/e2e/stepquest-v02.spec.ts), [`service worker cache build must change when v0.2 shell assets change`](../backend/scripts/stepquest-persistence-test.js) |
+| §15 컴포넌트 경계 | [`next desire uses one Domain camp cost projection on Today and report but none on Codex`](../backend/e2e/stepquest-v02.spec.ts), [`Slice 6 facade commits only valid duration preferences and refreshes cross-tab state`](../backend/e2e/stepquest-v02.spec.ts), [`CSP must allow only local and Blob moving media`](../backend/scripts/stepquest-persistence-test.js) |
+| §16 자동 검증 | [`Slice 6 owner journey completes the harvest combat and desire loop`](../backend/e2e/stepquest-v02.spec.ts), [`expedition timer reaches harvest without writing events rewards wallet or status`](../backend/e2e/stepquest-v02.spec.ts), [`preserves a v3 untimed expedition and raw legacy portrait across repeated app reloads`](../backend/e2e/stepquest-v02-storage.spec.ts) |
+| §17 완료 기준 | [`Slice 6 owner journey completes the harvest combat and desire loop`](../backend/e2e/stepquest-v02.spec.ts), [`preserves a v3 untimed expedition and raw legacy portrait across repeated app reloads`](../backend/e2e/stepquest-v02-storage.spec.ts), [`service worker cache build must change when v0.2 shell assets change`](../backend/scripts/stepquest-persistence-test.js) |
+
+사람 검증: 대기 — 알림 없이 서로 연속된 로컬 날짜 3일의 자발적 실행 기준은 아직 통과하지 않았다.
