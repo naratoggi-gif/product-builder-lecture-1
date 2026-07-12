@@ -2132,9 +2132,7 @@ video[data-v02-character-media] {
   overflow: hidden;
   border: 2px solid #d8dfd7;
   border-radius: 7px;
-  background:
-    linear-gradient(90deg, transparent calc(50% - 1px), #d8dfd7 calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
-    rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .08);
 }
 
 [data-v02-monster-hp]::before {
@@ -2144,6 +2142,16 @@ video[data-v02-character-media] {
   width: var(--v02-hp-width);
   background: linear-gradient(90deg, #d86858, #f2c166);
   transition: width .24s ease-out;
+}
+
+[data-v02-monster-hp]::after {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset: 0 auto 0 calc(50% - 1px);
+  width: 2px;
+  background: #d8dfd7;
+  pointer-events: none;
 }
 
 [data-v02-monster-hp][aria-valuenow="1"] { --v02-hp-width: 50%; }

@@ -1,8 +1,7 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const funScriptPath = path.resolve('public/assets/js/stepquest-v02-fun.js');
 const mediaScriptPath = path.resolve('public/assets/js/stepquest-v02-media.js');
 const sparkLoopBytes = readFileSync(path.resolve('e2e/fixtures/slice6-spark-loop.webp'));
 const sparkWebmBytes = readFileSync(path.resolve('e2e/fixtures/slice6-spark-loop.webm'));
@@ -167,7 +166,6 @@ async function dialogueCalls(page) {
 }
 
 async function resetV02(page) {
-  await page.addInitScript({ path: funScriptPath });
   await page.goto('/goals.html');
   await page.waitForFunction(() => Boolean(document.querySelector('#v02-wallet')));
   await page.evaluate(async () => {
@@ -501,6 +499,26 @@ async function expectNoHorizontalOverflow(page) {
     viewport: expect.any(Number),
   }));
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+async function expectHpSegmentDivider(locator: Locator) {
+  const divider = await locator.evaluate((hp) => {
+    const style = getComputedStyle(hp, '::after');
+    return {
+      content: style.content,
+      position: style.position,
+      zIndex: style.zIndex,
+      width: style.width,
+      pointerEvents: style.pointerEvents,
+    };
+  });
+  expect(divider).toEqual({
+    content: '""',
+    position: 'absolute',
+    zIndex: '1',
+    width: '2px',
+    pointerEvents: 'none',
+  });
 }
 
 test('Slice 6 shell loads production Fun and Media modules with Blob media CSP', async ({ page }) => {
@@ -1442,6 +1460,15 @@ test('moving character manual reduced motion rerenders to portrait with immediat
   await expect(page.locator('[data-v02-animated]')).toHaveCount(0);
   await expect(page.locator('#v02-character-image')).toBeVisible();
   await expect(page.locator('#reduced-motion-toggle')).toBeFocused();
+  const reducedMotionHp = page.locator('[data-v02-monster-hp]').first();
+  await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.dataset.v02MonsterHp = '';
+    probe.setAttribute('aria-valuenow', '2');
+    document.body.append(probe);
+  });
+  await expectHpSegmentDivider(reducedMotionHp);
+  await reducedMotionHp.evaluate((probe) => probe.remove());
 
   await createGoal(page, 'manual reduced motion combat');
   await page.locator('#v02-start-step').click();
@@ -2157,7 +2184,6 @@ test('harvest state refreshes on wake and replaces a stale expedition after anot
   await page.locator('[data-v02-outcome="partial"]').click();
   await page.locator('#v02-next-action').fill('다른 탭 보고 뒤 이어갈 행동');
   const secondPage = await context.newPage();
-  await secondPage.addInitScript({ path: funScriptPath });
   await secondPage.goto('/goals.html');
   await expect(secondPage.locator('#v02-expedition-active')).toBeVisible();
   await secondPage.evaluate(async () => {
@@ -2190,7 +2216,6 @@ test('harvest state initial mount refreshes a commit made during async initializ
   await resetV02(page);
   await createAndStart(page, '초기 마운트 중 바뀌는 원정');
   const secondPage = await context.newPage();
-  await secondPage.addInitScript({ path: funScriptPath });
   await secondPage.goto('/goals.html');
   await expect(secondPage.locator('#v02-expedition-active')).toBeVisible();
 
@@ -3122,6 +3147,7 @@ test('Slice 6 accessibility keeps mobile targets focus live status and layout in
   await expect(progress).toHaveAttribute('aria-valuemin', '0');
   await expect(progress).toHaveAttribute('aria-valuemax', '2');
   await expect(progress).toHaveAttribute('aria-valuenow', '2');
+  await expectHpSegmentDivider(progress);
   await expectMinimumTarget(page.locator('#v02-combat-skip'));
   await page.locator('#v02-combat-skip').click();
 
@@ -3142,7 +3168,6 @@ test('Slice 6 facade commits only valid duration preferences and refreshes cross
   context,
 }) => {
   await resetV02(page);
-  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
 
   const initial = await page.evaluate(async () => {
     const App = (window as any).StepQuestApp;
@@ -3291,7 +3316,6 @@ test('Slice 6 facade commits only valid duration preferences and refreshes cross
 test('Slice 6 facade derives the latest report and acknowledges only its matching key', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-07-12T12:00:00.000Z'));
   await resetV02(page);
-  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
 
   const committed = await page.evaluate(async () => {
     const App = (window as any).StepQuestApp;
@@ -3353,7 +3377,6 @@ test('Slice 6 facade derives the latest report and acknowledges only its matchin
   });
 
   await page.reload();
-  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
   await page.waitForFunction(() => Boolean((window as any).StepQuestV02App?.getSnapshot?.()));
 
   const acknowledged = await page.evaluate(async ({ expectedPending }) => {
@@ -3411,7 +3434,6 @@ test('Slice 6 facade derives the latest report and acknowledges only its matchin
 test('Slice 6 facade persists semantic dialogue and applies the exact 48-hour session threshold', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-07-12T12:00:00.000Z'));
   await resetV02(page);
-  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
 
   const firstPass = await page.evaluate(async () => {
     const App = (window as any).StepQuestApp;
@@ -3467,7 +3489,6 @@ test('Slice 6 facade persists semantic dialogue and applies the exact 48-hour se
   });
 
   await page.reload();
-  await page.addScriptTag({ url: '/assets/js/stepquest-v02-fun.js' });
   const afterReload = await page.evaluate(async () => {
     const Core = (window as any).StepQuestV02App;
     await Core.init({ App: (window as any).StepQuestApp, forceRefresh: true });

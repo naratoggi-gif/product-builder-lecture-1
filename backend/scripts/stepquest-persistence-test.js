@@ -484,6 +484,16 @@ assert.ok(appCss.includes('.trace-item'), 'recent attempt timeline styles are mi
   '#v02-next-desire',
   '.reduce-motion [data-v02-animated]',
 ].forEach((selector) => assert.ok(appCss.includes(selector), `Slice 6 CSS is missing ${selector}`));
+const hpDividerRule = appCss.match(/\[data-v02-monster-hp\]::after\s*\{([\s\S]*?)\}/)?.[1] || '';
+assert.ok(hpDividerRule, 'the two-segment HP divider must render above the fill');
+[
+  "content: ''",
+  'position: absolute',
+  'z-index: 1',
+].forEach((declaration) => assert.ok(
+  hpDividerRule.includes(declaration),
+  `the two-segment HP divider is missing ${declaration}`,
+));
 assert.ok(goalsHtml.includes('player-character'), 'village scene must include the equipped player character');
 assert.ok(!appCss.includes('.player-one_punch_hero'), 'super test hero styles must stay out of the production CSS bundle');
 assert.ok(devtoolsController.includes('.player-one_punch_hero'), 'dev-only super script must provide the QA hero sprite styles');
