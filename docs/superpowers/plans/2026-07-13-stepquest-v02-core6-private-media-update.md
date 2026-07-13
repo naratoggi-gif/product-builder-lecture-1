@@ -31,7 +31,7 @@
 - `backend/public/assets/js/stepquest-pwa-update.js` — registration, coalesced update checks, controller transition, one-shot reload.
 - `backend/scripts/stepquest-pwa-update-test.js` — dependency-injected lifecycle contracts.
 - `assets/sample-character-zenitsu/gen_zenitsu_v2_media.py` — private deterministic animation assembly; never tracked.
-- `assets/sample-character-zenitsu/zenitsu_skill_thunderclap.webm` — private recommended skill import; never tracked.
+- `assets/sample-character-zenitsu/zenitsu_skill_thunderclap.webm` — private optional compact Chromium/Android skill import; never tracked.
 
 **Modify**
 
@@ -363,7 +363,7 @@ git commit -m "Ship the visible StepQuest core-6 shell"
 
 **Interfaces:**
 - Consumes: approved v2 key art and the app media contracts.
-- Produces: canonical private portrait, idle WebP, skill WebP, and recommended skill WebM.
+- Produces: canonical private portrait, idle WebP, cross-browser/iPhone/Safari phone-recommended skill WebP, and optional compact Chromium/Android skill WebM.
 
 - [ ] **Step 1: Preserve the legacy files non-destructively**
 
@@ -405,7 +405,8 @@ Run metadata inspection and actual app imports. Assert:
 - portrait 512×512 PNG
 - idle/skill dimensions ≤ 1024, duration ≤ 3000ms, bytes ≤ 6,291,456
 - idle + WebM skill and idle + WebP skill each ≤ 12,582,912
-- browser decode succeeds in Chromium and WebKit
+- Chromium app inspector accepts portrait PNG, idle WebP, skill WebP, and VP8 WebM
+- Playwright WebKit app inspector accepts portrait PNG, idle WebP, and skill WebP; VP8 WebM returns `CHARACTER_MEDIA_DECODE_FAILED`
 - the skill representative frame visibly matches the approved v2 low-draw pose
 - the old SVG crop SHA does not appear in any new canonical frame
 
@@ -413,13 +414,15 @@ Save representative contact sheets beside the private files for user review, but
 
 - [ ] **Step 5: Update private README and keep Git clean**
 
-Document that the recommended phone imports are:
+Document that the cross-browser/iPhone/Safari recommended phone imports are:
 
 ```text
 portrait → zenitsu_portrait.png
 idle     → zenitsu_idle.webp
-skill    → zenitsu_skill_thunderclap.webm
+skill    → zenitsu_skill_thunderclap.webp
 ```
+
+Keep `zenitsu_skill_thunderclap.webm` as an optional compact Chromium/Android skill import. This recommendation follows real app-inspector results: Chromium accepted portrait PNG, idle WebP, skill WebP, and VP8 WebM; Playwright WebKit accepted the three image formats but rejected VP8 WebM with `CHARACTER_MEDIA_DECODE_FAILED`.
 
 Run `git status --short` and verify no private asset is tracked or staged.
 

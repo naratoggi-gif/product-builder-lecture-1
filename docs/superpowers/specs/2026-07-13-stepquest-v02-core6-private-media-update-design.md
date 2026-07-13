@@ -44,8 +44,8 @@ private 폴더는 `assets/sample-character-zenitsu/`를 유지한다. 기존 파
 
 - `zenitsu_portrait.png`
 - `zenitsu_idle.webp`
-- `zenitsu_skill_thunderclap.webp`
-- `zenitsu_skill_thunderclap.webm` — 고세부 권장 import
+- `zenitsu_skill_thunderclap.webp` — cross-browser/iPhone/Safari phone 권장 import
+- `zenitsu_skill_thunderclap.webm` — compact Chromium/Android용 선택 import
 
 이 폴더는 공개 저장소에 추가하지 않는다.
 
@@ -69,7 +69,7 @@ private 폴더는 `assets/sample-character-zenitsu/`를 유지한다. 기존 파
 - 각 변 ≤ 1024px, duration ≤ 3000ms
 - magic bytes, MIME, 실제 browser decode, dimensions, duration을 importer와 동일한 검사기로 확인한다.
 
-고세부 불투명 skill은 WebM을 우선 권장하고 동일한 WebP도 제공한다. 사용자는 `zenitsu_skill_thunderclap.webm`을 skill 슬롯에 선택한다.
+고세부 불투명 skill은 두 형식 모두 제공한다. 교차 브라우저와 iPhone/Safari phone import에는 `zenitsu_skill_thunderclap.webp`를 우선 권장하고, `zenitsu_skill_thunderclap.webm`은 compact Chromium/Android용 선택 import로 유지한다. 실제 app inspector에서 Chromium은 portrait PNG, idle WebP, skill WebP, VP8 WebM을 모두 통과했지만 Playwright WebKit은 portrait PNG, idle WebP, skill WebP만 통과했고 VP8 WebM은 `CHARACTER_MEDIA_DECODE_FAILED`로 실패했다.
 
 ## 4. PWA 업데이트 설계
 
@@ -135,7 +135,8 @@ StepQuestPwaUpdate.mount({
 - portrait·idle·skill 대표 프레임 육안 검토
 - idle first/last loop 이음새
 - skill에 v2의 낮은 발도 자세와 검광이 실제로 보임
-- app media inspector와 Chromium/WebKit 실제 decode 통과
+- app media inspector에서 Chromium은 portrait PNG·idle WebP·skill WebP·VP8 WebM 통과
+- Playwright WebKit은 portrait PNG·idle WebP·skill WebP 통과, VP8 WebM은 `CHARACTER_MEDIA_DECODE_FAILED` 확인
 - canonical 파일이 legacy SVG frame과 픽셀 계보가 다름
 
 ## 7. 완료 기준
