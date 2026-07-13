@@ -41,8 +41,7 @@ function createEnvironment(options = {}) {
   let registerCalls = 0;
   let updateCalls = 0;
   let resolveDeferredUpdate = null;
-  let markUpdateStarted;
-  const updateStarted = new Promise((resolve) => { markUpdateStarted = resolve; });
+  let updateStarted = false;
 
   documentValue.readyState = options.readyState || 'loading';
   documentValue.visibilityState = options.visibilityState || 'hidden';
@@ -51,7 +50,7 @@ function createEnvironment(options = {}) {
   const registration = {
     update() {
       updateCalls += 1;
-      markUpdateStarted();
+      updateStarted = true;
       if (options.updateReject) return Promise.reject(new Error('update failed'));
       if (options.deferredUpdate) {
         return new Promise((resolve) => { resolveDeferredUpdate = resolve; });
@@ -85,6 +84,15 @@ function createEnvironment(options = {}) {
     },
   };
 
+  const mountOptions = {
+    build: options.build === undefined ? 'v02-core-6' : options.build,
+    navigatorValue: options.unsupported ? {} : { serviceWorker },
+    windowValue,
+    documentValue,
+    locationValue,
+  };
+  if (!options.omitSessionStorageInjection) mountOptions.sessionStorageValue = sessionStorageValue;
+
   return {
     window: windowValue,
     document: documentValue,
@@ -94,16 +102,12 @@ function createEnvironment(options = {}) {
     get reloads() { return reloads; },
     get registerCalls() { return registerCalls; },
     get updateCalls() { return updateCalls; },
-    options: {
-      build: options.build === undefined ? 'v02-core-6' : options.build,
-      navigatorValue: options.unsupported ? {} : { serviceWorker },
-      windowValue,
-      documentValue,
-      locationValue,
-      sessionStorageValue,
-    },
+    options: mountOptions,
     async releaseUpdate() {
-      await updateStarted;
+      for (let attempt = 0; attempt < 8 && !updateStarted; attempt += 1) {
+        await Promise.resolve();
+      }
+      assert.equal(updateStarted, true, 'update should start within bounded microtasks');
       resolveDeferredUpdate?.(null);
       await Promise.resolve();
     },
@@ -169,6 +173,34 @@ async function run() {
     assert.equal(await handle.checkForUpdate(), null);
     assert.equal(env.serviceWorker.listenerCount('controllerchange'), 0);
     handle.dispose();
+  }));
+
+  completed.push(await test('throwing sessionStorage property getter does not block update bootstrap', async () => {
+    const env = createEnvironment({
+      hasController: true,
+      readyState: 'complete',
+      omitSessionStorageInjection: true,
+    });
+    const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      configurable: true,
+      get() { throw new Error('SESSION_GETTER'); },
+    });
+
+    try {
+      let handle;
+      assert.doesNotThrow(() => { handle = Update.mount(env.options); });
+      await handle.registrationPromise;
+      assert.equal(env.registerCalls, 1);
+      assert.equal(await handle.checkForUpdate(), null);
+      assert.equal(env.updateCalls, 1);
+      assert.doesNotThrow(() => env.serviceWorker.dispatch('controllerchange'));
+      assert.equal(env.reloads, 0);
+      handle.dispose();
+    } finally {
+      if (originalDescriptor) Object.defineProperty(globalThis, 'sessionStorage', originalDescriptor);
+      else delete globalThis.sessionStorage;
+    }
   }));
 
   completed.push(await test('register rejection resolves registration and update checks to null', async () => {

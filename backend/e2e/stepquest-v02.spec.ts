@@ -578,9 +578,17 @@ test('core 6 build marker is visible in every route', async ({ page }) => {
 
 test('v0.2 mount failure replaces the legacy shell with a recovery panel', async ({ page }) => {
   await page.addInitScript(() => {
+    Object.defineProperty(window, 'StepQuestApp', {
+      configurable: true,
+      set(value) {
+        value.log = () => { throw new Error('LOG_PROBE'); };
+        this.__app = value;
+      },
+      get() { return this.__app; },
+    });
     Object.defineProperty(window, 'StepQuestV02App', {
       configurable: true,
-      set(value) { value.init = async () => { throw new Error('MOUNT_PROBE'); }; this.__core = value; },
+      set(value) { value.init = async () => { throw 'MOUNT_PROBE'; }; this.__core = value; },
       get() { return this.__core; },
     });
   });

@@ -1365,7 +1365,12 @@
       try {
         await window.StepQuestV02UI.mount({ App, Core: window.StepQuestV02App });
       } catch (error) {
-        App.log(`v0.2 mount: ${error.message}`);
+        let detail = 'unknown error';
+        try {
+          detail = error instanceof Error ? error.message : String(error);
+        } catch (_error) {
+          // Keep the recovery UI available for unusual rejection values.
+        }
         document.getElementById('app').innerHTML = `
           <section id="v02-mount-error" class="panel v02-mount-error">
             <span class="v02-kicker">Fun Core · v02-core-6</span>
@@ -1374,6 +1379,11 @@
             <button id="v02-reload-build">새 버전 다시 열기</button>
           </section>`;
         document.getElementById('v02-reload-build').addEventListener('click', () => location.reload());
+        try {
+          App.log(`v0.2 mount: ${detail}`);
+        } catch (_error) {
+          // Diagnostic logging is best-effort after recovery is ready.
+        }
       }
     });
   </script>

@@ -17,6 +17,8 @@ backend/audit-all.json
 backend/audit-production.json
 backend/audit-fix-plan.json
 
+assets/sample-character-zenitsu/
+
 firebase-debug.log
 .idx/
 .vscode/

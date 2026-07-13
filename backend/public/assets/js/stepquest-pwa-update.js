@@ -9,7 +9,6 @@
     const windowValue = options.windowValue || root;
     const documentValue = options.documentValue || root.document;
     const locationValue = options.locationValue || root.location;
-    const session = options.sessionStorageValue || root.sessionStorage;
     const serviceWorker = navigatorValue?.serviceWorker;
     if (!serviceWorker || !build) {
       return {
@@ -17,6 +16,15 @@
         dispose() {},
         registrationPromise: Promise.resolve(null),
       };
+    }
+
+    let session = options.sessionStorageValue;
+    if (!Object.prototype.hasOwnProperty.call(options, 'sessionStorageValue')) {
+      try {
+        session = root.sessionStorage;
+      } catch (_error) {
+        session = null;
+      }
     }
 
     const reloadKey = `stepquest:pwa-reloaded:${build}`;
