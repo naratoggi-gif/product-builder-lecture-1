@@ -569,6 +569,55 @@ async function ownerJourneyPersistenceProjection(page: Page) {
   });
 }
 
+test('core 6 build marker is visible in every route', async ({ page }) => {
+  await resetV02(page);
+  await expect(page.locator('[data-v02-build="v02-core-6"]')).toHaveText('Fun Core · v02-core-6');
+  await page.locator('#v02-nav-codex').click();
+  await expect(page.locator('[data-v02-build="v02-core-6"]')).toBeVisible();
+});
+
+test('v0.2 mount failure replaces the legacy shell with a recovery panel', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'StepQuestApp', {
+      configurable: true,
+      set(value) {
+        value.log = () => { throw new Error('LOG_PROBE'); };
+        this.__app = value;
+      },
+      get() { return this.__app; },
+    });
+    Object.defineProperty(window, 'StepQuestV02App', {
+      configurable: true,
+      set(value) { value.init = async () => { throw 'MOUNT_PROBE'; }; this.__core = value; },
+      get() { return this.__core; },
+    });
+  });
+  await page.goto('/goals.html');
+  await expect(page.locator('#v02-mount-error')).toContainText('v02-core-6');
+  await expect(page.locator('#v02-reload-build')).toBeVisible();
+  await expect(page.locator('#v02-nav-codex')).toHaveCount(0);
+});
+
+test('existing PWA controller transition reloads core 6 exactly once', async ({ page }) => {
+  await page.goto('/goals.html');
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.reload();
+  await expect(page.locator('[data-v02-build="v02-core-6"]')).toBeVisible();
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+    page.evaluate(() => {
+      sessionStorage.removeItem('stepquest:pwa-reloaded:v02-core-6');
+      navigator.serviceWorker.dispatchEvent(new Event('controllerchange'));
+    }),
+  ]);
+  await expect.poll(() => page.evaluate(() => (
+    sessionStorage.getItem('stepquest:pwa-reloaded:v02-core-6')
+  ))).toBe('1');
+  await expect(page.locator('#v02-nav-codex')).toBeVisible();
+  await page.evaluate(() => navigator.serviceWorker.dispatchEvent(new Event('controllerchange')));
+  await expect(page.locator('[data-v02-build="v02-core-6"]')).toBeVisible();
+});
+
 test('Slice 6 owner journey completes the harvest combat and desire loop', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-07-12T00:00:00.000Z') });
   await resetV02(page);

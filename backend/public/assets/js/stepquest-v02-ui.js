@@ -1014,6 +1014,7 @@
       <nav class="v02-navigation" aria-label="주요 화면">
         <a id="v02-nav-today" href="#today"${route === '#today' ? ' aria-current="page"' : ''}>오늘</a>
         <a id="v02-nav-codex" href="#codex"${route === '#codex' ? ' aria-current="page"' : ''}>도감</a>
+        <small data-v02-build="v02-core-6">Fun Core · v02-core-6</small>
       </nav>
     `;
     const dialogueInput = dialogueProjection(vm, timer);

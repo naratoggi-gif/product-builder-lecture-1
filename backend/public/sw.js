@@ -1,20 +1,21 @@
 const CACHE_VERSION = 'stepquest-v0.1.1-alpha';
-const CACHE_BUILD = 'v02-core-5';
+const CACHE_BUILD = 'v02-core-6';
 const CACHE_NAME = `${CACHE_VERSION}-${CACHE_BUILD}-shell`;
 const APP_SHELL = [
   '/',
   '/goals.html',
-  '/assets/css/app.css?v=0.1.1-alpha&build=v02-core-5',
-  '/assets/js/stepquest-v02-domain.js?v=0.1.1-alpha&build=v02-core-5',
-  '/assets/js/stepquest-v02-storage.js?v=0.1.1-alpha&build=v02-core-5',
-  '/assets/js/stepquest-v02-backup.js?v=0.1.1-alpha&build=v02-core-5',
-  '/assets/js/stepquest-v02-character.js?v=0.1.1-alpha&build=v02-core-5',
-  '/assets/js/stepquest-v02-media.js?v=0.1.1-alpha&build=v02-core-5',
-  '/assets/js/stepquest-v02-fun.js?v=0.1.1-alpha&build=v02-core-5',
-  '/assets/js/stepquest-v02-fx.js?v=0.1.1-alpha&build=v02-core-5',
+  '/assets/css/app.css?v=0.1.1-alpha&build=v02-core-6',
+  '/assets/js/stepquest-v02-domain.js?v=0.1.1-alpha&build=v02-core-6',
+  '/assets/js/stepquest-v02-storage.js?v=0.1.1-alpha&build=v02-core-6',
+  '/assets/js/stepquest-v02-backup.js?v=0.1.1-alpha&build=v02-core-6',
+  '/assets/js/stepquest-v02-character.js?v=0.1.1-alpha&build=v02-core-6',
+  '/assets/js/stepquest-v02-media.js?v=0.1.1-alpha&build=v02-core-6',
+  '/assets/js/stepquest-v02-fun.js?v=0.1.1-alpha&build=v02-core-6',
+  '/assets/js/stepquest-v02-fx.js?v=0.1.1-alpha&build=v02-core-6',
   '/assets/js/app.js?v=0.1.1-alpha',
-  '/assets/js/stepquest-v02-app.js?v=0.1.1-alpha&build=v02-core-5',
-  '/assets/js/stepquest-v02-ui.js?v=0.1.1-alpha&build=v02-core-5',
+  '/assets/js/stepquest-v02-app.js?v=0.1.1-alpha&build=v02-core-6',
+  '/assets/js/stepquest-v02-ui.js?v=0.1.1-alpha&build=v02-core-6',
+  '/assets/js/stepquest-pwa-update.js?v=0.1.1-alpha&build=v02-core-6',
   '/assets/icons/stepquest.svg',
   '/manifest.webmanifest',
 ];
